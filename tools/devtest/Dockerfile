@@ -4,6 +4,12 @@ FROM mcr.microsoft.com/playwright:v1.49.0-jammy
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
+# Rust crates need a compiler toolchain for proc-macro build scripts.
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends build-essential pkg-config ca-certificates curl \
+  && rm -rf /var/lib/apt/lists/*
+
 # Playwright base image already contains a non-root user (pwuser).
 USER pwuser
 WORKDIR /home/pwuser
