@@ -1,10 +1,16 @@
 import { test, expect } from '@playwright/test';
 
-test('clusters: renders clusters returned by stub engine', async ({ page }) => {
-  await page.goto('/');
+test('clusters: selecting a cluster navigates to /explore?cluster=<id>', async ({ page }) => {
+  await page.goto('/clusters');
 
-  const items = page.getByTestId('cluster-item');
-  await expect(items).toHaveCount(2);
-  await expect(page.getByText('Local Dev Cluster')).toBeVisible();
-  await expect(page.getByText('Staging AKS')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Clusters' })).toBeVisible();
+
+  const localDev = page.getByRole('button', { name: /Local Dev Cluster \(local-dev\)/ });
+  await expect(localDev).toBeVisible();
+
+  await localDev.click();
+
+  await expect(page).toHaveURL(/\/explore\?cluster=local-dev$/);
+  await expect(page.getByRole('heading', { name: 'Explore' })).toBeVisible();
+  await expect(page.getByTestId('selected-cluster')).toHaveText('local-dev');
 });
