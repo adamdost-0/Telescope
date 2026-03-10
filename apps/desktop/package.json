@@ -1,0 +1,19 @@
+{
+  "name": "@telescope/desktop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:frontend": "node ./scripts/prepare-frontend.mjs",
+    "dev": "pnpm run prepare:frontend && tauri dev",
+    "build": "pnpm run prepare:frontend && tauri build --debug",
+    "bundle": "pnpm run prepare:frontend && tauri build",
+    "lint": "echo \"(todo)\"",
+    "test": "echo \"(todo)\""
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

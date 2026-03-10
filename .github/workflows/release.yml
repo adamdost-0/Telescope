@@ -21,13 +21,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Enable corepack
+        run: corepack enable
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install
-        run: npm ci
-      # Prefer a pinned tauri-action once the Tauri app exists.
+        run: pnpm install --frozen-lockfile
       - name: Build artifacts
-        run: npm run desktop:bundle
+        run: pnpm -C apps/desktop bundle
 
       - name: Create GitHub Release (attach artifacts)
         uses: softprops/action-gh-release@v2

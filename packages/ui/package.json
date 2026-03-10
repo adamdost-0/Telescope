@@ -1,0 +1,9 @@
+{
+  "name": "@telescope/ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "echo \"(todo)\"",
+    "test": "echo \"(todo)\""
+  }
+}

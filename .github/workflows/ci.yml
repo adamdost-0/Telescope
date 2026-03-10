@@ -19,9 +19,10 @@ jobs:
       - name: Cargo fmt
         run: cargo fmt --all -- --check
       - name: Cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        # Exclude desktop crate on Linux (gtk/webkit system deps). Desktop builds in separate job.
+        run: cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings
       - name: Cargo test
-        run: cargo test --all --all-features
+        run: cargo test --workspace --exclude telescope-desktop --all-features
 
   web:
     runs-on: ubuntu-latest
@@ -31,12 +32,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Enable corepack
+        run: corepack enable
       - name: Install
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Lint
-        run: npm run lint --if-present
+        run: pnpm -r --if-present lint
       - name: Test
-        run: npm test --if-present
+        run: pnpm -r --if-present test
 
   web-e2e:
     runs-on: ubuntu-latest
@@ -47,12 +50,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Enable corepack
+        run: corepack enable
       - name: Install
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps
+        run: pnpm -C apps/web exec playwright install
       - name: E2E
-        run: npm run e2e --if-present
+        run: pnpm -C apps/web e2e
 
   desktop-build:
     strategy:
@@ -66,9 +71,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Enable corepack
+        run: corepack enable
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Build desktop (tauri)
-        run: npm run desktop:build --if-present
+        run: pnpm -C apps/desktop build
