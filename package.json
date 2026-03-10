@@ -12,5 +12,10 @@
     "e2e": "npm -w apps/web run e2e",
     "desktop:build": "npm -w apps/desktop run build",
     "desktop:bundle": "npm -w apps/desktop run bundle"
+  },
+  "overrides": {
+    "cookie": "0.7.2",
+    "vite": "6.4.1",
+    "esbuild": "0.25.12"
   }
 }
