@@ -1,7 +1,8 @@
 [package]
 name = "telescope-desktop"
 version = "0.0.1"
-edition = "2021"
+edition.workspace = true
+license.workspace = true
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -7,8 +7,8 @@
     "packages/ui"
   ],
   "scripts": {
-    "lint": "npm -ws run lint",
-    "test": "npm -ws run test",
+    "lint": "npm -ws --if-present run lint",
+    "test": "npm -ws --if-present run test",
     "e2e": "npm -w apps/web run e2e",
     "desktop:build": "npm -w apps/desktop run build",
     "desktop:bundle": "npm -w apps/desktop run bundle"

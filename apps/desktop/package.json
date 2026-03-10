@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build --debug",
-    "bundle": "tauri build"
+    "bundle": "tauri build",
+    "lint": "echo \"(todo)\"",
+    "test": "echo \"(todo)\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0"

@@ -3,5 +3,5 @@
 use telescope_core::VersionInfo;
 
 pub fn engine_version() -> VersionInfo {
-  telescope_engine::version()
+    telescope_engine::version()
 }
