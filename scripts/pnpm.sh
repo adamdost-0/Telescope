@@ -7,8 +7,12 @@ set -euo pipefail
 PNPM_CJS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.corepack/v1/pnpm/9.15.4/bin/pnpm.cjs"
 
 if [[ ! -f "$PNPM_CJS" ]]; then
-  echo "pnpm not prepared. Run: COREPACK_HOME=./.corepack corepack prepare pnpm@9.15.4 --activate" >&2
-  exit 1
+  # Auto-prepare pnpm into the repo-local Corepack home (works in CI and dev containers).
+  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  export COREPACK_HOME="$REPO_ROOT/.corepack"
+
+  # corepack is shipped with Node; don't require global pnpm.
+  corepack prepare pnpm@9.15.4 --activate >/dev/null
 fi
 
 exec node "$PNPM_CJS" "$@"

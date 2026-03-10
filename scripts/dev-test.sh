@@ -4,7 +4,7 @@ set -euo pipefail
 IMAGE=telescope-devtest:local
 
 # Build a deterministic dev test container with Rust + Node + Playwright deps.
-docker build -f tools/devtest/Dockerfile -t "$IMAGE" .
+docker build --pull=false -f tools/devtest/Dockerfile -t "$IMAGE" .
 
 # Run tests inside container. We mount repo at /repo.
 docker run --rm -t \
