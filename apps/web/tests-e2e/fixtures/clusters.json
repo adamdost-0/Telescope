@@ -1,0 +1,16 @@
+{
+  "clusters": [
+    {
+      "id": "local-dev",
+      "name": "Local Dev Cluster",
+      "context": "kind-telescope",
+      "server": "https://127.0.0.1:6443"
+    },
+    {
+      "id": "staging-aks",
+      "name": "Staging AKS",
+      "context": "aks-staging",
+      "server": "https://staging.example.invalid"
+    }
+  ]
+}
