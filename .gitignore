@@ -4,3 +4,8 @@ node_modules/
 apps/web/.svelte-kit/
 apps/web/build/
 apps/web/.vite/
+
+# tooling
+.corepack/
+apps/web/test-results/
+apps/web/playwright-report/

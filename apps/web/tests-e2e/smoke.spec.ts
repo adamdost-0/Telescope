@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-test('smoke: loads scaffold page', async ({ page }) => {
+test('smoke: loads home page', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Telescope web UI scaffold' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Telescope' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Clusters' })).toBeVisible();
 });

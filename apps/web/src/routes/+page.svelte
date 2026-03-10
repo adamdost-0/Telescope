@@ -1,6 +1,21 @@
 <script lang="ts">
-  const message = 'Telescope web UI scaffold';
+  import type { Cluster } from '$lib/engine';
+
+  let { data }: { data: { clusters: Cluster[] } } = $props();
 </script>
 
-<h1>{message}</h1>
-<p>Next: wire this UI to the Rust engine API (stub first for deterministic E2E).</p>
+<h1>Telescope</h1>
+
+<section aria-label="clusters">
+  <h2>Clusters</h2>
+
+  {#if data.clusters.length === 0}
+    <p>No clusters found.</p>
+  {:else}
+    <ul>
+      {#each data.clusters as cluster (cluster.id)}
+        <li data-testid="cluster-item">{cluster.name}</li>
+      {/each}
+    </ul>
+  {/if}
+</section>
