@@ -6,6 +6,13 @@ members = [
   "crates/api",
   "apps/desktop/src-tauri"
 ]
+# CI defaults: avoid building platform-specific desktop dependencies on Linux.
+# Desktop builds run in their own GH Actions job on Windows/macOS.
+default-members = [
+  "crates/core",
+  "crates/engine",
+  "crates/api"
+]
 
 [workspace.package]
 edition = "2021"

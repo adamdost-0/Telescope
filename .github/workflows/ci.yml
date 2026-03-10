@@ -19,9 +19,10 @@ jobs:
       - name: Cargo fmt
         run: cargo fmt --all -- --check
       - name: Cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        # Exclude desktop crate on Linux (gtk/webkit system deps). Desktop builds in separate job.
+        run: cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings
       - name: Cargo test
-        run: cargo test --all --all-features
+        run: cargo test --workspace --exclude telescope-desktop --all-features
 
   web:
     runs-on: ubuntu-latest
