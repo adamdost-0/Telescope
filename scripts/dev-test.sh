@@ -25,15 +25,14 @@ docker run --rm -t \
     cargo test --workspace --exclude telescope-desktop --all-features
 
     echo "== pnpm install =="
-    corepack enable
-    pnpm install --frozen-lockfile
+    ./scripts/pnpm.sh install --frozen-lockfile
 
     echo "== Web unit tests =="
-    pnpm -C apps/web test
+    ./scripts/pnpm.sh -C apps/web test
 
     echo "== Web E2E =="
     # Playwright Docker base image already includes the OS deps and browsers.
     # Avoid installing browsers at runtime to keep the loop fast/deterministic.
     export PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-    pnpm -C apps/web e2e
+    ./scripts/pnpm.sh -C apps/web e2e
   '
