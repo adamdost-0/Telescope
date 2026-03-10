@@ -1,7 +1,8 @@
 import { redirect } from '@sveltejs/kit';
+import type { PageLoad } from './$types';
 import { listClusters, listKinds, listNamespaces, listResources } from '$lib/engine';
 
-export const load = async ({ url, fetch }) => {
+export const load: PageLoad = async ({ url, fetch }) => {
   const clusterId = url.searchParams.get('cluster');
   if (!clusterId) throw redirect(302, '/clusters');
 

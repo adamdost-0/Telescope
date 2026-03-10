@@ -1,4 +1,4 @@
-import { PUBLIC_ENGINE_HTTP_BASE } from '$env/static/public';
+import { ENGINE_HTTP_BASE } from '$env/static/private';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -18,7 +18,7 @@ export const GET: RequestHandler = async ({ url }) => {
     return new Response('stub error', { status: 500 });
   }
 
-  if (!PUBLIC_ENGINE_HTTP_BASE) {
+  if (!ENGINE_HTTP_BASE) {
     const clusters =
       scenario === 'empty'
         ? []
@@ -30,7 +30,7 @@ export const GET: RequestHandler = async ({ url }) => {
     return json({ clusters }, { status: 200 });
   }
 
-  const res = await globalThis.fetch(`${PUBLIC_ENGINE_HTTP_BASE}/api/clusters`, {
+  const res = await globalThis.fetch(`${ENGINE_HTTP_BASE}/api/clusters`, {
     headers: { accept: 'application/json' }
   });
 

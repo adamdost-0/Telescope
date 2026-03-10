@@ -12,10 +12,18 @@
     items: ResourceRow[];
   };
 
-  const selectKind = (k: string) => {
+  import { goto } from '$app/navigation';
+
+  const selectKind = async (k: string) => {
     const u = new URL(window.location.href);
     u.searchParams.set('kind', k);
-    window.location.assign(u);
+    await goto(u, { replaceState: true, keepfocus: true, noscroll: true });
+  };
+
+  const onNamespaceChange = async (ns: string) => {
+    const u = new URL(window.location.href);
+    u.searchParams.set('namespace', ns);
+    await goto(u, { replaceState: true, keepfocus: true, noscroll: true });
   };
 </script>
 
@@ -26,6 +34,8 @@
   clusters={data.clusters}
   namespaces={data.namespaces}
   namespace={data.namespace}
+  namespaceEnabled={data.kinds.find((k) => k.kind === data.kind)?.namespaced ?? true}
+  on:namespaceChange={(e) => onNamespaceChange(e.detail.namespace)}
 />
 
 <div class="layout">

@@ -1,4 +1,4 @@
-import { PUBLIC_ENGINE_HTTP_BASE } from '$env/static/public';
+import { ENGINE_HTTP_BASE } from '$env/static/private';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -9,7 +9,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
   if (!cluster || !kind) return json({ items: [] }, { status: 400 });
 
-  if (!PUBLIC_ENGINE_HTTP_BASE) {
+  if (!ENGINE_HTTP_BASE) {
     // Deterministic stub rows.
     const items =
       kind === 'Nodes'
@@ -26,7 +26,7 @@ export const GET: RequestHandler = async ({ url }) => {
   qs.set('kind', kind);
   if (namespace) qs.set('namespace', namespace);
 
-  const res = await fetch(`${PUBLIC_ENGINE_HTTP_BASE}/api/resources?${qs.toString()}`, {
+  const res = await fetch(`${ENGINE_HTTP_BASE}/api/resources?${qs.toString()}`, {
     headers: { accept: 'application/json' }
   });
 

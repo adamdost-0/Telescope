@@ -1,10 +1,14 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import type { Cluster, Namespace } from '$lib/engine';
 
   export let clusterId: string;
   export let clusters: Cluster[];
   export let namespaces: Namespace[];
   export let namespace: string;
+  export let namespaceEnabled: boolean = true;
+
+  const dispatch = createEventDispatcher<{ namespaceChange: { namespace: string } }>();
 
   const selected = () => clusters.find((c) => c.id === clusterId);
 </script>
@@ -21,13 +25,11 @@
       <span class="label">Namespace</span>
       <select
         data-testid="namespace-select"
-        bind:value={namespace}
+        value={namespace}
+        disabled={!namespaceEnabled}
         on:change={(e) => {
           const ns = (e.currentTarget as HTMLSelectElement).value;
-          const u = new URL(window.location.href);
-          u.searchParams.set('namespace', ns);
-          window.history.replaceState({}, '', u);
-          window.dispatchEvent(new PopStateEvent('popstate'));
+          dispatch('namespaceChange', { namespace: ns });
         }}
       >
         {#each namespaces as ns}

@@ -1,9 +1,9 @@
-import { PUBLIC_ENGINE_HTTP_BASE } from '$env/static/public';
+import { ENGINE_HTTP_BASE } from '$env/static/private';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async () => {
-  if (!PUBLIC_ENGINE_HTTP_BASE) {
+  if (!ENGINE_HTTP_BASE) {
     // Deterministic stub set for M1 explorer.
     return json(
       {
@@ -20,7 +20,7 @@ export const GET: RequestHandler = async () => {
     );
   }
 
-  const res = await fetch(`${PUBLIC_ENGINE_HTTP_BASE}/api/kinds`, { headers: { accept: 'application/json' } });
+  const res = await fetch(`${ENGINE_HTTP_BASE}/api/kinds`, { headers: { accept: 'application/json' } });
   const body = await res.json().catch(() => ({ kinds: [] }));
   return json(body, { status: res.status });
 };
