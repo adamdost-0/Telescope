@@ -1,15 +1,13 @@
 FROM mcr.microsoft.com/playwright:v1.49.0-jammy
 
-# Install Rust (stable) in container (non-root)
-RUN useradd -m -u 1000 dev
-USER dev
-WORKDIR /home/dev
+# Playwright base image already contains a non-root user (pwuser).
+USER pwuser
+WORKDIR /home/pwuser
 
-ENV CARGO_HOME=/home/dev/.cargo \
-    RUSTUP_HOME=/home/dev/.rustup \
-    PATH=/home/dev/.cargo/bin:$PATH
+ENV CARGO_HOME=/home/pwuser/.cargo \
+    RUSTUP_HOME=/home/pwuser/.rustup \
+    PATH=/home/pwuser/.cargo/bin:$PATH
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable
 
-# Node is already present in Playwright image; ensure npm available.
 WORKDIR /repo
