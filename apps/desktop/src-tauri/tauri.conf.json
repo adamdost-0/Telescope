@@ -6,7 +6,7 @@
   "build": {
     "beforeBuildCommand": "",
     "beforeDevCommand": "",
-    "frontendDist": "."
+    "frontendDist": ".."
   },
   "app": {
     "windows": [
