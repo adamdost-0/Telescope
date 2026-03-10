@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build --debug",
-    "bundle": "tauri build",
+    "prepare:frontend": "node ./scripts/prepare-frontend.mjs",
+    "dev": "pnpm run prepare:frontend && tauri dev",
+    "build": "pnpm run prepare:frontend && tauri build --debug",
+    "bundle": "pnpm run prepare:frontend && tauri build",
     "lint": "echo \"(todo)\"",
     "test": "echo \"(todo)\""
   },

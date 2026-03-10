@@ -4,9 +4,9 @@
   "version": "0.0.1",
   "identifier": "com.adamdost.telescope",
   "build": {
-    "beforeBuildCommand": "",
-    "beforeDevCommand": "",
-    "frontendDist": ".."
+    "beforeBuildCommand": "pnpm run prepare:frontend",
+    "beforeDevCommand": "pnpm run prepare:frontend",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [
