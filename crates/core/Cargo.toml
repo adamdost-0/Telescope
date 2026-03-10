@@ -1,0 +1,8 @@
+[package]
+name = "telescope-core"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
