@@ -31,13 +31,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+      - name: Enable corepack
+        run: corepack enable
       - name: Install
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Lint
-        run: npm run lint --if-present
+        run: pnpm -r --if-present lint
       - name: Test
-        run: npm test --if-present
+        run: pnpm -r --if-present test
 
   web-e2e:
     runs-on: ubuntu-latest
@@ -47,13 +49,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+      - name: Enable corepack
+        run: corepack enable
       - name: Install
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps
+        run: pnpm -C apps/web exec playwright install
       - name: E2E
-        run: npm run e2e --if-present
+        run: pnpm -C apps/web e2e
 
   desktop-build:
     strategy:
@@ -66,10 +70,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+      - name: Enable corepack
+        run: corepack enable
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Build desktop (tauri)
-        run: npm run desktop:build --if-present
+        run: pnpm -C apps/desktop build

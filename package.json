@@ -6,16 +6,18 @@
     "apps/desktop",
     "packages/ui"
   ],
+  "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "lint": "npm -ws --if-present run lint",
-    "test": "npm -ws --if-present run test",
-    "e2e": "npm -w apps/web run e2e",
-    "desktop:build": "npm -w apps/desktop run build",
-    "desktop:bundle": "npm -w apps/desktop run bundle"
+    "lint": "./scripts/pnpm.sh -r --if-present lint",
+    "test": "./scripts/pnpm.sh -r --if-present test",
+    "e2e": "./scripts/pnpm.sh -C apps/web e2e",
+    "desktop:build": "./scripts/pnpm.sh -C apps/desktop build",
+    "desktop:bundle": "./scripts/pnpm.sh -C apps/desktop bundle"
   },
-  "overrides": {
-    "cookie": "0.7.2",
-    "vite": "6.4.1",
-    "esbuild": "0.25.12"
+  "pnpm": {
+    "overrides": {
+      "cookie": "0.7.2",
+      "esbuild": "0.25.12"
+    }
   }
 }

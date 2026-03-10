@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.49.0-jammy
+FROM mcr.microsoft.com/playwright:v1.58.2-jammy
 
 # Base image includes browsers at /ms-playwright and required OS deps.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
