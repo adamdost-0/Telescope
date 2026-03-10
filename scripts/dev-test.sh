@@ -24,13 +24,16 @@ docker run --rm -t \
     cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings
     cargo test --workspace --exclude telescope-desktop --all-features
 
-    echo "== Node install =="
-    npm ci
+    echo "== pnpm install =="
+    corepack enable
+    pnpm install --frozen-lockfile
 
     echo "== Web unit tests =="
-    npm -w apps/web test
+    pnpm -C apps/web test
 
     echo "== Web E2E =="
-    npx playwright install --with-deps
-    npm -w apps/web run e2e
+    # Playwright Docker base image already includes the OS deps and browsers.
+    # Avoid installing browsers at runtime to keep the loop fast/deterministic.
+    export PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    pnpm -C apps/web e2e
   '
