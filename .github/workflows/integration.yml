@@ -1,0 +1,49 @@
+name: integration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/engine/**'
+      - 'crates/core/**'
+      - 'tools/k3d-fixtures/**'
+      - '.github/workflows/integration.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  k3d-engine-tests:
+    name: Engine Integration (k3d)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install k3d
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+
+      - name: Create k3d cluster
+        run: |
+          k3d cluster create telescope-ci --agents 1 --wait --timeout 120s
+          kubectl wait --for=condition=Ready nodes --all --timeout=60s
+
+      - name: Deploy test fixtures
+        run: kubectl apply -f tools/k3d-fixtures/
+
+      - name: Wait for deployments
+        run: |
+          kubectl -n default wait --for=condition=Available deployment/nginx-test --timeout=120s
+          kubectl get pods -A
+
+      - name: Run integration tests
+        env:
+          K3D_TEST: "1"
+        run: cargo test -p telescope-engine --test integration_k3d -- --nocapture
+
+      - name: Teardown
+        if: always()
+        run: k3d cluster delete telescope-ci

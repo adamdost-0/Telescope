@@ -51,3 +51,23 @@ export async function getPods(namespace?: string): Promise<ResourceEntry[]> {
     return [];
   }
 }
+
+export async function connectToContext(contextName: string): Promise<void> {
+  await invoke<void>('connect_to_context', { contextName });
+}
+
+export async function disconnect(): Promise<void> {
+  await invoke<void>('disconnect');
+}
+
+export async function setNamespace(namespace: string): Promise<void> {
+  await invoke<void>('set_namespace', { namespace });
+}
+
+export async function listNamespaces(): Promise<string[]> {
+  try {
+    return await invoke<string[]>('list_namespaces');
+  } catch {
+    return ['default'];
+  }
+}

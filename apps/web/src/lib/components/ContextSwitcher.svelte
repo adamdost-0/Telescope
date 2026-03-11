@@ -1,11 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { listContexts } from '$lib/api';
+  import { listContexts, connectToContext, listNamespaces, setNamespace } from '$lib/api';
   import type { ClusterContext } from '$lib/tauri-commands';
 
   let contexts: ClusterContext[] = $state([]);
   let selected: string | null = $state(null);
   let loading = $state(true);
+  let connecting = $state(false);
+  let error: string | null = $state(null);
+
+  // Namespace state
+  let namespaces: string[] = $state(['default']);
+  let selectedNamespace = $state('default');
+  let namespacesLoading = $state(false);
 
   onMount(async () => {
     try {
@@ -19,10 +26,35 @@
     }
   });
 
-  function handleChange(e: Event) {
+  async function handleContextChange(e: Event) {
     const target = e.target as HTMLSelectElement;
     selected = target.value;
-    // TODO: In Phase 3, this will call set_context and restart watchers
+    connecting = true;
+    error = null;
+
+    try {
+      await connectToContext(selected);
+      // After connecting, load namespaces
+      namespacesLoading = true;
+      namespaces = await listNamespaces();
+      selectedNamespace = namespaces.includes('default') ? 'default' : namespaces[0] ?? 'default';
+      await setNamespace(selectedNamespace);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Connection failed';
+    } finally {
+      connecting = false;
+      namespacesLoading = false;
+    }
+  }
+
+  async function handleNamespaceChange(e: Event) {
+    const target = e.target as HTMLSelectElement;
+    selectedNamespace = target.value;
+    try {
+      await setNamespace(selectedNamespace);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to switch namespace';
+    }
   }
 </script>
 
@@ -34,7 +66,7 @@
   {:else}
     <label>
       <span class="label-text">Context:</span>
-      <select value={selected} onchange={handleChange}>
+      <select value={selected} onchange={handleContextChange} disabled={connecting}>
         {#each contexts as ctx (ctx.name)}
           <option value={ctx.name}>
             {ctx.name}
@@ -43,13 +75,33 @@
         {/each}
       </select>
     </label>
-    {#if selected}
+
+    {#if connecting}
+      <span class="connecting">Connecting…</span>
+    {/if}
+
+    {#if !connecting && namespaces.length > 1}
+      <label>
+        <span class="label-text">Namespace:</span>
+        <select value={selectedNamespace} onchange={handleNamespaceChange} disabled={namespacesLoading}>
+          {#each namespaces as ns (ns)}
+            <option value={ns}>{ns}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+
+    {#if selected && !connecting}
       {@const ctx = contexts.find(c => c.name === selected)}
       {#if ctx?.cluster_server}
         <span class="server" title={ctx.cluster_server}>
           {ctx.cluster_server}
         </span>
       {/if}
+    {/if}
+
+    {#if error}
+      <span class="error" title={error}>⚠ {error}</span>
     {/if}
   {/if}
 </div>
@@ -78,8 +130,25 @@
     border-radius: 4px;
     max-width: 250px;
   }
+  select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .server {
     color: #757575;
+    font-size: 0.75rem;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .connecting {
+    color: #42a5f5;
+    font-size: 0.75rem;
+    animation: pulse 1.5s infinite;
+  }
+  .error {
+    color: #ef5350;
     font-size: 0.75rem;
     max-width: 200px;
     overflow: hidden;
@@ -89,5 +158,9 @@
   .loading, .empty {
     color: #757575;
     font-style: italic;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
 </style>

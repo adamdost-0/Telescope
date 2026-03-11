@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crashloop-test
+  namespace: default
+  labels:
+    app: crashloop-test
+    purpose: telescope-testing
+spec:
+  containers:
+    - name: crasher
+      image: busybox
+      command: ["sh", "-c", "echo 'About to crash'; exit 1"]
+      resources:
+        requests:
+          memory: "8Mi"
+          cpu: "5m"
+  restartPolicy: Always

@@ -1,15 +1,30 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { getPods } from '$lib/api';
+  import { onMount, onDestroy } from 'svelte';
+  import { getPods, getConnectionState } from '$lib/api';
   import PodTable from '$lib/components/PodTable.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
+  import type { ConnectionState } from '$lib/tauri-commands';
 
   let pods: ResourceEntry[] = $state([]);
   let loading = $state(true);
   let error: string | null = $state(null);
   let namespace = $state('default');
+  let connected = $state(false);
+  let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function checkConnection(): Promise<boolean> {
+    const state: ConnectionState = await getConnectionState();
+    return state.state === 'Ready';
+  }
 
   async function loadPods() {
+    connected = await checkConnection();
+    if (!connected) {
+      loading = false;
+      pods = [];
+      return;
+    }
+
     loading = true;
     error = null;
     try {
@@ -22,7 +37,15 @@
     }
   }
 
-  onMount(loadPods);
+  onMount(() => {
+    loadPods();
+    // Auto-refresh every 3 seconds
+    refreshTimer = setInterval(loadPods, 3000);
+  });
+
+  onDestroy(() => {
+    if (refreshTimer) clearInterval(refreshTimer);
+  });
 
   function handleNamespaceChange(e: Event) {
     const target = e.target as HTMLInputElement;
@@ -43,7 +66,12 @@
     </div>
   </header>
 
-  {#if loading}
+  {#if !connected && !loading}
+    <div class="not-connected">
+      <p>🔌 Not connected to a cluster</p>
+      <p class="hint">Select a context from the header to connect.</p>
+    </div>
+  {:else if loading}
     <p role="status">Loading pods…</p>
   {:else if error}
     <p role="alert" class="error">Error: {error}</p>
@@ -98,4 +126,17 @@
     font-size: 0.875rem;
   }
   .error { color: #ef5350; }
+  .not-connected {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #757575;
+  }
+  .not-connected p {
+    margin: 0.25rem 0;
+    font-size: 1.125rem;
+  }
+  .not-connected .hint {
+    font-size: 0.875rem;
+    color: #616161;
+  }
 </style>

@@ -6,7 +6,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       // @tauri-apps/api is only available at runtime in the desktop app
-      external: ['@tauri-apps/api/core']
+      external: ['@tauri-apps/api/core', '@tauri-apps/api/event']
     }
   },
   test: {

@@ -1,25 +1,42 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getConnectionState } from '$lib/api';
+  import { isTauri } from '$lib/tauri-commands';
   import type { ConnectionState } from '$lib/tauri-commands';
 
   let connState: ConnectionState = $state({ state: 'Disconnected' });
-  let pollTimer: ReturnType<typeof setInterval> | null = $state(null);
+  let cleanup: (() => void) | null = $state(null);
 
-  onMount(() => {
-    refresh();
-    // Poll every 2 seconds for state changes
-    // TODO: Replace with Tauri event listener for push updates
-    pollTimer = setInterval(refresh, 2000);
+  onMount(async () => {
+    // Get initial state
+    connState = await getConnectionState();
+
+    if (isTauri()) {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen<ConnectionState>('connection-state-changed', (event) => {
+          connState = event.payload;
+        });
+        cleanup = unlisten;
+      } catch {
+        // Fallback to polling if event listener fails
+        startPolling();
+      }
+    } else {
+      startPolling();
+    }
   });
+
+  function startPolling() {
+    const timer = setInterval(async () => {
+      connState = await getConnectionState();
+    }, 2000);
+    cleanup = () => clearInterval(timer);
+  }
 
   onDestroy(() => {
-    if (pollTimer) clearInterval(pollTimer);
+    cleanup?.();
   });
-
-  async function refresh() {
-    connState = await getConnectionState();
-  }
 
   let label = $derived(getLabel(connState));
   let statusClass = $derived(getStatusClass(connState));
