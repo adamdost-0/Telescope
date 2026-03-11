@@ -102,6 +102,36 @@ fn get_events(
     }
 }
 
+/// Return counts for all major resource types.
+#[tauri::command]
+fn get_resource_counts(state: State<'_, AppState>) -> Result<Vec<(String, u64)>, String> {
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
+    let gvks = vec![
+        "v1/Pod",
+        "apps/v1/Deployment",
+        "apps/v1/StatefulSet",
+        "apps/v1/DaemonSet",
+        "batch/v1/Job",
+        "batch/v1/CronJob",
+        "v1/Service",
+        "v1/ConfigMap",
+        "v1/Secret",
+        "v1/Event",
+        "v1/Node",
+    ];
+    let counts: Vec<(String, u64)> = gvks
+        .iter()
+        .map(|gvk| {
+            let count = store.count(gvk, None).unwrap_or(0);
+            (gvk.to_string(), count)
+        })
+        .collect();
+    Ok(counts)
+}
+
 /// Count resources by GVK and optional namespace.
 #[tauri::command]
 fn count_resources(
@@ -542,6 +572,7 @@ fn main() {
             get_connection_state,
             get_pods,
             get_events,
+            get_resource_counts,
             count_resources,
             get_resource,
             list_namespaces,

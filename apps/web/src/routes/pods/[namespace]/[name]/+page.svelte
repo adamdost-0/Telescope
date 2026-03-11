@@ -1,10 +1,12 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import { getPods, getEvents } from '$lib/api';
+  import { getPods, getEvents, deleteResource } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import LogViewer from '$lib/components/LogViewer.svelte';
   import EventsTable from '$lib/components/EventsTable.svelte';
+  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   let namespace = $derived(page.params.namespace);
@@ -15,6 +17,12 @@
   let loading = $state(true);
   let activeTab = $state('summary');
   let error: string | null = $state(null);
+  let showDeleteDialog = $state(false);
+  let deleting = $state(false);
+  let deleteError: string | null = $state(null);
+
+  const PROTECTED_NAMESPACES = ['kube-system', 'kube-public', 'kube-node-lease'];
+  let requireTypeName = $derived(PROTECTED_NAMESPACES.includes(namespace));
 
   const tabs = [
     { id: 'summary', label: 'Summary' },
@@ -42,6 +50,20 @@
     }
   }
 
+  async function handleDelete() {
+    deleting = true;
+    deleteError = null;
+    try {
+      await deleteResource('v1/Pod', namespace, podName);
+      showDeleteDialog = false;
+      goto('/pods');
+    } catch (e) {
+      deleteError = e instanceof Error ? e.message : String(e);
+    } finally {
+      deleting = false;
+    }
+  }
+
   onMount(loadPod);
 </script>
 
@@ -50,6 +72,9 @@
     <a href="/pods" class="back">← Pods</a>
     <h1>{podName}</h1>
     <span class="namespace-badge">{namespace}</span>
+    {#if pod}
+      <button class="danger-btn" onclick={() => showDeleteDialog = true}>🗑 Delete</button>
+    {/if}
   </header>
 
   {#if loading}
@@ -124,6 +149,21 @@
       <pre class="yaml-view"><code>{JSON.stringify(pod, null, 2)}</code></pre>
     {/if}
   {/if}
+
+  <ConfirmDialog
+    open={showDeleteDialog}
+    title="Delete Pod"
+    message={`Are you sure you want to delete pod "${podName}" in namespace "${namespace}"? This action cannot be undone.`}
+    confirmText={deleting ? 'Deleting…' : 'Delete'}
+    confirmValue={podName}
+    requireType={requireTypeName}
+    onconfirm={handleDelete}
+    oncancel={() => { showDeleteDialog = false; deleteError = null; }}
+  />
+
+  {#if deleteError}
+    <p class="error" role="alert">{deleteError}</p>
+  {/if}
 </div>
 
 <style>
@@ -162,6 +202,20 @@
     border-radius: 4px;
     font-size: 0.75rem;
     border: 1px solid #21262d;
+  }
+
+  .danger-btn {
+    margin-left: auto;
+    background: transparent;
+    color: #ef5350;
+    border: 1px solid #ef5350;
+    padding: 0.3rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .danger-btn:hover {
+    background: rgba(239, 83, 80, 0.15);
   }
 
   .error {
