@@ -1,7 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { listContexts, connectToContext } from '$lib/api';
+  import { listContexts, connectToContext, listNamespaces, setNamespace } from '$lib/api';
+  import {
+    selectedContext,
+    selectedNamespace,
+    namespaces,
+    connectionState,
+  } from '$lib/stores';
   import type { ClusterContext } from '$lib/tauri-commands';
 
   let contexts: ClusterContext[] = $state([]);
@@ -22,11 +28,23 @@
   async function handleConnect(contextName: string) {
     connectingTo = contextName;
     error = null;
+    connectionState.set({ state: 'Connecting' });
+
     try {
       await connectToContext(contextName);
+      selectedContext.set(contextName);
+      connectionState.set({ state: 'Ready' });
+
+      const nsList = await listNamespaces();
+      namespaces.set(nsList);
+      const ns = nsList.includes('default') ? 'default' : nsList[0] ?? 'default';
+      selectedNamespace.set(ns);
+      await setNamespace(ns);
+
       goto('/pods');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Connection failed';
+      connectionState.set({ state: 'Error', detail: { message: error } });
       connectingTo = null;
     }
   }

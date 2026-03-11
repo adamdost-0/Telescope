@@ -1,12 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { listContexts, connectToContext } from '$lib/api';
+  import { listContexts, connectToContext, listNamespaces, setNamespace } from '$lib/api';
+  import {
+    selectedContext,
+    selectedNamespace,
+    namespaces,
+    connectionState,
+  } from '$lib/stores';
   import type { ClusterContext } from '$lib/tauri-commands';
 
   let loading = $state(true);
   let error: string | null = $state(null);
   let contexts: ClusterContext[] = $state([]);
+  let connectingTo: string | null = $state(null);
 
   async function loadContexts() {
     loading = true;
@@ -25,11 +32,32 @@
   onMount(loadContexts);
 
   async function selectContext(name: string) {
+    // Don't reconnect if already connected to this context
+    if (name === $selectedContext) {
+      void goto('/pods');
+      return;
+    }
+
+    connectingTo = name;
+    error = null;
+    connectionState.set({ state: 'Connecting' });
+
     try {
       await connectToContext(name);
+      selectedContext.set(name);
+      connectionState.set({ state: 'Ready' });
+
+      const nsList = await listNamespaces();
+      namespaces.set(nsList);
+      const ns = nsList.includes('default') ? 'default' : nsList[0] ?? 'default';
+      selectedNamespace.set(ns);
+      await setNamespace(ns);
+
       void goto('/pods');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to connect';
+      connectionState.set({ state: 'Error', detail: { message: error } });
+      connectingTo = null;
     }
   }
 </script>
@@ -47,13 +75,18 @@
   <ul>
     {#each contexts as ctx (ctx.name)}
       <li>
-        <button type="button" onclick={() => selectContext(ctx.name)}>
+        <button type="button" onclick={() => selectContext(ctx.name)} disabled={connectingTo !== null}>
           <strong>{ctx.name}</strong>
           {#if ctx.cluster_server}
             <span style="color: #888; font-size: 0.85em"> — {ctx.cluster_server}</span>
           {/if}
-          {#if ctx.is_active}
+          {#if ctx.name === $selectedContext}
+            <span style="color: #66bb6a;"> Connected ✓</span>
+          {:else if ctx.is_active}
             <span style="color: #66bb6a;"> ●</span>
+          {/if}
+          {#if connectingTo === ctx.name}
+            <span style="color: #42a5f5;"> connecting…</span>
           {/if}
         </button>
       </li>

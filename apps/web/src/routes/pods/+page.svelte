@@ -1,25 +1,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getPods, getConnectionState } from '$lib/api';
+  import { getPods } from '$lib/api';
+  import { selectedNamespace, isConnected } from '$lib/stores';
   import PodTable from '$lib/components/PodTable.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
-  import type { ConnectionState } from '$lib/tauri-commands';
 
   let pods: ResourceEntry[] = $state([]);
   let loading = $state(true);
   let error: string | null = $state(null);
-  let namespace = $state('default');
-  let connected = $state(false);
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-  async function checkConnection(): Promise<boolean> {
-    const state: ConnectionState = await getConnectionState();
-    return state.state === 'Ready';
-  }
-
   async function loadPods() {
-    connected = await checkConnection();
-    if (!connected) {
+    if (!$isConnected) {
       loading = false;
       pods = [];
       return;
@@ -28,7 +20,7 @@
     loading = true;
     error = null;
     try {
-      pods = await getPods(namespace);
+      pods = await getPods($selectedNamespace);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load pods';
       pods = [];
@@ -37,36 +29,32 @@
     }
   }
 
-  onMount(() => {
+  // React to namespace or connection changes from the header
+  $effect(() => {
+    void $selectedNamespace;
+    void $isConnected;
     loadPods();
-    // Auto-refresh every 3 seconds
+  });
+
+  onMount(() => {
     refreshTimer = setInterval(loadPods, 3000);
   });
 
   onDestroy(() => {
     if (refreshTimer) clearInterval(refreshTimer);
   });
-
-  function handleNamespaceChange(e: Event) {
-    const target = e.target as HTMLInputElement;
-    namespace = target.value;
-    loadPods();
-  }
 </script>
 
 <div class="pods-page">
   <header>
     <h1>Pods</h1>
     <div class="controls">
-      <label>
-        Namespace:
-        <input type="text" value={namespace} onchange={handleNamespaceChange} />
-      </label>
+      <span class="ns-label">Namespace: <strong>{$selectedNamespace}</strong></span>
       <button type="button" onclick={loadPods}>Refresh</button>
     </div>
   </header>
 
-  {#if !connected && !loading}
+  {#if !$isConnected && !loading}
     <div class="not-connected">
       <p>🔌 Not connected to a cluster</p>
       <p class="hint">Select a context from the header to connect.</p>
@@ -103,13 +91,6 @@
     display: flex;
     gap: 0.75rem;
     align-items: center;
-  }
-  input {
-    background: #1a1a2e;
-    border: 1px solid #3a3a5e;
-    color: #e0e0e0;
-    padding: 0.375rem 0.5rem;
-    border-radius: 4px;
   }
   button {
     background: #1a73e8;

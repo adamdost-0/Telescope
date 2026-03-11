@@ -1,36 +1,41 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { listContexts, connectToContext, listNamespaces, setNamespace } from '$lib/api';
+  import {
+    selectedContext,
+    selectedNamespace,
+    namespaces,
+    connectionState,
+  } from '$lib/stores';
   import type { ClusterContext } from '$lib/tauri-commands';
 
   let contexts: ClusterContext[] = $state([]);
-  let selected: string | null = $state(null);
   let loading = $state(true);
   let connecting = $state(false);
   let error: string | null = $state(null);
-
-  // Namespace state
-  let namespaces: string[] = $state(['default']);
-  let selectedNamespace = $state('default');
   let namespacesLoading = $state(false);
 
   onMount(async () => {
     try {
       contexts = await listContexts();
       const active = contexts.find(c => c.is_active);
-      selected = active?.name ?? contexts[0]?.name ?? null;
+      const initial = active?.name ?? contexts[0]?.name ?? null;
 
-      // Auto-connect to the active context on startup
-      if (selected) {
+      if (initial) {
+        selectedContext.set(initial);
         connecting = true;
         try {
-          await connectToContext(selected);
+          await connectToContext(initial);
+          connectionState.set({ state: 'Ready' });
           namespacesLoading = true;
-          namespaces = await listNamespaces();
-          selectedNamespace = namespaces.includes('default') ? 'default' : namespaces[0] ?? 'default';
-          await setNamespace(selectedNamespace);
+          const nsList = await listNamespaces();
+          namespaces.set(nsList);
+          const ns = nsList.includes('default') ? 'default' : nsList[0] ?? 'default';
+          selectedNamespace.set(ns);
+          await setNamespace(ns);
         } catch (err) {
           error = err instanceof Error ? err.message : 'Auto-connect failed';
+          connectionState.set({ state: 'Error', detail: { message: error } });
         } finally {
           connecting = false;
           namespacesLoading = false;
@@ -45,19 +50,24 @@
 
   async function handleContextChange(e: Event) {
     const target = e.target as HTMLSelectElement;
-    selected = target.value;
+    const name = target.value;
+    selectedContext.set(name);
     connecting = true;
     error = null;
+    connectionState.set({ state: 'Connecting' });
 
     try {
-      await connectToContext(selected);
-      // After connecting, load namespaces
+      await connectToContext(name);
+      connectionState.set({ state: 'Ready' });
       namespacesLoading = true;
-      namespaces = await listNamespaces();
-      selectedNamespace = namespaces.includes('default') ? 'default' : namespaces[0] ?? 'default';
-      await setNamespace(selectedNamespace);
+      const nsList = await listNamespaces();
+      namespaces.set(nsList);
+      const ns = nsList.includes('default') ? 'default' : nsList[0] ?? 'default';
+      selectedNamespace.set(ns);
+      await setNamespace(ns);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Connection failed';
+      connectionState.set({ state: 'Error', detail: { message: error } });
     } finally {
       connecting = false;
       namespacesLoading = false;
@@ -66,9 +76,9 @@
 
   async function handleNamespaceChange(e: Event) {
     const target = e.target as HTMLSelectElement;
-    selectedNamespace = target.value;
+    selectedNamespace.set(target.value);
     try {
-      await setNamespace(selectedNamespace);
+      await setNamespace(target.value);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to switch namespace';
     }
@@ -83,7 +93,7 @@
   {:else}
     <label>
       <span class="label-text">Context:</span>
-      <select value={selected} onchange={handleContextChange} disabled={connecting}>
+      <select value={$selectedContext} onchange={handleContextChange} disabled={connecting}>
         {#each contexts as ctx (ctx.name)}
           <option value={ctx.name}>
             {ctx.name}
@@ -97,19 +107,19 @@
       <span class="connecting">Connecting…</span>
     {/if}
 
-    {#if !connecting && namespaces.length > 1}
+    {#if !connecting && $namespaces.length > 1}
       <label>
         <span class="label-text">Namespace:</span>
-        <select value={selectedNamespace} onchange={handleNamespaceChange} disabled={namespacesLoading}>
-          {#each namespaces as ns (ns)}
+        <select value={$selectedNamespace} onchange={handleNamespaceChange} disabled={namespacesLoading}>
+          {#each $namespaces as ns (ns)}
             <option value={ns}>{ns}</option>
           {/each}
         </select>
       </label>
     {/if}
 
-    {#if selected && !connecting}
-      {@const ctx = contexts.find(c => c.name === selected)}
+    {#if $selectedContext && !connecting}
+      {@const ctx = contexts.find(c => c.name === $selectedContext)}
       {#if ctx?.cluster_server}
         <span class="server" title={ctx.cluster_server}>
           {ctx.cluster_server}
