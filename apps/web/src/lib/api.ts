@@ -46,6 +46,7 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
     }
     case 'get_connection_state':
       return { state: 'Disconnected' } as unknown as T;
+    case 'get_resource_counts':
     case 'get_pods':
     case 'get_resources':
     case 'get_events':

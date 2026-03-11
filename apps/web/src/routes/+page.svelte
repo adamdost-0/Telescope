@@ -41,7 +41,7 @@
       selectedNamespace.set(ns);
       await setNamespace(ns);
 
-      goto('/pods');
+      goto('/overview');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Connection failed';
       connectionState.set({ state: 'Error', detail: { message: error } });

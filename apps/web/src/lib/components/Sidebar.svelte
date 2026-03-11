@@ -19,7 +19,7 @@
     {
       title: 'Cluster',
       items: [
-        { label: 'Overview', href: '/', icon: '🏠' },
+        { label: 'Overview', href: '/overview', icon: '📊' },
         { label: 'Nodes', href: '/nodes', icon: '🖥️' },
         { label: 'Events', href: '/events', icon: '⚡' },
       ]
@@ -58,7 +58,7 @@
   ];
 
   function isActive(href: string): boolean {
-    if (href === '/') return page.url.pathname === '/';
+    if (href === '/overview') return page.url.pathname === '/overview';
     return page.url.pathname.startsWith(href);
   }
 </script>
@@ -76,7 +76,7 @@
           <ul>
             {#each section.items as item}
               <li>
-                <a href={item.href} class:active={isActive(item.href)} class:disabled={!$isConnected && item.href !== '/'}>
+                <a href={item.href} class:active={isActive(item.href)} class:disabled={!$isConnected && item.href !== '/' && item.href !== '/overview'}>
                   <span class="icon">{item.icon}</span>
                   <span class="label">{item.label}</span>
                 </a>
