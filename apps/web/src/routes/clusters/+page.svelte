@@ -1,37 +1,36 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import type { Cluster } from '$lib/engine';
+  import { listContexts, connectToContext } from '$lib/api';
+  import type { ClusterContext } from '$lib/tauri-commands';
 
   let loading = $state(true);
   let error: string | null = $state(null);
-  let clusters: Cluster[] = $state([]);
+  let contexts: ClusterContext[] = $state([]);
 
-  async function loadClusters() {
+  async function loadContexts() {
     loading = true;
     error = null;
 
     try {
-      const res = await fetch('/api/clusters', {
-        headers: { accept: 'application/json' }
-      });
-
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
-
-      const data = (await res.json()) as { clusters?: Cluster[] };
-      clusters = data.clusters ?? [];
+      contexts = await listContexts();
     } catch (e) {
       error = e instanceof Error ? e.message : 'Unknown error';
-      clusters = [];
+      contexts = [];
     } finally {
       loading = false;
     }
   }
 
-  onMount(loadClusters);
+  onMount(loadContexts);
 
-  function selectCluster(id: string) {
-    void goto(`/explore?cluster=${encodeURIComponent(id)}`);
+  async function selectContext(name: string) {
+    try {
+      await connectToContext(name);
+      void goto('/pods');
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Failed to connect';
+    }
   }
 </script>
 
@@ -41,15 +40,21 @@
   <p role="status">Loading clusters…</p>
 {:else if error}
   <p role="alert">Failed to load clusters: {error}</p>
-  <button type="button" onclick={loadClusters}>Retry</button>
-{:else if clusters.length === 0}
-  <p>No clusters found.</p>
+  <button type="button" onclick={loadContexts}>Retry</button>
+{:else if contexts.length === 0}
+  <p>No clusters found. Check your kubeconfig at <code>~/.kube/config</code></p>
 {:else}
   <ul>
-    {#each clusters as c (c.id)}
+    {#each contexts as ctx (ctx.name)}
       <li>
-        <button type="button" onclick={() => selectCluster(c.id)}>
-          {c.name} ({c.id})
+        <button type="button" onclick={() => selectContext(ctx.name)}>
+          <strong>{ctx.name}</strong>
+          {#if ctx.cluster_server}
+            <span style="color: #888; font-size: 0.85em"> — {ctx.cluster_server}</span>
+          {/if}
+          {#if ctx.is_active}
+            <span style="color: #66bb6a;"> ●</span>
+          {/if}
         </button>
       </li>
     {/each}

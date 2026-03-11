@@ -1,7 +1,3 @@
-import type { PageLoad } from './$types';
-import { listClusters } from '$lib/engine';
+// Client-side rendering only — no server load function needed.
+// Data is fetched client-side via Tauri IPC (see +page.svelte).
 
-export const load: PageLoad = async ({ fetch }) => {
-  const clusters = await listClusters(fetch);
-  return { clusters };
-};
