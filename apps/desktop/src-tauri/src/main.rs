@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use futures::{AsyncBufReadExt, TryStreamExt};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
@@ -34,7 +35,10 @@ struct AppState {
 fn list_contexts() -> Result<Vec<ClusterContext>, String> {
     eprintln!("[telescope] list_contexts called");
     let result = telescope_engine::kubeconfig::list_contexts().map_err(|e| e.to_string());
-    eprintln!("[telescope] list_contexts result: {:?}", result.as_ref().map(|v| v.len()));
+    eprintln!(
+        "[telescope] list_contexts result: {:?}",
+        result.as_ref().map(|v| v.len())
+    );
     result
 }
 
@@ -70,6 +74,32 @@ fn get_pods(
     store
         .list("v1/Pod", namespace.as_deref())
         .map_err(|e| e.to_string())
+}
+
+/// List events, optionally filtered by involved object name.
+#[tauri::command]
+fn get_events(
+    state: State<'_, AppState>,
+    namespace: Option<String>,
+    involved_object: Option<String>,
+) -> Result<Vec<ResourceEntry>, String> {
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| format!("Store lock failed: {}", e))?;
+    let events = store
+        .list("v1/Event", namespace.as_deref())
+        .map_err(|e| e.to_string())?;
+
+    if let Some(obj_name) = involved_object {
+        let needle = format!("\"name\":\"{}\"", obj_name);
+        Ok(events
+            .into_iter()
+            .filter(|entry| entry.content.contains(&needle))
+            .collect())
+    } else {
+        Ok(events)
+    }
 }
 
 /// Count resources by GVK and optional namespace.
@@ -144,6 +174,7 @@ async fn connect_to_context(
             .lock()
             .map_err(|e| format!("Store lock failed: {}", e))?;
         let _ = store.delete_all_by_gvk("v1/Pod");
+        let _ = store.delete_all_by_gvk("v1/Event");
     }
 
     // Update connection state to Connecting.
@@ -189,6 +220,7 @@ async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
             .lock()
             .map_err(|e| format!("Store lock failed: {}", e))?;
         let _ = store.delete_all_by_gvk("v1/Pod");
+        let _ = store.delete_all_by_gvk("v1/Event");
     }
 
     // Reset state.
@@ -221,13 +253,14 @@ async fn set_namespace(
     if let Some(ctx) = context_name {
         abort_watch(&state).await;
 
-        // Clear old pod data.
+        // Clear old pod and event data.
         {
             let store = state
                 .store
                 .lock()
                 .map_err(|e| format!("Store lock failed: {}", e))?;
             let _ = store.delete_all_by_gvk("v1/Pod");
+            let _ = store.delete_all_by_gvk("v1/Event");
         }
 
         set_connection_state(&app, &state.connection_state, ConnectionState::Connecting).await;
@@ -246,6 +279,100 @@ async fn set_namespace(
 #[tauri::command]
 async fn get_namespace(state: State<'_, AppState>) -> Result<String, String> {
     Ok(state.active_namespace.read().await.clone())
+}
+
+// ---------------------------------------------------------------------------
+// Log commands
+// ---------------------------------------------------------------------------
+
+/// Fetch pod logs (non-streaming snapshot).
+#[tauri::command]
+async fn get_pod_logs(
+    namespace: String,
+    pod: String,
+    container: Option<String>,
+    previous: Option<bool>,
+    tail_lines: Option<i64>,
+) -> Result<String, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let req = telescope_engine::logs::LogRequest {
+        namespace,
+        pod,
+        container,
+        previous: previous.unwrap_or(false),
+        tail_lines: tail_lines.or(Some(1000)),
+        follow: false,
+    };
+
+    telescope_engine::logs::get_pod_logs(&client, &req)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List containers in a pod.
+#[tauri::command]
+async fn list_containers(namespace: String, pod: String) -> Result<Vec<String>, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    telescope_engine::logs::list_containers(&client, &namespace, &pod)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Start streaming logs for a pod. Emits `log-chunk` events to the frontend.
+#[tauri::command]
+async fn start_log_stream(
+    app: AppHandle,
+    namespace: String,
+    pod: String,
+    container: Option<String>,
+    tail_lines: Option<i64>,
+) -> Result<(), String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let req = telescope_engine::logs::LogRequest {
+        namespace,
+        pod: pod.clone(),
+        container,
+        previous: false,
+        tail_lines: tail_lines.or(Some(100)),
+        follow: true,
+    };
+
+    let reader = telescope_engine::logs::stream_pod_logs(&client, &req)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let app_handle = app.clone();
+    let pod_name = pod.clone();
+
+    tokio::spawn(async move {
+        futures::pin_mut!(reader);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.try_next().await {
+            let chunk = telescope_engine::logs::LogChunk {
+                lines: line,
+                is_complete: false,
+            };
+            app_handle.emit("log-chunk", &chunk).ok();
+        }
+        // Signal stream complete
+        let done = telescope_engine::logs::LogChunk {
+            lines: String::new(),
+            is_complete: true,
+        };
+        app_handle.emit("log-chunk", &done).ok();
+        info!("Log stream ended for pod {}", pod_name);
+    });
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -274,7 +401,7 @@ async fn set_connection_state(
     app.emit("connection-state-changed", &new_state).ok();
 }
 
-/// Spawn a background task that watches pods and forwards state changes.
+/// Spawn background tasks that watch pods and events, forwarding state changes.
 async fn spawn_watch_task(
     app: &AppHandle,
     state: &State<'_, AppState>,
@@ -286,7 +413,7 @@ async fn spawn_watch_task(
     let app_handle = app.clone();
     let ns = namespace.to_string();
 
-    let watcher = telescope_engine::ResourceWatcher::new(client, store);
+    let watcher = telescope_engine::ResourceWatcher::new(client, Arc::clone(&store));
     let mut state_rx = watcher.state_receiver();
 
     // Spawn a task to forward state changes from the watcher to the UI.
@@ -303,13 +430,23 @@ async fn spawn_watch_task(
         }
     });
 
-    // Spawn the main watch task.
+    // Spawn the events watcher (secondary — no state machine transitions).
+    let events_watcher = watcher.clone();
+    let ns_events = ns.clone();
+    let events_task = tokio::spawn(async move {
+        if let Err(e) = events_watcher.watch_events(&ns_events).await {
+            error!("Events watch error: {}", e);
+        }
+    });
+
+    // Spawn the main watch task (pods + state machine).
     let task = tokio::spawn(async move {
         if let Err(e) = watcher.watch_pods(&ns).await {
             error!("Watch error: {}", e);
         }
-        // When the watch ends, abort the state forwarder.
+        // When the pod watch ends, abort the state forwarder and events watcher.
         state_forwarder.abort();
+        events_task.abort();
     });
 
     let mut handle = state.watch_handle.lock().await;
@@ -337,6 +474,7 @@ fn main() {
 
     // Clear stale data from previous runs.
     let _ = store.delete_all_by_gvk("v1/Pod");
+    let _ = store.delete_all_by_gvk("v1/Event");
 
     let app_state = AppState {
         db_path: db_path_str,
@@ -354,6 +492,7 @@ fn main() {
             active_context,
             get_connection_state,
             get_pods,
+            get_events,
             count_resources,
             get_resource,
             list_namespaces,
@@ -361,6 +500,9 @@ fn main() {
             disconnect,
             set_namespace,
             get_namespace,
+            get_pod_logs,
+            list_containers,
+            start_log_stream,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");

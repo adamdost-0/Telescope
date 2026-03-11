@@ -47,6 +47,7 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
     case 'get_connection_state':
       return { state: 'Disconnected' } as unknown as T;
     case 'get_pods':
+    case 'get_resources':
       return [] as unknown as T;
     case 'list_namespaces':
       return ['default'] as unknown as T;
@@ -86,6 +87,15 @@ export async function getConnectionState(): Promise<ConnectionState> {
 export async function getPods(namespace?: string): Promise<ResourceEntry[]> {
   try {
     return await invoke<ResourceEntry[]>('get_pods', { namespace: namespace ?? null });
+  } catch {
+    return [];
+  }
+}
+
+/** Fetch resources of any GVK from the SQLite store. */
+export async function getResources(gvk: string, namespace?: string): Promise<ResourceEntry[]> {
+  try {
+    return await invoke<ResourceEntry[]>('get_resources', { gvk, namespace: namespace ?? null });
   } catch {
     return [];
   }
