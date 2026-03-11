@@ -63,6 +63,8 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
       return 'Rollout restart initiated (stub)' as unknown as T;
     case 'rollout_status':
       return { desired: 1, ready: 1, updated: 1, available: 1, is_complete: true, message: 'Rollout complete' } as unknown as T;
+    case 'exec_command':
+      return { stdout: 'Exec not available in web mode', stderr: '', success: false } as unknown as T;
     default:
       throw new Error(`Command "${command}" not available in web mode`);
   }
@@ -221,5 +223,27 @@ export async function startLogStream(
     pod,
     container: container ?? null,
     tailLines: tailLines ?? 0,
+  });
+}
+
+/** Result of a non-interactive exec command. */
+export interface ExecResult {
+  stdout: string;
+  stderr: string;
+  success: boolean;
+}
+
+/** Execute a command in a running container (non-interactive). */
+export async function execCommand(
+  namespace: string,
+  pod: string,
+  container: string | undefined,
+  command: string[],
+): Promise<ExecResult> {
+  return invoke<ExecResult>('exec_command', {
+    namespace,
+    pod,
+    container: container ?? null,
+    command,
   });
 }

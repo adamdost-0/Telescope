@@ -140,7 +140,9 @@ pub async fn rollout_restart(
         let d = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default();
+        format!("{}Z", d.as_secs())
     };
+    let patch = serde_json::json!({
         "spec": {
             "template": {
                 "metadata": {
@@ -151,8 +153,13 @@ pub async fn rollout_restart(
             }
         }
     });
-    api.patch(name, &PatchParams::apply("telescope"), &Patch::Merge(&patch))
-        .await?;
+    api.patch(
+        name,
+        &PatchParams::apply("telescope"),
+        &Patch::Merge(&patch),
+    )
+    .await?;
+    Ok(format!("Rollout restart initiated for {}", name))
 }
 
 /// Get rollout status for a Deployment.
@@ -187,6 +194,10 @@ pub async fn rollout_status(
         message: if is_complete {
             "Rollout complete".into()
         } else {
+            format!(
+                "Waiting: {}/{} ready, {}/{} updated, {}/{} available",
+                ready, spec_replicas, updated, spec_replicas, available, spec_replicas
+            )
         },
     })
 }

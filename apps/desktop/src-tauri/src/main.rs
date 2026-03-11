@@ -557,6 +557,32 @@ async fn rollout_status(
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Container exec
+// ---------------------------------------------------------------------------
+
+/// Execute a command in a running container (non-interactive).
+#[tauri::command]
+async fn exec_command(
+    namespace: String,
+    pod: String,
+    container: Option<String>,
+    command: Vec<String>,
+) -> Result<telescope_engine::exec::ExecResult, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    let req = telescope_engine::exec::ExecRequest {
+        namespace,
+        pod,
+        container,
+        command,
+    };
+    telescope_engine::exec::exec_command(&client, &req)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -612,6 +638,7 @@ fn main() {
             delete_resource,
             rollout_restart,
             rollout_status,
+            exec_command,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");

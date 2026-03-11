@@ -2,10 +2,11 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import { getPods, getEvents, deleteResource } from '$lib/api';
+  import { getPods, getEvents, deleteResource, listContainers } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import LogViewer from '$lib/components/LogViewer.svelte';
   import EventsTable from '$lib/components/EventsTable.svelte';
+  import ExecTerminal from '$lib/components/ExecTerminal.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -20,6 +21,7 @@
   let showDeleteDialog = $state(false);
   let deleting = $state(false);
   let deleteError: string | null = $state(null);
+  let containerNames: string[] = $state([]);
 
   const PROTECTED_NAMESPACES = ['kube-system', 'kube-public', 'kube-node-lease'];
   let requireTypeName = $derived(PROTECTED_NAMESPACES.includes(namespace));
@@ -27,6 +29,7 @@
   const tabs = [
     { id: 'summary', label: 'Summary' },
     { id: 'logs', label: 'Logs' },
+    { id: 'exec', label: 'Exec' },
     { id: 'events', label: 'Events' },
     { id: 'yaml', label: 'YAML' },
   ];
@@ -43,6 +46,7 @@
         error = `Pod "${podName}" not found in namespace "${namespace}"`;
       }
       events = await getEvents(namespace, podName);
+      containerNames = await listContainers(namespace, podName);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load pod';
     } finally {
@@ -141,6 +145,9 @@
 
     {:else if activeTab === 'logs'}
       <LogViewer {namespace} pod={podName} />
+
+    {:else if activeTab === 'exec'}
+      <ExecTerminal {namespace} pod={podName} containers={containerNames} />
 
     {:else if activeTab === 'events'}
       <EventsTable events={events} showObject={false} />
