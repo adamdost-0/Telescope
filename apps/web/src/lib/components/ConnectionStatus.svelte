@@ -86,7 +86,7 @@
   }
 </script>
 
-<div class="connection-status {statusClass}" title={tooltip}>
+<div class="connection-status {statusClass}" title={tooltip} role="status" aria-live="polite">
   <span class="dot"></span>
   <span class="label">{label}</span>
 </div>

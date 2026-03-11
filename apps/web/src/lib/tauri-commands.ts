@@ -34,6 +34,11 @@ export type ConnectionState =
       detail: { attempt: number; wait: { secs: number; nanos: number } };
     };
 
+export interface LogChunk {
+  lines: string;
+  is_complete: boolean;
+}
+
 /**
  * Check if running inside Tauri (desktop) or browser (web).
  */

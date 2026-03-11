@@ -8,6 +8,7 @@ license.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+futures = "0.3"
 kube = { version = "3.0.1", features = ["client"] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }

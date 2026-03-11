@@ -3,6 +3,8 @@
   import { onMount } from 'svelte';
   import { getPods, getEvents } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
+  import LogViewer from '$lib/components/LogViewer.svelte';
+  import EventsTable from '$lib/components/EventsTable.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   let namespace = $derived(page.params.namespace);
@@ -113,41 +115,10 @@
       </div>
 
     {:else if activeTab === 'logs'}
-      <div class="tab-placeholder">
-        <p>📋 Log viewer loading here…</p>
-        <p class="muted">The log viewer component is being wired in.</p>
-      </div>
+      <LogViewer {namespace} pod={podName} />
 
     {:else if activeTab === 'events'}
-      <div class="events-list">
-        {#if events.length === 0}
-          <p class="muted">No events found for this pod.</p>
-        {:else}
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Type</th>
-                <th scope="col">Reason</th>
-                <th scope="col">Message</th>
-                <th scope="col">Count</th>
-                <th scope="col">Last Seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each events as evt}
-                {@const e = JSON.parse(evt.content)}
-                <tr class={e.type === 'Warning' ? 'warning-row' : ''}>
-                  <td class={e.type === 'Warning' ? 'warning' : 'normal'}>{e.type ?? 'Normal'}</td>
-                  <td>{e.reason ?? ''}</td>
-                  <td class="message">{e.message ?? ''}</td>
-                  <td>{e.count ?? 1}</td>
-                  <td>{e.lastTimestamp ? new Date(e.lastTimestamp).toLocaleTimeString() : ''}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-      </div>
+      <EventsTable events={events} showObject={false} />
 
     {:else if activeTab === 'yaml'}
       <pre class="yaml-view"><code>{JSON.stringify(pod, null, 2)}</code></pre>
@@ -289,15 +260,6 @@
 
   .status-ok { color: #66bb6a; }
   .status-bad { color: #ef5350; }
-  .warning { color: #ffa726; font-weight: 600; }
-  .normal { color: #66bb6a; }
-  .warning-row { background: rgba(255, 167, 38, 0.05); }
-  .message {
-    max-width: 400px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 
   /* YAML tab */
   .yaml-view {
@@ -310,15 +272,5 @@
     font-size: 0.8rem;
     line-height: 1.5;
     color: #c9d1d9;
-  }
-
-  /* Logs placeholder */
-  .tab-placeholder {
-    padding: 2rem;
-    text-align: center;
-    color: #8b949e;
-    background: #161b22;
-    border: 1px dashed #21262d;
-    border-radius: 6px;
   }
 </style>

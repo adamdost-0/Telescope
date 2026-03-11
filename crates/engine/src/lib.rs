@@ -3,6 +3,7 @@
 pub mod client;
 pub mod error;
 pub mod kubeconfig;
+pub mod logs;
 pub mod namespace;
 pub mod watcher;
 

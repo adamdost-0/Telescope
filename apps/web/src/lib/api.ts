@@ -133,3 +133,48 @@ export async function listNamespaces(): Promise<string[]> {
     return ['default'];
   }
 }
+
+/** Fetch log output for a pod container. */
+export async function getPodLogs(
+  namespace: string,
+  pod: string,
+  container?: string,
+  previous?: boolean,
+  tailLines?: number,
+): Promise<string> {
+  try {
+    return await invoke<string>('get_pod_logs', {
+      namespace,
+      pod,
+      container: container ?? null,
+      previous: previous ?? false,
+      tailLines: tailLines ?? 500,
+    });
+  } catch {
+    return '';
+  }
+}
+
+/** List container names for a pod (init containers prefixed with "init:"). */
+export async function listContainers(namespace: string, pod: string): Promise<string[]> {
+  try {
+    return await invoke<string[]>('list_containers', { namespace, pod });
+  } catch {
+    return [];
+  }
+}
+
+/** Start a streaming log tail. In Tauri, emits 'log-chunk' events. */
+export async function startLogStream(
+  namespace: string,
+  pod: string,
+  container?: string,
+  tailLines?: number,
+): Promise<void> {
+  await invoke<void>('start_log_stream', {
+    namespace,
+    pod,
+    container: container ?? null,
+    tailLines: tailLines ?? 0,
+  });
+}

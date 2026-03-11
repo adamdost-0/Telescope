@@ -35,7 +35,7 @@
           await setNamespace(ns);
         } catch (err) {
           error = err instanceof Error ? err.message : 'Auto-connect failed';
-          connectionState.set({ state: 'Error', detail: { message: error } });
+          connectionState.set({ state: 'Error', detail: { message: error ?? 'Auto-connect failed' } });
         } finally {
           connecting = false;
           namespacesLoading = false;
@@ -66,8 +66,8 @@
       selectedNamespace.set(ns);
       await setNamespace(ns);
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Connection failed';
-      connectionState.set({ state: 'Error', detail: { message: error } });
+      error = err instanceof Error ? err.message : 'Connection failed. Verify the cluster is reachable and kubeconfig is valid.';
+      connectionState.set({ state: 'Error', detail: { message: error ?? 'Connection failed' } });
     } finally {
       connecting = false;
       namespacesLoading = false;
@@ -91,31 +91,43 @@
   {:else if contexts.length === 0}
     <span class="empty">No contexts found</span>
   {:else}
-    <label>
+    <label for="context-select">
       <span class="label-text">Context:</span>
-      <select value={$selectedContext} onchange={handleContextChange} disabled={connecting}>
-        {#each contexts as ctx (ctx.name)}
-          <option value={ctx.name}>
-            {ctx.name}
-            {#if ctx.namespace}({ctx.namespace}){/if}
-          </option>
-        {/each}
-      </select>
     </label>
+    <select
+      id="context-select"
+      value={$selectedContext}
+      onchange={handleContextChange}
+      disabled={connecting}
+      aria-busy={connecting}
+    >
+      {#each contexts as ctx (ctx.name)}
+        <option value={ctx.name}>
+          {ctx.name}
+          {#if ctx.namespace}({ctx.namespace}){/if}
+        </option>
+      {/each}
+    </select>
 
     {#if connecting}
       <span class="connecting">Connecting…</span>
     {/if}
 
     {#if !connecting && $namespaces.length > 1}
-      <label>
+      <label for="namespace-select">
         <span class="label-text">Namespace:</span>
-        <select value={$selectedNamespace} onchange={handleNamespaceChange} disabled={namespacesLoading}>
-          {#each $namespaces as ns (ns)}
-            <option value={ns}>{ns}</option>
-          {/each}
-        </select>
       </label>
+      <select
+        id="namespace-select"
+        value={$selectedNamespace}
+        onchange={handleNamespaceChange}
+        disabled={namespacesLoading}
+        aria-busy={namespacesLoading}
+      >
+        {#each $namespaces as ns (ns)}
+          <option value={ns}>{ns}</option>
+        {/each}
+      </select>
     {/if}
 
     {#if $selectedContext && !connecting}
@@ -128,7 +140,7 @@
     {/if}
 
     {#if error}
-      <span class="error" title={error}>⚠ {error}</span>
+      <span class="error" role="alert" aria-live="polite" title={error}>⚠ {error}</span>
     {/if}
   {/if}
 </div>
