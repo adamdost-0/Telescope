@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { listContexts } from '$lib/api';
+  import { goto } from '$app/navigation';
+  import { listContexts, connectToContext } from '$lib/api';
   import type { ClusterContext } from '$lib/tauri-commands';
 
   let contexts: ClusterContext[] = $state([]);
   let loading = $state(true);
   let error: string | null = $state(null);
+  let connectingTo: string | null = $state(null);
 
   onMount(async () => {
     try {
@@ -16,6 +18,18 @@
       loading = false;
     }
   });
+
+  async function handleConnect(contextName: string) {
+    connectingTo = contextName;
+    error = null;
+    try {
+      await connectToContext(contextName);
+      goto('/pods');
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Connection failed';
+      connectingTo = null;
+    }
+  }
 </script>
 
 <h1>Telescope</h1>
@@ -37,7 +51,7 @@
     <ul>
       {#each contexts as ctx (ctx.name)}
         <li data-testid="cluster-item">
-          <a href="/pods">
+          <button type="button" onclick={() => handleConnect(ctx.name)} disabled={connectingTo !== null}>
             <strong>{ctx.name}</strong>
             {#if ctx.cluster_server}
               <span style="color: #888; font-size: 0.85em"> — {ctx.cluster_server}</span>
@@ -45,9 +59,30 @@
             {#if ctx.is_active}
               <span style="color: #66bb6a;"> ●</span>
             {/if}
-          </a>
+            {#if connectingTo === ctx.name}
+              <span style="color: #42a5f5;"> connecting…</span>
+            {/if}
+          </button>
         </li>
       {/each}
     </ul>
   {/if}
 </section>
+
+<style>
+  button {
+    background: none;
+    border: 1px solid #2a2a3e;
+    color: inherit;
+    padding: 0.75rem 1rem;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: inherit;
+  }
+  button:hover { background: #16213e; border-color: #3a3a5e; }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  ul { list-style: none; padding: 0; }
+  li { margin-bottom: 0.5rem; }
+</style>

@@ -19,6 +19,23 @@
       contexts = await listContexts();
       const active = contexts.find(c => c.is_active);
       selected = active?.name ?? contexts[0]?.name ?? null;
+
+      // Auto-connect to the active context on startup
+      if (selected) {
+        connecting = true;
+        try {
+          await connectToContext(selected);
+          namespacesLoading = true;
+          namespaces = await listNamespaces();
+          selectedNamespace = namespaces.includes('default') ? 'default' : namespaces[0] ?? 'default';
+          await setNamespace(selectedNamespace);
+        } catch (err) {
+          error = err instanceof Error ? err.message : 'Auto-connect failed';
+        } finally {
+          connecting = false;
+          namespacesLoading = false;
+        }
+      }
     } catch {
       contexts = [];
     } finally {
