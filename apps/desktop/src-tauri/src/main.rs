@@ -32,7 +32,10 @@ struct AppState {
 /// List available Kubernetes contexts from kubeconfig.
 #[tauri::command]
 fn list_contexts() -> Result<Vec<ClusterContext>, String> {
-    telescope_engine::kubeconfig::list_contexts().map_err(|e| e.to_string())
+    eprintln!("[telescope] list_contexts called");
+    let result = telescope_engine::kubeconfig::list_contexts().map_err(|e| e.to_string());
+    eprintln!("[telescope] list_contexts result: {:?}", result.as_ref().map(|v| v.len()));
+    result
 }
 
 /// Get the currently active kubeconfig context.
@@ -128,6 +131,7 @@ async fn connect_to_context(
     state: State<'_, AppState>,
     context_name: String,
 ) -> Result<(), String> {
+    eprintln!("[telescope] connect_to_context called: {}", context_name);
     info!("Connecting to context: {}", context_name);
 
     // Abort any existing watch task.
@@ -318,12 +322,14 @@ async fn spawn_watch_task(
 
 fn main() {
     tracing_subscriber::fmt::init();
+    eprintln!("[telescope] Starting Telescope desktop app");
 
     let data_dir = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .map(|h| std::path::PathBuf::from(h).join(".telescope"))
         .unwrap_or_else(|_| std::env::temp_dir().join("telescope"));
     let db_path = data_dir.join("resources.db");
+    eprintln!("[telescope] DB path: {:?}", db_path);
     std::fs::create_dir_all(db_path.parent().unwrap()).expect("Failed to create data directory");
 
     let db_path_str = db_path.to_string_lossy().to_string();
@@ -356,6 +362,10 @@ fn main() {
             set_namespace,
             get_namespace,
         ])
+        .setup(|_app| {
+            eprintln!("[telescope] Tauri setup complete, window should be loading frontend");
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

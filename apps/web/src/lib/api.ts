@@ -11,12 +11,21 @@ import {
 } from './tauri-commands';
 
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  console.log(`[telescope] invoke: ${command}`, args, `isTauri=${isTauri()}`);
   if (isTauri()) {
     const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-    return tauriInvoke<T>(command, args);
+    try {
+      const result = await tauriInvoke<T>(command, args);
+      console.log(`[telescope] invoke ${command} OK:`, result);
+      return result;
+    } catch (e) {
+      console.error(`[telescope] invoke ${command} FAILED:`, e);
+      throw e;
+    }
   }
 
   // Web fallback: map commands to HTTP endpoints
+  console.log(`[telescope] using web fallback for: ${command}`);
   return webFallback<T>(command, args);
 }
 
