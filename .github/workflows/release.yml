@@ -13,7 +13,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            binary: telescope-desktop.exe
+            asset_name: telescope-windows-x64.exe
+          - os: macos-latest
+            binary: telescope-desktop
+            asset_name: telescope-macos-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -30,12 +36,27 @@ jobs:
       - name: Build artifacts
         run: pnpm -C apps/desktop bundle
 
+      - name: List build outputs
+        shell: bash
+        run: |
+          echo "=== Release binary ==="
+          ls -lh target/release/${{ matrix.binary }} 2>/dev/null || echo "Binary not found"
+          echo "=== Bundle outputs ==="
+          find target/release/bundle -type f 2>/dev/null || echo "No bundle dir"
+
+      - name: Rename binary for release
+        shell: bash
+        run: cp target/release/${{ matrix.binary }} target/release/${{ matrix.asset_name }}
+
       - name: Create GitHub Release (attach artifacts)
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            target/release/bundle/**/*
-            target/release/telescope-desktop.exe
+            target/release/${{ matrix.asset_name }}
+            target/release/bundle/msi/**
+            target/release/bundle/nsis/**
+            target/release/bundle/dmg/**
+            target/release/bundle/macos/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
