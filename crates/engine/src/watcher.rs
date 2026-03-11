@@ -4,7 +4,7 @@
 //! into the SQLite ResourceStore. Implements exponential backoff
 //! with jitter and concurrency limits on LIST operations.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::Pod;
@@ -21,9 +21,12 @@ use telescope_core::{ConnectionEvent, ConnectionState, ResourceEntry, ResourceSt
 const MAX_CONCURRENT_LISTS: usize = 3;
 
 /// Manages watch streams and syncs resources to SQLite.
+///
+/// The store is wrapped in `Mutex` because `rusqlite::Connection` is `Send`
+/// but not `Sync`, and we need shared access from async tasks.
 pub struct ResourceWatcher {
     client: Client,
-    store: Arc<ResourceStore>,
+    store: Arc<Mutex<ResourceStore>>,
     /// Semaphore to limit concurrent LIST operations.
     list_semaphore: Arc<Semaphore>,
     /// Sender for connection state updates.
@@ -33,7 +36,7 @@ pub struct ResourceWatcher {
 }
 
 impl ResourceWatcher {
-    pub fn new(client: Client, store: Arc<ResourceStore>) -> Self {
+    pub fn new(client: Client, store: Arc<Mutex<ResourceStore>>) -> Self {
         let (state_tx, state_rx) = watch::channel(ConnectionState::Disconnected);
         Self {
             client,
@@ -86,25 +89,25 @@ impl ResourceWatcher {
                 Ok(Some(event)) => match event {
                     Event::Apply(pod) => {
                         if let Some(entry) = Self::pod_to_entry(&gvk, &ns, &pod) {
-                            if let Err(e) = self.store.upsert(&entry) {
+                            if let Err(e) = self.store.lock().unwrap().upsert(&entry) {
                                 error!("Failed to upsert pod: {}", e);
                             }
                         }
                     }
                     Event::Delete(pod) => {
                         if let Some(name) = pod.metadata.name.as_deref() {
-                            if let Err(e) = self.store.delete(&gvk, &ns, name) {
+                            if let Err(e) = self.store.lock().unwrap().delete(&gvk, &ns, name) {
                                 error!("Failed to delete pod: {}", e);
                             }
                         }
                     }
                     Event::Init => {
                         info!("Initial LIST started for {}/{}", gvk, ns);
-                        let _ = self.store.delete_all_by_gvk(&gvk);
+                        let _ = self.store.lock().unwrap().delete_all_by_gvk(&gvk);
                     }
                     Event::InitApply(pod) => {
                         if let Some(entry) = Self::pod_to_entry(&gvk, &ns, &pod) {
-                            if let Err(e) = self.store.upsert(&entry) {
+                            if let Err(e) = self.store.lock().unwrap().upsert(&entry) {
                                 error!("Failed to upsert pod during init: {}", e);
                             }
                         }

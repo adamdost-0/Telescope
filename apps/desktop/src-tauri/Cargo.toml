@@ -8,12 +8,15 @@ license.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+kube = { version = "3.0.1", features = ["client"] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 telescope-engine = { path = "../../../crates/engine" }
 telescope-core = { path = "../../../crates/core" }
 tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
