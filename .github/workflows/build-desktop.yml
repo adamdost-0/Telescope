@@ -1,0 +1,91 @@
+name: build-desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'apps/desktop/**'
+      - 'apps/web/src/**'
+      - 'apps/web/package.json'
+      - 'apps/web/svelte.config.js'
+      - 'apps/web/vite.config.ts'
+      - '.github/workflows/build-desktop.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build-windows:
+    name: Build Windows Desktop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop (debug — faster)
+        run: pnpm -C apps/desktop build
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: telescope-windows-debug
+          path: |
+            apps/desktop/src-tauri/target/debug/Telescope.exe
+            apps/desktop/src-tauri/target/debug/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/debug/bundle/nsis/*.exe
+          if-no-files-found: warn
+          retention-days: 7
+
+  build-windows-release:
+    name: Build Windows Desktop (Release)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop (release bundle)
+        run: pnpm -C apps/desktop bundle
+
+      - name: Upload Windows installer (release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: telescope-windows-release
+          path: |
+            apps/desktop/src-tauri/target/release/Telescope.exe
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: warn
+          retention-days: 14
