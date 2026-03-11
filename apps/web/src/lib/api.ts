@@ -15,9 +15,39 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
     const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
     return tauriInvoke<T>(command, args);
   }
-  // Web fallback — for now, return empty/default data
-  // Will be replaced with real HTTP calls when web backend exists
-  throw new Error(`Command "${command}" not available in web mode`);
+
+  // Web fallback: map commands to HTTP endpoints
+  return webFallback<T>(command, args);
+}
+
+async function webFallback<T>(command: string, _args?: Record<string, unknown>): Promise<T> {
+  switch (command) {
+    case 'list_contexts': {
+      // In web mode, fetch from /api/clusters and map to ClusterContext format
+      const res = await fetch('/api/clusters');
+      if (!res.ok) return [] as unknown as T;
+      const data = await res.json();
+      const clusters = data.clusters ?? [];
+      return clusters.map((c: Record<string, unknown>) => ({
+        name: (c.name as string) ?? (c.id as string),
+        cluster_server: (c.server as string) ?? null,
+        namespace: null,
+        is_active: false,
+      })) as unknown as T;
+    }
+    case 'get_connection_state':
+      return { state: 'Disconnected' } as unknown as T;
+    case 'get_pods':
+      return [] as unknown as T;
+    case 'list_namespaces':
+      return ['default'] as unknown as T;
+    case 'connect_to_context':
+    case 'disconnect':
+    case 'set_namespace':
+      return undefined as unknown as T;
+    default:
+      throw new Error(`Command "${command}" not available in web mode`);
+  }
 }
 
 export async function listContexts(): Promise<ClusterContext[]> {
