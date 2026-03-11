@@ -3,6 +3,7 @@
 pub mod client;
 pub mod error;
 pub mod kubeconfig;
+pub mod namespace;
 pub mod watcher;
 
 pub use error::{EngineError, Result};

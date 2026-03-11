@@ -37,8 +37,8 @@ fn list_contexts() -> Result<Vec<ClusterContext>, String> {
 
 /// Get the currently active kubeconfig context.
 #[tauri::command]
-fn active_context(state: State<'_, AppState>) -> Result<Option<String>, String> {
-    let ctx = state.active_context.blocking_read().clone();
+async fn active_context(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let ctx = state.active_context.read().await.clone();
     if ctx.is_some() {
         return Ok(ctx);
     }
@@ -50,8 +50,8 @@ fn active_context(state: State<'_, AppState>) -> Result<Option<String>, String> 
 
 /// Get the current connection state.
 #[tauri::command]
-fn get_connection_state(state: State<'_, AppState>) -> ConnectionState {
-    state.connection_state.blocking_read().clone()
+async fn get_connection_state(state: State<'_, AppState>) -> Result<ConnectionState, String> {
+    Ok(state.connection_state.read().await.clone())
 }
 
 /// List pods in a namespace from the SQLite store.
@@ -60,7 +60,10 @@ fn get_pods(
     state: State<'_, AppState>,
     namespace: Option<String>,
 ) -> Result<Vec<ResourceEntry>, String> {
-    let store = state.store.lock().unwrap();
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| format!("Store lock failed: {}", e))?;
     store
         .list("v1/Pod", namespace.as_deref())
         .map_err(|e| e.to_string())
@@ -73,7 +76,10 @@ fn count_resources(
     gvk: String,
     namespace: Option<String>,
 ) -> Result<u64, String> {
-    let store = state.store.lock().unwrap();
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| format!("Store lock failed: {}", e))?;
     store
         .count(&gvk, namespace.as_deref())
         .map_err(|e| e.to_string())
@@ -87,9 +93,27 @@ fn get_resource(
     namespace: String,
     name: String,
 ) -> Result<Option<ResourceEntry>, String> {
-    let store = state.store.lock().unwrap();
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| format!("Store lock failed: {}", e))?;
     store
         .get(&gvk, &namespace, &name)
+        .map_err(|e| e.to_string())
+}
+
+/// List available namespaces from the connected cluster.
+#[tauri::command]
+async fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let ctx = state.active_context.read().await.clone();
+    if ctx.is_none() {
+        return Ok(vec!["default".to_string()]);
+    }
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::namespace::list_namespaces(&client)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -111,7 +135,10 @@ async fn connect_to_context(
 
     // Clear previous data.
     {
-        let store = state.store.lock().unwrap();
+        let store = state
+            .store
+            .lock()
+            .map_err(|e| format!("Store lock failed: {}", e))?;
         let _ = store.delete_all_by_gvk("v1/Pod");
     }
 
@@ -153,7 +180,10 @@ async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
     // Clear stored data.
     {
-        let store = state.store.lock().unwrap();
+        let store = state
+            .store
+            .lock()
+            .map_err(|e| format!("Store lock failed: {}", e))?;
         let _ = store.delete_all_by_gvk("v1/Pod");
     }
 
@@ -189,7 +219,10 @@ async fn set_namespace(
 
         // Clear old pod data.
         {
-            let store = state.store.lock().unwrap();
+            let store = state
+                .store
+                .lock()
+                .map_err(|e| format!("Store lock failed: {}", e))?;
             let _ = store.delete_all_by_gvk("v1/Pod");
         }
 
@@ -286,7 +319,11 @@ async fn spawn_watch_task(
 fn main() {
     tracing_subscriber::fmt::init();
 
-    let db_path = std::env::temp_dir().join("telescope").join("resources.db");
+    let data_dir = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(|h| std::path::PathBuf::from(h).join(".telescope"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("telescope"));
+    let db_path = data_dir.join("resources.db");
     std::fs::create_dir_all(db_path.parent().unwrap()).expect("Failed to create data directory");
 
     let db_path_str = db_path.to_string_lossy().to_string();
@@ -313,6 +350,7 @@ fn main() {
             get_pods,
             count_resources,
             get_resource,
+            list_namespaces,
             connect_to_context,
             disconnect,
             set_namespace,
