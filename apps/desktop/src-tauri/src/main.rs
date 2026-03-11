@@ -175,6 +175,7 @@ async fn connect_to_context(
             .map_err(|e| format!("Store lock failed: {}", e))?;
         let _ = store.delete_all_by_gvk("v1/Pod");
         let _ = store.delete_all_by_gvk("v1/Event");
+        let _ = store.delete_all_by_gvk("v1/Node");
     }
 
     // Update connection state to Connecting.
@@ -221,6 +222,7 @@ async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
             .map_err(|e| format!("Store lock failed: {}", e))?;
         let _ = store.delete_all_by_gvk("v1/Pod");
         let _ = store.delete_all_by_gvk("v1/Event");
+        let _ = store.delete_all_by_gvk("v1/Node");
     }
 
     // Reset state.
@@ -261,6 +263,7 @@ async fn set_namespace(
                 .map_err(|e| format!("Store lock failed: {}", e))?;
             let _ = store.delete_all_by_gvk("v1/Pod");
             let _ = store.delete_all_by_gvk("v1/Event");
+            let _ = store.delete_all_by_gvk("v1/Node");
         }
 
         set_connection_state(&app, &state.connection_state, ConnectionState::Connecting).await;
@@ -376,6 +379,42 @@ async fn start_log_stream(
 }
 
 // ---------------------------------------------------------------------------
+// Resource actions
+// ---------------------------------------------------------------------------
+
+/// Scale a Deployment or StatefulSet to the specified replica count.
+#[tauri::command]
+async fn scale_resource(
+    gvk: String,
+    namespace: String,
+    name: String,
+    replicas: i32,
+) -> Result<String, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::actions::scale_resource(&client, &gvk, &namespace, &name, replicas)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete a namespaced Kubernetes resource by GVK, namespace, and name.
+#[tauri::command]
+async fn delete_resource(gvk: String, namespace: String, name: String) -> Result<String, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    let result = telescope_engine::actions::delete_resource(&client, &gvk, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())?;
+    if result.success {
+        Ok(result.message)
+    } else {
+        Err(result.message)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -439,14 +478,23 @@ async fn spawn_watch_task(
         }
     });
 
+    // Spawn the nodes watcher (cluster-scoped — no namespace needed).
+    let nodes_watcher = watcher.clone();
+    let nodes_task = tokio::spawn(async move {
+        if let Err(e) = nodes_watcher.watch_nodes().await {
+            error!("Node watch error: {}", e);
+        }
+    });
+
     // Spawn the main watch task (pods + state machine).
     let task = tokio::spawn(async move {
         if let Err(e) = watcher.watch_pods(&ns).await {
             error!("Watch error: {}", e);
         }
-        // When the pod watch ends, abort the state forwarder and events watcher.
+        // When the pod watch ends, abort the state forwarder and other watchers.
         state_forwarder.abort();
         events_task.abort();
+        nodes_task.abort();
     });
 
     let mut handle = state.watch_handle.lock().await;
@@ -475,6 +523,7 @@ fn main() {
     // Clear stale data from previous runs.
     let _ = store.delete_all_by_gvk("v1/Pod");
     let _ = store.delete_all_by_gvk("v1/Event");
+    let _ = store.delete_all_by_gvk("v1/Node");
 
     let app_state = AppState {
         db_path: db_path_str,
@@ -503,6 +552,8 @@ fn main() {
             get_pod_logs,
             list_containers,
             start_log_stream,
+            scale_resource,
+            delete_resource,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");

@@ -123,7 +123,7 @@
     </div>
   {:else}
     <p class="count">{resources.length} {PAGE_TITLE.toLowerCase()}</p>
-    <ResourceTable {resources} {columns} emptyMessage="No deployments found in this namespace." />
+    <ResourceTable {resources} {columns} emptyMessage="No deployments found in this namespace." hrefFn={(entry) => `/resources/deployments/${entry.namespace}/${entry.name}`} />
   {/if}
 </div>
 

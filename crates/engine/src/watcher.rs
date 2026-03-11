@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::{
     apps::v1::Deployment,
-    core::v1::{ConfigMap, Event as K8sEvent, Pod, Secret, Service},
+    core::v1::{ConfigMap, Event as K8sEvent, Node, Pod, Secret, Service},
 };
 use k8s_openapi::{ClusterResourceScope, NamespaceResourceScope};
 use kube::{
@@ -244,6 +244,11 @@ impl ResourceWatcher {
     pub async fn watch_events(&self, namespace: &str) -> crate::Result<()> {
         self.watch_resource::<K8sEvent>("v1/Event", namespace).await
     }
+
+    /// Watch Nodes (cluster-scoped).
+    pub async fn watch_nodes(&self) -> crate::Result<()> {
+        self.watch_cluster_resource::<Node>("v1/Node").await
+    }
 }
 
 #[cfg(test)]
@@ -403,5 +408,23 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&entry.content).unwrap();
         assert!(parsed.is_object());
         assert_eq!(parsed["reason"], "Pulled");
+    }
+
+    #[test]
+    fn resource_to_entry_works_for_node() {
+        let node = Node {
+            metadata: ObjectMeta {
+                name: Some("node-1".to_string()),
+                resource_version: Some("500".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let entry = resource_to_entry("v1/Node", "", &node).unwrap();
+        assert_eq!(entry.name, "node-1");
+        assert_eq!(entry.namespace, "");
+        assert_eq!(entry.gvk, "v1/Node");
+        assert_eq!(entry.resource_version, "500");
+        assert!(entry.content.contains("node-1"));
     }
 }

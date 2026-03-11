@@ -117,7 +117,7 @@
     </div>
   {:else}
     <p class="count">{resources.length} {PAGE_TITLE.toLowerCase()}</p>
-    <ResourceTable {resources} {columns} emptyMessage="No secrets found in this namespace." />
+    <ResourceTable {resources} {columns} emptyMessage="No secrets found in this namespace." hrefFn={(entry) => `/resources/secrets/${entry.namespace}/${entry.name}`} />
   {/if}
 </div>
 

@@ -56,8 +56,19 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
     case 'disconnect':
     case 'set_namespace':
       return undefined as unknown as T;
+    case 'delete_resource':
+      return 'Deleted (stub)' as unknown as T;
     default:
       throw new Error(`Command "${command}" not available in web mode`);
+  }
+}
+
+/** Fetch counts for all major resource types. */
+export async function getResourceCounts(): Promise<[string, number][]> {
+  try {
+    return await invoke<[string, number][]>('get_resource_counts');
+  } catch {
+    return [];
   }
 }
 
@@ -112,6 +123,15 @@ export async function getEvents(namespace: string, involvedObject?: string): Pro
   } catch {
     return [];
   }
+}
+
+/** Delete a namespaced Kubernetes resource by GVK, namespace, and name. */
+export async function deleteResource(
+  gvk: string,
+  namespace: string,
+  name: string,
+): Promise<string> {
+  return invoke<string>('delete_resource', { gvk, namespace, name });
 }
 
 export async function connectToContext(contextName: string): Promise<void> {
