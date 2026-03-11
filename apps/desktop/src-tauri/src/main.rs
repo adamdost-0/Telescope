@@ -531,6 +531,31 @@ async fn spawn_watch_task(
     *handle = Some(task);
 }
 
+/// Restart a Deployment rollout.
+#[tauri::command]
+async fn rollout_restart(namespace: String, name: String) -> Result<String, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::actions::rollout_restart(&client, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get rollout status for a Deployment.
+#[tauri::command]
+async fn rollout_status(
+    namespace: String,
+    name: String,
+) -> Result<telescope_engine::actions::RolloutStatus, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::actions::rollout_status(&client, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -585,6 +610,8 @@ fn main() {
             start_log_stream,
             scale_resource,
             delete_resource,
+            rollout_restart,
+            rollout_status,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");

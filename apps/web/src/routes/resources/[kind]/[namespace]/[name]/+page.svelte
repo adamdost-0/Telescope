@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { getResources, getEvents, getPods } from '$lib/api';
+  import { getResources, getEvents, getPods, rolloutRestart, rolloutStatus } from '$lib/api';
+  import type { RolloutStatus } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import EventsTable from '$lib/components/EventsTable.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
@@ -33,6 +34,11 @@
   let loading = $state(true);
   let activeTab = $state('summary');
   let error: string | null = $state(null);
+
+  let rollout: RolloutStatus | null = $state(null);
+  let rolloutLoading = $state(false);
+  let rolloutMessage: string | null = $state(null);
+  let showRestartConfirm = $state(false);
 
   let tabs = $derived(buildTabs());
 
@@ -85,10 +91,34 @@
       error = e instanceof Error ? e.message : 'Failed to load resource';
     } finally {
       loading = false;
+      loadRolloutStatus();
     }
   }
 
   onMount(loadResource);
+
+  async function loadRolloutStatus() {
+    if (kind !== 'deployments') return;
+    try {
+      rollout = await rolloutStatus(namespace, resourceName);
+    } catch {
+      rollout = null;
+    }
+  }
+
+  async function handleRolloutRestart() {
+    showRestartConfirm = false;
+    rolloutLoading = true;
+    rolloutMessage = null;
+    try {
+      rolloutMessage = await rolloutRestart(namespace, resourceName);
+      setTimeout(loadRolloutStatus, 2000);
+    } catch (e) {
+      rolloutMessage = `Error: ${e instanceof Error ? e.message : e}`;
+    } finally {
+      rolloutLoading = false;
+    }
+  }
 
   function formatAge(ts: string): string {
     if (!ts) return 'N/A';
@@ -185,6 +215,41 @@
               <span class="muted">{container.image}</span>
             </div>
           {/each}
+
+          <h3>Rollout</h3>
+          <div class="rollout-section">
+            {#if rollout}
+              <dl>
+                <dt>Status</dt>
+                <dd>
+                  {#if rollout.is_complete}
+                    <span class="badge badge-success">Complete</span>
+                  {:else}
+                    <span class="badge badge-pending">In Progress</span>
+                  {/if}
+                  {rollout.message}
+                </dd>
+                <dt>Progress</dt>
+                <dd>{rollout.ready}/{rollout.desired} ready, {rollout.updated}/{rollout.desired} updated, {rollout.available}/{rollout.desired} available</dd>
+              </dl>
+            {/if}
+            <div class="rollout-actions">
+              {#if showRestartConfirm}
+                <span class="confirm-prompt">Restart all pods?</span>
+                <button class="btn btn-danger btn-sm" onclick={handleRolloutRestart} disabled={rolloutLoading}>
+                  {rolloutLoading ? 'Restarting…' : 'Confirm Restart'}
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick={() => showRestartConfirm = false}>Cancel</button>
+              {:else}
+                <button class="btn btn-primary btn-sm" onclick={() => showRestartConfirm = true} disabled={rolloutLoading}>
+                  Restart Rollout
+                </button>
+              {/if}
+            </div>
+            {#if rolloutMessage}
+              <p class="rollout-message">{rolloutMessage}</p>
+            {/if}
+          </div>
 
         <!-- Service Summary -->
         {:else if kind === 'services'}
@@ -698,4 +763,21 @@
   .pods-tab {
     margin-top: 0.5rem;
   }
+
+  .rollout-section { margin-top: 0.5rem; }
+  .rollout-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+  .confirm-prompt { color: #fbbf24; font-weight: 500; }
+  .rollout-message { margin-top: 0.5rem; color: #a0aec0; font-size: 0.85rem; }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-right: 0.5rem; }
+  .badge-success { background: #065f46; color: #6ee7b7; }
+  .badge-pending { background: #92400e; color: #fcd34d; }
+  .btn { border: none; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 500; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+  .btn-danger { background: #dc2626; color: #fff; }
+  .btn-danger:hover:not(:disabled) { background: #b91c1c; }
+  .btn-secondary { background: #374151; color: #e0e0e0; }
+  .btn-secondary:hover:not(:disabled) { background: #4b5563; }
+  .btn-sm { padding: 0.25rem 0.6rem; font-size: 0.75rem; }
 </style>

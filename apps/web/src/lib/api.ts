@@ -59,6 +59,10 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
       return undefined as unknown as T;
     case 'delete_resource':
       return 'Deleted (stub)' as unknown as T;
+    case 'rollout_restart':
+      return 'Rollout restart initiated (stub)' as unknown as T;
+    case 'rollout_status':
+      return { desired: 1, ready: 1, updated: 1, available: 1, is_complete: true, message: 'Rollout complete' } as unknown as T;
     default:
       throw new Error(`Command "${command}" not available in web mode`);
   }
@@ -124,6 +128,26 @@ export async function getEvents(namespace: string, involvedObject?: string): Pro
   } catch {
     return [];
   }
+}
+
+/** Rollout status shape returned by the engine. */
+export interface RolloutStatus {
+  desired: number;
+  ready: number;
+  updated: number;
+  available: number;
+  is_complete: boolean;
+  message: string;
+}
+
+/** Restart a Deployment rollout. */
+export async function rolloutRestart(namespace: string, name: string): Promise<string> {
+  return invoke<string>('rollout_restart', { namespace, name });
+}
+
+/** Get rollout status for a Deployment. */
+export async function rolloutStatus(namespace: string, name: string): Promise<RolloutStatus> {
+  return invoke<RolloutStatus>('rollout_status', { namespace, name });
 }
 
 /** Delete a namespaced Kubernetes resource by GVK, namespace, and name. */

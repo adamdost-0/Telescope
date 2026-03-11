@@ -116,6 +116,81 @@ pub async fn scale_resource(
     Ok(format!("Scaled {}/{} to {} replicas", gvk, name, replicas))
 }
 
+/// Rollout status for a Deployment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RolloutStatus {
+    pub desired: i32,
+    pub ready: i32,
+    pub updated: i32,
+    pub available: i32,
+    pub is_complete: bool,
+    pub message: String,
+}
+
+/// Restart a Deployment by patching the pod template annotation.
+pub async fn rollout_restart(
+    client: &Client,
+    namespace: &str,
+    name: &str,
+) -> crate::Result<String> {
+    let api: Api<k8s_openapi::api::apps::v1::Deployment> =
+        Api::namespaced(client.clone(), namespace);
+    let now = {
+        use std::time::SystemTime;
+        let d = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default();
+    };
+        "spec": {
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        "telescope.dev/restartedAt": now
+                    }
+                }
+            }
+        }
+    });
+    api.patch(name, &PatchParams::apply("telescope"), &Patch::Merge(&patch))
+        .await?;
+}
+
+/// Get rollout status for a Deployment.
+pub async fn rollout_status(
+    client: &Client,
+    namespace: &str,
+    name: &str,
+) -> crate::Result<RolloutStatus> {
+    let api: Api<k8s_openapi::api::apps::v1::Deployment> =
+        Api::namespaced(client.clone(), namespace);
+    let deploy = api.get(name).await?;
+
+    let spec_replicas = deploy.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
+    let status = deploy.status.as_ref();
+    let ready = status.and_then(|s| s.ready_replicas).unwrap_or(0);
+    let updated = status.and_then(|s| s.updated_replicas).unwrap_or(0);
+    let available = status.and_then(|s| s.available_replicas).unwrap_or(0);
+    let generation = deploy.metadata.generation.unwrap_or(0);
+    let observed = status.and_then(|s| s.observed_generation).unwrap_or(0);
+
+    let is_complete = generation <= observed
+        && updated == spec_replicas
+        && ready == spec_replicas
+        && available == spec_replicas;
+
+    Ok(RolloutStatus {
+        desired: spec_replicas,
+        ready,
+        updated,
+        available,
+        is_complete,
+        message: if is_complete {
+            "Rollout complete".into()
+        } else {
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
