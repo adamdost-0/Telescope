@@ -9,6 +9,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   rust:
     runs-on: ubuntu-latest
@@ -55,7 +58,7 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        run: pnpm -C apps/web exec playwright install
+        run: pnpm -C apps/web exec playwright install --with-deps
       - name: E2E
         run: pnpm -C apps/web e2e
 

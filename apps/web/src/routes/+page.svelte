@@ -6,6 +6,10 @@
 
 <h1>Telescope</h1>
 
+<nav aria-label="resources">
+  <a href="/pods">Pods</a>
+</nav>
+
 <section aria-label="clusters">
   <h2>Clusters</h2>
 

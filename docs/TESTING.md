@@ -1,5 +1,7 @@
 # Telescope — Testing Strategy (v0)
 
+> ⚠️ **Status: Aspirational** — This describes the *target* testing strategy. Current tests are limited to basic unit tests (3 Rust, 2 Vitest) and 2 Playwright E2E smoke tests against stub data.
+
 ## Goals
 - Keep CI **green by default**: no flaky E2E, no “works on my machine”.
 - Define tests **per component** with explicit acceptance criteria.

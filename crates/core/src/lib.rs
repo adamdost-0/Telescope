@@ -1,5 +1,11 @@
 //! Shared domain types.
 
+pub mod connection;
+pub mod store;
+
+pub use connection::{ConnectionEvent, ConnectionState};
+pub use store::{ResourceEntry, ResourceStore};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

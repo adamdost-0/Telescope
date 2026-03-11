@@ -1,10 +1,13 @@
 # Telescope — Roadmap
 
 ## M0 — Foundations
-- Repo governance + contribution guide
-- Rust engine skeleton + API contract
-- Desktop shell boots + connects to engine
-- Kubeconfig import + context switch
+- ✅ Repo governance + CI pipelines
+- ✅ Rust workspace skeleton (core/engine/api crates)
+- ✅ Desktop shell boots (Tauri v2)
+- ✅ Web scaffold (SvelteKit routes)
+- 🔲 Rust engine API contract *(moved to M1)*
+- 🔲 Desktop connects to engine *(moved to M1)*
+- 🔲 Kubeconfig import + context switch *(moved to M1)*
 
 ## M1 — MVP “Debug Loop”
 - Resource explorer (core kinds) + dynamic discovery

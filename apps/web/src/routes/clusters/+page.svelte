@@ -3,9 +3,9 @@
   import { goto } from '$app/navigation';
   import type { Cluster } from '$lib/engine';
 
-  let loading = true;
-  let error: string | null = null;
-  let clusters: Cluster[] = [];
+  let loading = $state(true);
+  let error: string | null = $state(null);
+  let clusters: Cluster[] = $state([]);
 
   async function loadClusters() {
     loading = true;
@@ -41,14 +41,14 @@
   <p role="status">Loading clusters…</p>
 {:else if error}
   <p role="alert">Failed to load clusters: {error}</p>
-  <button type="button" on:click={loadClusters}>Retry</button>
+  <button type="button" onclick={loadClusters}>Retry</button>
 {:else if clusters.length === 0}
   <p>No clusters found.</p>
 {:else}
   <ul>
     {#each clusters as c (c.id)}
       <li>
-        <button type="button" on:click={() => selectCluster(c.id)}>
+        <button type="button" onclick={() => selectCluster(c.id)}>
           {c.name} ({c.id})
         </button>
       </li>

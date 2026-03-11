@@ -1,4 +1,13 @@
-//! Kubernetes engine (scaffold).
+//! Telescope Kubernetes engine.
+
+pub mod client;
+pub mod error;
+pub mod kubeconfig;
+pub mod watcher;
+
+pub use error::{EngineError, Result};
+pub use kubeconfig::ClusterContext;
+pub use watcher::ResourceWatcher;
 
 use telescope_core::VersionInfo;
 

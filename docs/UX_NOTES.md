@@ -1,5 +1,7 @@
 # Telescope — UX Notes (Draft)
 
+> ⚠️ **Status: Aspirational** — Only `/`, `/clusters`, and `/explore` routes exist. All other screens described below are planned, not implemented.
+
 ## Navigation
 - Left rail: Clusters • Explore • Workloads • Helm • Observability • Settings
 - Top bar: cluster switcher, namespace selector, search, connection status

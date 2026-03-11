@@ -1,9 +1,12 @@
 /target
+Cargo.lock
 node_modules/
 **/node_modules/
 apps/web/.svelte-kit/
 apps/web/build/
 apps/web/.vite/
+apps/desktop/dist/
+apps/desktop/src-tauri/gen/
 
 # tooling
 .corepack/

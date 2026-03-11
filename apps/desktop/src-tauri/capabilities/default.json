@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "Default capability set for Telescope",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-close",
+    "core:window:allow-set-title"
+  ]
+}

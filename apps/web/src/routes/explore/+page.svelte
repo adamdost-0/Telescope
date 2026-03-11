@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
 
-  $: cluster = $page.url.searchParams.get('cluster');
+  let cluster = $derived(page.url.searchParams.get('cluster'));
 </script>
 
 <h1>Explore</h1>

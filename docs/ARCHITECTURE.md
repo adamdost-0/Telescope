@@ -1,5 +1,7 @@
 # Telescope — Architecture (Draft)
 
+> ⚠️ **Status: Aspirational Design** — This document describes the *target* architecture. The current codebase is scaffold-only (v0.0.1). See the [Roadmap](ROADMAP.md) for implementation status.
+
 ## Goals
 - Avoid Electron; keep resident memory low.
 - One shared Kubernetes engine powering desktop and web.

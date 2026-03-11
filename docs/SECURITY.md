@@ -1,5 +1,7 @@
 # Telescope — Security Notes (Draft)
 
+> ⚠️ **Status: Aspirational Design** — None of the security controls described below are implemented yet. This document captures the *target* security model for Telescope.
+
 ## Threat model (baseline)
 - Workstations may contain credentials to production clusters.
 - UI must avoid accidental destructive actions.

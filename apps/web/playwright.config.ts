@@ -15,7 +15,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI
     },
     {
-      command: `PUBLIC_ENGINE_HTTP_BASE=http://127.0.0.1:${stubPort} npm run dev -- --host 127.0.0.1 --port ${webPort}`,
+      command: `PUBLIC_ENGINE_HTTP_BASE=http://127.0.0.1:${stubPort} pnpm run dev -- --host 127.0.0.1 --port ${webPort}`,
       url: `http://127.0.0.1:${webPort}`,
       reuseExistingServer: !process.env.CI
     }
