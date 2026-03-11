@@ -75,20 +75,20 @@
   <p class="empty">No pods found in this namespace.</p>
 {:else}
   <div class="table-container">
-    <table>
+    <table aria-label="Pod list">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Ready</th>
-          <th>Status</th>
-          <th>Restarts</th>
-          <th>Age</th>
+          <th scope="col">Name</th>
+          <th scope="col">Ready</th>
+          <th scope="col">Status</th>
+          <th scope="col">Restarts</th>
+          <th scope="col">Age</th>
         </tr>
       </thead>
       <tbody>
         {#each parsedPods as pod (pod.name)}
           <tr>
-            <td class="pod-name">{pod.name}</td>
+            <td class="pod-name"><a href="/pods/{pod.namespace}/{pod.name}">{pod.name}</a></td>
             <td>{pod.ready}</td>
             <td><span class={statusClass(pod.status)}>{pod.status}</span></td>
             <td>{pod.restarts}</td>
@@ -125,9 +125,14 @@
   tr:hover {
     background: #16213e;
   }
-  .pod-name {
+  .pod-name a {
     font-weight: 500;
     color: #4fc3f7;
+    text-decoration: none;
+  }
+  .pod-name a:hover {
+    text-decoration: underline;
+    color: #58a6ff;
   }
   .status-running { color: #66bb6a; }
   .status-succeeded { color: #42a5f5; }

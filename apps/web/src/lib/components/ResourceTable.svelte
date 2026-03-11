@@ -8,10 +8,11 @@
     width?: string;
   }
 
-  let { resources = [], columns = [], emptyMessage = 'No resources found.' }: {
+  let { resources = [], columns = [], emptyMessage = 'No resources found.', hrefFn }: {
     resources: ResourceEntry[];
     columns: Column[];
     emptyMessage?: string;
+    hrefFn?: (entry: ResourceEntry) => string | null;
   } = $props();
 
   let rows = $derived(resources.map((entry) => {
@@ -56,9 +57,14 @@
       </thead>
       <tbody>
         {#each rows as row, i (resources[i].name + resources[i].namespace)}
+          {@const href = hrefFn?.(resources[i]) ?? null}
           <tr>
             {#each row as cell, j}
-              <td class:resource-name={j === 0}>{cell}</td>
+              {#if j === 0 && href}
+                <td class="resource-name"><a {href}>{cell}</a></td>
+              {:else}
+                <td class:resource-name={j === 0}>{cell}</td>
+              {/if}
             {/each}
           </tr>
         {/each}
@@ -96,6 +102,14 @@
   .resource-name {
     font-weight: 500;
     color: #4fc3f7;
+  }
+  .resource-name a {
+    color: #4fc3f7;
+    text-decoration: none;
+  }
+  .resource-name a:hover {
+    text-decoration: underline;
+    color: #58a6ff;
   }
   .empty {
     color: #9e9e9e;

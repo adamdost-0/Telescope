@@ -48,6 +48,7 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
       return { state: 'Disconnected' } as unknown as T;
     case 'get_pods':
     case 'get_resources':
+    case 'get_events':
       return [] as unknown as T;
     case 'list_namespaces':
       return ['default'] as unknown as T;
@@ -96,6 +97,18 @@ export async function getPods(namespace?: string): Promise<ResourceEntry[]> {
 export async function getResources(gvk: string, namespace?: string): Promise<ResourceEntry[]> {
   try {
     return await invoke<ResourceEntry[]>('get_resources', { gvk, namespace: namespace ?? null });
+  } catch {
+    return [];
+  }
+}
+
+/** Fetch events for a given namespace, optionally filtered by involved object name. */
+export async function getEvents(namespace: string, involvedObject?: string): Promise<ResourceEntry[]> {
+  try {
+    return await invoke<ResourceEntry[]>('get_events', {
+      namespace,
+      involvedObject: involvedObject ?? null,
+    });
   } catch {
     return [];
   }
