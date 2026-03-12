@@ -77,7 +77,7 @@
           <ul>
             {#each section.items as item}
               <li>
-                <a href={item.href} class:active={isActive(item.href)} class:disabled={!$isConnected && item.href !== '/' && item.href !== '/overview'}>
+                <a href={item.href} class:active={isActive(item.href)} class:disabled={!$isConnected && item.href !== '/' && item.href !== '/overview'} title={!$isConnected && item.href !== '/' && item.href !== '/overview' ? 'Connect to a cluster first' : undefined}>
                   <span class="icon">{item.icon}</span>
                   <span class="label">{item.label}</span>
                 </a>

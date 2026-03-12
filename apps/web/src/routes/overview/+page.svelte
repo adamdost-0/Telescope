@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getResourceCounts, getPods, getEvents, activeContext } from '$lib/api';
+  import { getResourceCounts, getPods, getEvents, activeContext, getClusterInfo } from '$lib/api';
   import { selectedContext, selectedNamespace, isConnected, clusterServerUrl, isAks } from '$lib/stores';
   import { parseAksUrl, getAzurePortalUrl } from '$lib/azure-utils';
   import AksAddons from '$lib/components/AksAddons.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
+  import type { ClusterInfo } from '$lib/tauri-commands';
 
   // Resource counts keyed by GVK
   let counts: Map<string, number> = $state(new Map());
@@ -15,6 +16,7 @@
   let refreshError = $state(false);
   let lastSuccessfulRefresh: number | null = $state(null);
   let timer: ReturnType<typeof setInterval> | null = $state(null);
+  let clusterInfo: ClusterInfo | null = $state(null);
 
   let staleData = $derived(
     lastSuccessfulRefresh !== null && Date.now() - lastSuccessfulRefresh > 30_000
@@ -103,6 +105,8 @@
 
   onMount(() => {
     refresh();
+    // Fetch cluster info once (not on every poll cycle).
+    getClusterInfo().then((info) => { clusterInfo = info; });
     timer = setInterval(refresh, 5000);
   });
 
@@ -144,12 +148,13 @@
   };
 
   function openInPortal() {
-    if (!$clusterServerUrl) return;
-    const info = parseAksUrl($clusterServerUrl);
+    const url = clusterInfo?.server_url || $clusterServerUrl;
+    if (!url) return;
+    const info = parseAksUrl(url);
     if (!info) return;
-    const url = getAzurePortalUrl(info);
-    if (url) {
-      window.open(url, '_blank', 'noopener');
+    const portalUrl = getAzurePortalUrl(info);
+    if (portalUrl) {
+      window.open(portalUrl, '_blank', 'noopener');
     }
   }
 </script>
@@ -179,16 +184,33 @@
         <span class="info-label">Context</span>
         <span class="info-value">
           {contextName ?? '—'}
-          {#if $isAks}
+          {#if clusterInfo?.is_aks || $isAks}
             <span class="aks-badge" title="Azure Kubernetes Service">AKS</span>
           {/if}
         </span>
       </div>
+      {#if clusterInfo?.server_version}
+        <div class="info-item">
+          <span class="info-label">K8s Version</span>
+          <span class="info-value">{clusterInfo.server_version}</span>
+        </div>
+      {/if}
       <div class="info-item">
         <span class="info-label">Namespace</span>
         <span class="info-value">{$selectedNamespace}</span>
       </div>
-      {#if $isAks}
+      {#if clusterInfo?.auth_hint}
+        <div class="info-item">
+          <span class="info-label">Auth</span>
+          <span class="info-value auth-hint">
+            {#if clusterInfo.is_aks}
+              <span class="entra-icon" title="Microsoft Entra ID">🔐</span>
+            {/if}
+            {clusterInfo.auth_hint}
+          </span>
+        </div>
+      {/if}
+      {#if clusterInfo?.is_aks || $isAks}
         <div class="info-item portal-link">
           <button class="portal-btn" onclick={openInPortal} title="Open cluster in Azure Portal">
             🌐 Open in Azure Portal
@@ -234,7 +256,7 @@
     </section>
 
     <!-- AKS Add-ons -->
-    {#if $isAks}
+    {#if clusterInfo?.is_aks || $isAks}
       <AksAddons />
     {/if}
 
@@ -378,6 +400,13 @@
   .portal-link {
     margin-left: auto;
     justify-content: center;
+  }
+  .auth-hint {
+    font-size: 0.8rem;
+    color: #8b949e;
+  }
+  .entra-icon {
+    margin-right: 0.15rem;
   }
   .portal-btn {
     background: rgba(0, 120, 212, 0.15);
