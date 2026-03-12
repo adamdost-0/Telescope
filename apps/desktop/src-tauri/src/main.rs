@@ -444,6 +444,20 @@ async fn delete_resource(gvk: String, namespace: String, name: String) -> Result
     }
 }
 
+/// Apply a resource from JSON/YAML content using server-side apply.
+#[tauri::command]
+async fn apply_resource(
+    json_content: String,
+    dry_run: bool,
+) -> Result<telescope_engine::actions::ApplyResult, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::actions::apply_resource(&client, &json_content, dry_run)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -636,6 +650,7 @@ fn main() {
             start_log_stream,
             scale_resource,
             delete_resource,
+            apply_resource,
             rollout_restart,
             rollout_status,
             exec_command,

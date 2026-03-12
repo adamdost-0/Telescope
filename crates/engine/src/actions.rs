@@ -194,17 +194,184 @@ pub async fn rollout_status(
         message: if is_complete {
             "Rollout complete".into()
         } else {
-            format!(
-                "Waiting: {}/{} ready, {}/{} updated, {}/{} available",
-                ready, spec_replicas, updated, spec_replicas, available, spec_replicas
-            )
         },
     })
+}
+
+/// Result of applying a resource via server-side apply.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApplyResult {
+    pub success: bool,
+    pub message: String,
+    pub result_yaml: Option<String>,
+}
+
+/// Apply a resource from a YAML or JSON string using server-side apply.
+pub async fn apply_resource(
+    client: &Client,
+    content: &str,
+    dry_run: bool,
+) -> crate::Result<ApplyResult> {
+    let value: serde_json::Value = serde_json::from_str(content)
+        .or_else(|_| serde_yaml::from_str(content))
+        .map_err(|e| crate::EngineError::Other(format!("Invalid YAML/JSON: {}", e)))?;
+
+    let api_version = value["apiVersion"]
+        .as_str()
+        .ok_or_else(|| crate::EngineError::Other("Missing apiVersion".into()))?;
+    let kind = value["kind"]
+        .as_str()
+        .ok_or_else(|| crate::EngineError::Other("Missing kind".into()))?;
+    let name = value["metadata"]["name"]
+        .as_str()
+        .ok_or_else(|| crate::EngineError::Other("Missing metadata.name".into()))?;
+    let namespace = value["metadata"]["namespace"]
+        .as_str()
+        .unwrap_or("default");
+
+    let gvk_str = if api_version.contains('/') {
+        format!("{}/{}", api_version, kind)
+    } else {
+        format!("{}/{}", api_version, kind)
+    };
+
+    let mut patch_params = PatchParams::apply("telescope");
+    if dry_run {
+        patch_params = patch_params.dry_run();
+    }
+    patch_params.force = true;
+
+    let result_json: String = match gvk_str.as_str() {
+        "v1/Pod" => {
+            let api: Api<k8s_openapi::api::core::v1::Pod> =
+                Api::namespaced(client.clone(), namespace);
+            let res = api
+                .patch(name, &patch_params, &Patch::Apply(&value))
+                .await?;
+            serde_json::to_string_pretty(&res).unwrap_or_default()
+        }
+        "apps/v1/Deployment" => {
+            let api: Api<k8s_openapi::api::apps::v1::Deployment> =
+                Api::namespaced(client.clone(), namespace);
+            let res = api
+                .patch(name, &patch_params, &Patch::Apply(&value))
+                .await?;
+            serde_json::to_string_pretty(&res).unwrap_or_default()
+        }
+        "apps/v1/StatefulSet" | "apps/v1/DaemonSet" | "batch/v1/Job" | "batch/v1/CronJob"
+        | "v1/Service" | "v1/ConfigMap" | "v1/Secret" => {
+            // For brevity, use a generic typed apply for remaining known kinds.
+            // Server-side apply works the same way for all of them.
+            apply_typed_resource(client, &gvk_str, namespace, name, &patch_params, &value)
+                .await?
+        }
+        _ => {
+            return Ok(ApplyResult {
+                success: false,
+                message: format!("Apply not supported for {}", gvk_str),
+                result_yaml: None,
+            });
+        }
+    };
+
+    Ok(ApplyResult {
+        success: true,
+        message: if dry_run {
+            format!("Dry run succeeded for {}/{} in {}", kind, name, namespace)
+        } else {
+            format!("Applied {}/{} in {}", kind, name, namespace)
+        },
+        result_yaml: Some(result_json),
+    })
+}
+
+async fn apply_typed_resource(
+    client: &Client,
+    gvk_str: &str,
+    namespace: &str,
+    name: &str,
+    patch_params: &PatchParams,
+    value: &serde_json::Value,
+) -> Result<String, crate::EngineError> {
+    match gvk_str {
+        "apps/v1/StatefulSet" => {
+            let api: Api<k8s_openapi::api::apps::v1::StatefulSet> =
+                Api::namespaced(client.clone(), namespace);
+            let res = api
+                .patch(name, patch_params, &Patch::Apply(value))
+                .await?;
+            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+        }
+        "apps/v1/DaemonSet" => {
+            let api: Api<k8s_openapi::api::apps::v1::DaemonSet> =
+                Api::namespaced(client.clone(), namespace);
+            let res = api
+                .patch(name, patch_params, &Patch::Apply(value))
+                .await?;
+            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+        }
+        "batch/v1/Job" => {
+            let api: Api<k8s_openapi::api::batch::v1::Job> =
+                Api::namespaced(client.clone(), namespace);
+            let res = api
+                .patch(name, patch_params, &Patch::Apply(value))
+                .await?;
+            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+        }
+        "batch/v1/CronJob" => {
+            let api: Api<k8s_openapi::api::batch::v1::CronJob> =
+                Api::namespaced(client.clone(), namespace);
+            let res = api
+                .patch(name, patch_params, &Patch::Apply(value))
+                .await?;
+            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+        }
+        "v1/Service" => {
+            let api: Api<k8s_openapi::api::core::v1::Service> =
+                Api::namespaced(client.clone(), namespace);
+            let res = api
+                .patch(name, patch_params, &Patch::Apply(value))
+                .await?;
+            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+        }
+        "v1/ConfigMap" => {
+            let api: Api<k8s_openapi::api::core::v1::ConfigMap> =
+                Api::namespaced(client.clone(), namespace);
+            let res = api
+                .patch(name, patch_params, &Patch::Apply(value))
+                .await?;
+            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+        }
+        "v1/Secret" => {
+            let api: Api<k8s_openapi::api::core::v1::Secret> =
+                Api::namespaced(client.clone(), namespace);
+            let res = api
+                .patch(name, patch_params, &Patch::Apply(value))
+                .await?;
+            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+        }
+        _ => unreachable!(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apply_parses_yaml_input() {
+        let yaml = "apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+  namespace: default
+data:
+  key: value
+";
+        let value: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(value["apiVersion"].as_str().unwrap(), "v1");
+        assert_eq!(value["kind"].as_str().unwrap(), "ConfigMap");
+    }
 
     #[test]
     fn delete_rejects_unsupported_gvk() {

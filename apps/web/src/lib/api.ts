@@ -65,6 +65,8 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
       return { desired: 1, ready: 1, updated: 1, available: 1, is_complete: true, message: 'Rollout complete' } as unknown as T;
     case 'exec_command':
       return { stdout: 'Exec not available in web mode', stderr: '', success: false } as unknown as T;
+    case 'apply_resource':
+      return { success: true, message: 'Applied (stub)' } as unknown as T;
     default:
       throw new Error(`Command "${command}" not available in web mode`);
   }
@@ -246,4 +248,16 @@ export async function execCommand(
     container: container ?? null,
     command,
   });
+}
+
+
+/** Result of applying a resource. */
+export interface ApplyResult {
+  success: boolean;
+  message: string;
+}
+
+/** Apply (create or update) a Kubernetes resource from a JSON/YAML manifest. */
+export async function applyResource(manifest: string, dryRun = false): Promise<ApplyResult> {
+  return invoke<ApplyResult>('apply_resource', { manifest, dryRun });
 }

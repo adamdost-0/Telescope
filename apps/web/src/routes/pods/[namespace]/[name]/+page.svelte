@@ -2,12 +2,13 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import { getPods, getEvents, deleteResource, listContainers } from '$lib/api';
+  import { getPods, getEvents, deleteResource, listContainers, applyResource } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import LogViewer from '$lib/components/LogViewer.svelte';
   import EventsTable from '$lib/components/EventsTable.svelte';
   import ExecTerminal from '$lib/components/ExecTerminal.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import YamlEditor from '$lib/components/YamlEditor.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   let namespace = $derived(page.params.namespace);
@@ -22,6 +23,14 @@
   let deleting = $state(false);
   let deleteError: string | null = $state(null);
   let containerNames: string[] = $state([]);
+
+  // YAML editor state
+  let editedYaml = $state('');
+  let yamlContent = $derived(pod ? JSON.stringify(pod, null, 2) : '');
+  let yamlDirty = $derived(editedYaml !== '' && editedYaml !== yamlContent);
+  let applying = $state(false);
+  let applyMessage: string | null = $state(null);
+  let applyError = $state(false);
 
   const PROTECTED_NAMESPACES = ['kube-system', 'kube-public', 'kube-node-lease'];
   let requireTypeName = $derived(PROTECTED_NAMESPACES.includes(namespace));
@@ -69,6 +78,33 @@
   }
 
   onMount(loadPod);
+
+  async function handleApply(dryRun: boolean) {
+    applying = true;
+    applyMessage = null;
+    applyError = false;
+    try {
+      const result = await applyResource(editedYaml, dryRun);
+      if (result.success) {
+        applyMessage = result.message;
+        if (!dryRun) { await loadPod(); }
+      } else {
+        applyMessage = result.message;
+        applyError = true;
+      }
+    } catch (e) {
+      applyMessage = e instanceof Error ? e.message : String(e);
+      applyError = true;
+    } finally {
+      applying = false;
+    }
+  }
+
+  function resetYaml() {
+    editedYaml = yamlContent;
+    applyMessage = null;
+    applyError = false;
+  }
 </script>
 
 <div class="detail-page">
@@ -153,7 +189,15 @@
       <EventsTable events={events} showObject={false} />
 
     {:else if activeTab === 'yaml'}
-      <pre class="yaml-view"><code>{JSON.stringify(pod, null, 2)}</code></pre>
+      <div class="yaml-tab">
+        <div class="yaml-actions">
+          <button onclick={() => handleApply(true)} disabled={!yamlDirty || applying} class="action-btn">🧪 Dry Run</button>
+          <button onclick={() => handleApply(false)} disabled={!yamlDirty || applying} class="action-btn primary">✅ Apply</button>
+          <button onclick={resetYaml} disabled={!yamlDirty} class="action-btn">↩ Reset</button>
+          {#if applyMessage}<span class={applyError ? 'apply-error' : 'apply-success'}>{applyMessage}</span>{/if}
+        </div>
+        <YamlEditor content={yamlContent} onchange={(v) => editedYaml = v} />
+      </div>
     {/if}
   {/if}
 
@@ -323,6 +367,16 @@
   .status-bad { color: #ef5350; }
 
   /* YAML tab */
+  .yaml-tab { margin-top: 0.5rem; }
+  .yaml-actions { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .action-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
+  .action-btn:hover:not(:disabled) { background: #30363d; }
+  .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .action-btn.primary { background: #238636; border-color: #2ea043; }
+  .action-btn.primary:hover:not(:disabled) { background: #2ea043; }
+  .apply-success { color: #66bb6a; font-size: 0.8rem; }
+  .apply-error { color: #ef5350; font-size: 0.8rem; }
+
   .yaml-view {
     background: #161b22;
     border: 1px solid #21262d;
