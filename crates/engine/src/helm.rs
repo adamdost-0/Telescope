@@ -155,6 +155,92 @@ fn parse_helm_release(data: &[u8]) -> Result<HelmRelease, Box<dyn std::error::Er
     })
 }
 
+/// Extract the user-supplied values from a Helm release secret.
+///
+/// Returns the values as a YAML string. If no config values exist,
+/// returns an empty YAML document.
+pub fn extract_values_from_release(data: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
+    let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)?;
+    let mut decoder = GzDecoder::new(&decoded[..]);
+    let mut json_str = String::new();
+    decoder.read_to_string(&mut json_str)?;
+
+    let release: serde_json::Value = serde_json::from_str(&json_str)?;
+    let config = &release["config"];
+    if config.is_null() || (config.is_object() && config.as_object().unwrap().is_empty()) {
+        return Ok("# No custom values configured\n".to_string());
+    }
+    Ok(serde_yaml::to_string(config)?)
+}
+
+/// Get the user-supplied values for the latest revision of a Helm release.
+pub async fn get_release_values(
+    client: &Client,
+    namespace: &str,
+    name: &str,
+) -> crate::Result<String> {
+    let secrets_api: Api<Secret> = Api::namespaced(client.clone(), namespace);
+    let params = ListParams::default().labels("owner=helm");
+    let secrets = secrets_api.list(&params).await?;
+
+    let mut best: Option<(i32, Vec<u8>)> = None;
+
+    for secret in &secrets.items {
+        if secret.type_.as_deref() != Some("helm.sh/release.v1") {
+            continue;
+        }
+        let secret_name = secret.metadata.name.as_deref().unwrap_or("");
+        let prefix = format!("sh.helm.release.v1.{}.", name);
+        if !secret_name.starts_with(&prefix) {
+            continue;
+        }
+        if let Some(data) = &secret.data {
+            if let Some(release_data) = data.get("release") {
+                // Parse just to get revision number
+                if let Ok(rel) = parse_helm_release(&release_data.0) {
+                    if rel.name == name {
+                        let is_newer = best.as_ref().is_none_or(|(rev, _)| *rev < rel.revision);
+                        if is_newer {
+                            best = Some((rel.revision, release_data.0.clone()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    match best {
+        Some((_, data)) => extract_values_from_release(&data)
+            .map_err(|e| crate::EngineError::Other(format!("Failed to extract values: {e}"))),
+        None => Err(crate::EngineError::Other(format!(
+            "Release \"{name}\" not found in namespace \"{namespace}\""
+        ))),
+    }
+}
+
+/// Roll back a Helm release to a specific revision using the `helm` CLI.
+pub async fn rollback_release(namespace: &str, name: &str, revision: i32) -> crate::Result<String> {
+    let output = std::process::Command::new("helm")
+        .args([
+            "rollback",
+            name,
+            &revision.to_string(),
+            "--namespace",
+            namespace,
+        ])
+        .output()
+        .map_err(|e| crate::EngineError::Other(format!("helm CLI not found: {e}")))?;
+
+    if output.status.success() {
+        Ok(format!("Rolled back {name} to revision {revision}"))
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(crate::EngineError::Other(format!(
+            "Rollback failed: {stderr}"
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,5 +302,29 @@ mod tests {
     fn parse_helm_release_rejects_invalid_data() {
         let result = parse_helm_release(b"not-valid-base64!!!");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_values_returns_yaml() {
+        let json = r#"{
+            "name": "my-release",
+            "version": 1,
+            "info": {"status": "deployed"},
+            "chart": {"metadata": {"name": "nginx", "version": "1.0.0"}},
+            "config": {"replicaCount": 3, "image": {"tag": "latest"}}
+        }"#;
+        let data = make_helm_secret_data(json);
+        let values = extract_values_from_release(&data).expect("should extract values");
+        assert!(values.contains("replicaCount"));
+        assert!(values.contains("3"));
+    }
+
+    #[test]
+    fn extract_values_empty_config() {
+        let json =
+            r#"{"name": "x", "version": 1, "info": {}, "chart": {"metadata": {}}, "config": {}}"#;
+        let data = make_helm_secret_data(json);
+        let values = extract_values_from_release(&data).expect("should extract");
+        assert!(values.contains("No custom values"));
     }
 }

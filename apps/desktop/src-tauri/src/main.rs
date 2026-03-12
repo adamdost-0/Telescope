@@ -223,6 +223,25 @@ async fn get_helm_release_history(
         .map_err(|e| e.to_string())
 }
 
+/// Get the user-supplied values for the latest revision of a Helm release.
+#[tauri::command]
+async fn get_helm_release_values(namespace: String, name: String) -> Result<String, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::helm::get_release_values(&client, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Roll back a Helm release to a specific revision using the helm CLI.
+#[tauri::command]
+async fn helm_rollback(namespace: String, name: String, revision: i32) -> Result<String, String> {
+    telescope_engine::helm::rollback_release(&namespace, &name, revision)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// List available namespaces from the connected cluster.
 #[tauri::command]
 async fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<String>, String> {
@@ -758,6 +777,8 @@ fn main() {
             list_namespaces,
             list_helm_releases,
             get_helm_release_history,
+            get_helm_release_values,
+            helm_rollback,
             connect_to_context,
             disconnect,
             set_namespace,

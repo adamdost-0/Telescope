@@ -1,8 +1,10 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { onMount, onDestroy } from 'svelte';
-  import { listHelmReleases, getHelmReleaseHistory } from '$lib/api';
+  import { onMount } from 'svelte';
+  import { listHelmReleases, getHelmReleaseHistory, getHelmReleaseValues, helmRollback } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
+  import YamlEditor from '$lib/components/YamlEditor.svelte';
+  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import type { HelmRelease } from '$lib/tauri-commands';
 
   let releaseName = $derived(page.params.name);
@@ -13,6 +15,19 @@
   let loading = $state(true);
   let error: string | null = $state(null);
   let activeTab = $state('info');
+
+  // Values tab state
+  let valuesYaml = $state('');
+  let editedValues = $state('');
+  let valuesLoading = $state(false);
+  let valuesError: string | null = $state(null);
+  let copied = $state(false);
+
+  // Rollback state
+  let rollbackTarget: HelmRelease | null = $state(null);
+  let showRollbackDialog = $state(false);
+  let rollbackLoading = $state(false);
+  let rollbackResult: { ok: boolean; message: string } | null = $state(null);
 
   const tabs = [
     { id: 'info', label: 'Info' },
@@ -52,7 +67,6 @@
         getHelmReleaseHistory(namespace, releaseName),
       ]);
       release = releases.find((r) => r.name === releaseName && r.namespace === namespace) ?? null;
-      // If not found in filtered list, try the history (latest revision)
       if (!release && hist.length > 0) {
         release = hist[hist.length - 1];
       }
@@ -66,6 +80,63 @@
       loading = false;
     }
   }
+
+  async function loadValues() {
+    valuesLoading = true;
+    valuesError = null;
+    try {
+      const yaml = await getHelmReleaseValues(namespace, releaseName);
+      valuesYaml = yaml;
+      editedValues = yaml;
+    } catch (e) {
+      valuesError = e instanceof Error ? e.message : 'Failed to load values';
+    } finally {
+      valuesLoading = false;
+    }
+  }
+
+  function generateUpgradeCommand(): string {
+    return `helm upgrade ${releaseName} <CHART> --namespace ${namespace} --reuse-values -f values.yaml`;
+  }
+
+  async function copyUpgradeCommand() {
+    try {
+      await navigator.clipboard.writeText(generateUpgradeCommand());
+      copied = true;
+      setTimeout(() => { copied = false; }, 2000);
+    } catch {
+      // Fallback: select the text for manual copy
+    }
+  }
+
+  function requestRollback(rev: HelmRelease) {
+    rollbackTarget = rev;
+    rollbackResult = null;
+    showRollbackDialog = true;
+  }
+
+  async function confirmRollback() {
+    if (!rollbackTarget) return;
+    rollbackLoading = true;
+    rollbackResult = null;
+    try {
+      const msg = await helmRollback(namespace, releaseName, rollbackTarget.revision);
+      rollbackResult = { ok: true, message: msg };
+      showRollbackDialog = false;
+      await loadRelease();
+    } catch (e) {
+      rollbackResult = { ok: false, message: e instanceof Error ? e.message : String(e) };
+      showRollbackDialog = false;
+    } finally {
+      rollbackLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (activeTab === 'values' && !valuesYaml && !valuesLoading) {
+      loadValues();
+    }
+  });
 
   onMount(loadRelease);
 </script>
@@ -114,15 +185,35 @@
 
     {:else if activeTab === 'values'}
       <div class="tab-content">
-        <div class="placeholder-card">
-          <span class="placeholder-icon">📋</span>
-          <p>Values view requires Helm CLI integration — coming soon</p>
-          <p class="muted">In a future release, this tab will display the computed values for this Helm release by reading the release secret data.</p>
-        </div>
+        {#if valuesLoading}
+          <p role="status">Loading values…</p>
+        {:else if valuesError}
+          <p role="alert" class="error">{valuesError}</p>
+        {:else}
+          <YamlEditor content={valuesYaml} onchange={(v) => { editedValues = v; }} />
+
+          <div class="upgrade-section">
+            <div class="upgrade-notice">
+              <span class="notice-icon">ℹ️</span>
+              <p>Direct upgrade from UI coming in a future release. Save your edited values to a file and use the command below:</p>
+            </div>
+            <div class="command-row">
+              <code class="upgrade-cmd">{generateUpgradeCommand()}</code>
+              <button class="copy-btn" onclick={copyUpgradeCommand}>
+                {copied ? '✓ Copied' : '📋 Copy Command'}
+              </button>
+            </div>
+          </div>
+        {/if}
       </div>
 
     {:else if activeTab === 'history'}
       <div class="tab-content">
+        {#if rollbackResult}
+          <div class="result-banner" class:success={rollbackResult.ok} class:fail={!rollbackResult.ok}>
+            {rollbackResult.ok ? '✅' : '❌'} {rollbackResult.message}
+          </div>
+        {/if}
         {#if history.length === 0}
           <p class="muted">No revision history available.</p>
         {:else}
@@ -134,6 +225,7 @@
                 <th>Chart</th>
                 <th>App Version</th>
                 <th>Updated</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -148,6 +240,19 @@
                   <td class="mono">{rev.chart}</td>
                   <td>{rev.app_version || '—'}</td>
                   <td class="updated">{formatTimestamp(rev.updated)}</td>
+                  <td>
+                    {#if rev.revision !== release?.revision}
+                      <button
+                        class="rollback-btn"
+                        onclick={() => requestRollback(rev)}
+                        disabled={rollbackLoading}
+                      >
+                        ↩ Rollback
+                      </button>
+                    {:else}
+                      <span class="current-badge">current</span>
+                    {/if}
+                  </td>
                 </tr>
               {/each}
             </tbody>
@@ -157,6 +262,18 @@
     {/if}
   {/if}
 </div>
+
+<ConfirmDialog
+  open={showRollbackDialog}
+  title="Rollback Helm Release"
+  message={`Roll back "${releaseName}" in namespace "${namespace}" to revision ${rollbackTarget?.revision ?? '?'}? This will create a new revision with the configuration from revision ${rollbackTarget?.revision ?? '?'}.`}
+  confirmText="Rollback"
+  confirmValue={releaseName}
+  requireType={true}
+  productionContext={namespace === 'production' || namespace === 'prod'}
+  onconfirm={confirmRollback}
+  oncancel={() => { showRollbackDialog = false; }}
+/>
 
 <style>
   .detail-page {
@@ -278,5 +395,84 @@
   .placeholder-card p {
     margin: 0.25rem 0;
     color: #8b949e;
+  }
+
+  .upgrade-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+  }
+  .upgrade-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .notice-icon { font-size: 1.1rem; flex-shrink: 0; }
+  .upgrade-notice p { margin: 0; color: #8b949e; font-size: 0.85rem; }
+  .command-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .upgrade-cmd {
+    flex: 1;
+    background: #0d1117;
+    color: #79c0ff;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+    font-size: 0.8rem;
+    border: 1px solid #21262d;
+    word-break: break-all;
+  }
+  .copy-btn {
+    background: #21262d;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    padding: 0.4rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  .copy-btn:hover { background: #30363d; }
+
+  .rollback-btn {
+    background: transparent;
+    color: #f0883e;
+    border: 1px solid #f0883e;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+  .rollback-btn:hover { background: rgba(240, 136, 62, 0.15); }
+  .rollback-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .current-badge {
+    color: #4caf50;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .result-banner {
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
+  }
+  .result-banner.success {
+    background: rgba(76, 175, 80, 0.12);
+    border: 1px solid rgba(76, 175, 80, 0.3);
+    color: #4caf50;
+  }
+  .result-banner.fail {
+    background: rgba(239, 83, 80, 0.12);
+    border: 1px solid rgba(239, 83, 80, 0.3);
+    color: #ef5350;
   }
 </style>

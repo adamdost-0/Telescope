@@ -86,6 +86,10 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
       return [] as unknown as T;
     case 'get_helm_release_history':
       return [] as unknown as T;
+    case 'get_helm_release_values':
+      return '# Values not available in web mode\n' as unknown as T;
+    case 'helm_rollback':
+      return 'Rollback not available in web mode' as unknown as T;
     default:
       throw new Error(`Command "${command}" not available in web mode`);
   }
@@ -334,6 +338,16 @@ export async function getHelmReleaseHistory(namespace: string, name: string): Pr
   } catch {
     return [];
   }
+}
+
+/** Get user-supplied values for the latest revision of a Helm release. */
+export async function getHelmReleaseValues(namespace: string, name: string): Promise<string> {
+  return invoke<string>('get_helm_release_values', { namespace, name });
+}
+
+/** Roll back a Helm release to a specific revision using the helm CLI. */
+export async function helmRollback(namespace: string, name: string, revision: number): Promise<string> {
+  return invoke<string>('helm_rollback', { namespace, name, revision });
 }
 
 /** Fetch node-level CPU/memory metrics with allocatable percentages. */
