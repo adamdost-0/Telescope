@@ -65,7 +65,7 @@ Pod-level debugging: logs, events, detail pages.
 
 ---
 
-## 🔲 M3 — Full Debug Loop + Resource Actions
+## ✅ M3 — Full Debug Loop + Resource Actions
 
 Complete the interactive debug loop: exec into containers, forward ports, and
 perform write operations (edit, delete, scale, rollout). This is the milestone
@@ -86,7 +86,7 @@ that closes the gap between "viewer" and "IDE".
 
 ---
 
-## 🔲 M4 — AKS-First Experience
+## ✅ M4 — AKS-First Experience
 
 Features that make Telescope the best IDE for Azure Kubernetes Service. **Lens has
 none of these** — this is our primary differentiator.
@@ -103,7 +103,7 @@ none of these** — this is our primary differentiator.
 
 ---
 
-## 🔲 M5 — Helm + Metrics
+## ✅ M5 — Helm + Metrics
 
 Helm release lifecycle management and metrics-server integration for resource
 monitoring.
@@ -124,7 +124,7 @@ monitoring.
 
 ---
 
-## 🔲 M6 — Search, CRDs + Advanced UX
+## ✅ M6 — Search, CRDs + Advanced UX
 
 Power-user features: global search, CRD support, keyboard-driven workflows,
 and visual polish.
@@ -177,16 +177,24 @@ Extensibility system for custom resource views, actions, and integrations.
 
 ## Parity Summary
 
-| Category | Lens Features | Telescope Today | After M8 |
-|----------|--------------|----------------|----------|
-| Connect & Browse | ✅ | ✅ M0–M1 | ✅ |
-| Logs & Events | ✅ | ✅ M2 | ✅ |
-| Exec & Port-Forward | ✅ | ❌ | ✅ M3 |
-| Resource Mutations | ✅ | ❌ | ✅ M3 |
-| Helm | ✅ | ❌ | ✅ M5 |
-| Metrics | ✅ | ❌ | ✅ M5 |
-| CRDs | ✅ | ❌ | ✅ M6 |
-| Search & UX | ✅ | partial | ✅ M6 |
-| Extensions | ✅ | ❌ | ✅ M8 |
-| **AKS-native** | **❌ Lens lacks** | ❌ | **✅ M4** |
-| **Web multi-user** | **❌ Lens lacks** | ❌ | **✅ M7** |
+| Milestone | Scope | Cumulative Lens Parity | Status |
+|-----------|-------|------------------------|--------|
+| M0–M1 | Connect + Browse | ~15% — read-only resource listing | ✅ |
+| M2 | Debug Loop | ~30% — add logs, events, detail views | ✅ |
+| M3 | Resource Actions | ~50% — exec, port-forward, YAML edit, delete, scale | ✅ |
+| M4 | AKS-First | ~55% — unique differentiator, not Lens parity | ✅ |
+| M5 | Helm + Metrics | ~70% — major Lens workflow complete | ✅ |
+| M6 | Search + CRDs + UX | ~80% — polish and power-user features | ✅ |
+| M7 | Web + Hub | ~90% — multi-user deployment | 🔲 |
+| M8 | Extensions | ~95% — extensibility | 🔲 |
+
+---
+
+## v1.0 Readiness Checklist
+
+- [ ] All features validated against live AKS cluster
+- [ ] E2E test coverage for core workflows
+- [ ] SQLite schema migration system
+- [ ] Landing page and documentation
+- [ ] Community channel (Discord/Slack)
+- [ ] 30-day dogfooding period
