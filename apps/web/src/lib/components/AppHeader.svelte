@@ -1,6 +1,7 @@
 <script lang="ts">
   import ContextSwitcher from './ContextSwitcher.svelte';
   import ConnectionStatus from './ConnectionStatus.svelte';
+  import ThemeToggle from './ThemeToggle.svelte';
   import { isProduction } from '$lib/stores';
 </script>
 
@@ -17,6 +18,7 @@
   <div class="context-area">
     <ConnectionStatus />
     <ContextSwitcher />
+    <ThemeToggle />
   </div>
 </header>
 
@@ -26,9 +28,9 @@
     align-items: center;
     gap: 1rem;
     padding: 0.5rem 1rem;
-    background: #010409;
-    border-bottom: 1px solid #21262d;
-    color: #e0e0e0;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
     height: 48px;
     z-index: 10;
   }
@@ -41,7 +43,7 @@
   .brand-text {
     font-weight: 700;
     font-size: 1rem;
-    color: #58a6ff;
+    color: var(--accent);
   }
   .spacer { flex: 1; }
   .context-area {
@@ -50,7 +52,7 @@
     gap: 0.75rem;
   }
   .prod-banner {
-    background: #d32f2f;
+    background: var(--danger-bg);
     color: #fff;
     text-align: center;
     font-weight: 700;
