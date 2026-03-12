@@ -7,6 +7,9 @@
   import EventsTable from '$lib/components/EventsTable.svelte';
   import YamlEditor from '$lib/components/YamlEditor.svelte';
   import ScaleDialog from '$lib/components/ScaleDialog.svelte';
+  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
+  import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   const KIND_MAP: Record<string, { gvk: string; label: string }> = {
@@ -45,6 +48,9 @@
   let rolloutLoading = $state(false);
   let rolloutMessage: string | null = $state(null);
   let showRestartConfirm = $state(false);
+  let showProdRestartConfirm = $state(false);
+  let pendingScaleReplicas: number | null = $state(null);
+  let showScaleConfirm = $state(false);
 
   // YAML editor state
   let editedYaml = $state('');
@@ -149,6 +155,7 @@
 
   async function handleRolloutRestart() {
     showRestartConfirm = false;
+    showProdRestartConfirm = false;
     rolloutLoading = true;
     rolloutMessage = null;
     try {
@@ -205,6 +212,16 @@
   async function handleScale(replicas: number) {
     showScale = false;
     if (!kindInfo) return;
+    if ($isProduction) {
+      pendingScaleReplicas = replicas;
+      showScaleConfirm = true;
+      return;
+    }
+    await executeScale(replicas);
+  }
+
+  async function executeScale(replicas: number) {
+    if (!kindInfo) return;
     try {
       await scaleResource(kindInfo.gvk, namespace, resourceName, replicas);
       await loadResource();
@@ -212,11 +229,19 @@
       console.error('Scale failed:', e);
     }
   }
+
+  async function confirmScale() {
+    showScaleConfirm = false;
+    if (pendingScaleReplicas !== null) {
+      await executeScale(pendingScaleReplicas);
+      pendingScaleReplicas = null;
+    }
+  }
 </script>
 
 <div class="detail-page">
   <header class="detail-header">
-    <a href="/resources/{kind}" class="back">← {kindInfo?.label ?? kind}</a>
+    <a href="/resources/{kind}?namespace={encodeURIComponent(namespace)}" class="back">← {kindInfo?.label ?? kind} ({namespace})</a>
     <h1>{resourceName}</h1>
     <span class="namespace-badge">{namespace}</span>
     {#if isScalable && resource}
@@ -296,7 +321,13 @@
                 </button>
                 <button class="btn btn-secondary btn-sm" onclick={() => showRestartConfirm = false}>Cancel</button>
               {:else}
-                <button class="btn btn-primary btn-sm" onclick={() => showRestartConfirm = true} disabled={rolloutLoading}>
+                <button class="btn btn-primary btn-sm" onclick={() => {
+                  if ($isProduction) {
+                    showProdRestartConfirm = true;
+                  } else {
+                    showRestartConfirm = true;
+                  }
+                }} disabled={rolloutLoading}>
                   Restart Rollout
                 </button>
               {/if}
@@ -593,6 +624,11 @@
           <p class="muted">No annotations</p>
         {/if}
 
+        <!-- Azure Identity (workload kinds use pod template spec) -->
+        {#if WORKLOAD_KINDS.has(kind) && resource.spec?.template}
+          <AzureIdentitySection pod={resource.spec.template} />
+        {/if}
+
         <!-- Common: Conditions (for kinds that have them) -->
         {#if resource.status?.conditions?.length}
           <h3>Conditions</h3>
@@ -668,6 +704,30 @@
   currentReplicas={currentReplicas}
   onscale={handleScale}
   oncancel={() => showScale = false}
+/>
+
+<ConfirmDialog
+  open={showScaleConfirm}
+  title="Scale in Production"
+  message={`You are about to scale "${resourceName}" to ${pendingScaleReplicas} replica(s) in a PRODUCTION context.`}
+  confirmText="Scale"
+  confirmValue={resourceName}
+  requireType={true}
+  productionContext={true}
+  onconfirm={confirmScale}
+  oncancel={() => { showScaleConfirm = false; pendingScaleReplicas = null; }}
+/>
+
+<ConfirmDialog
+  open={showProdRestartConfirm}
+  title="Rollout Restart in Production"
+  message={`You are about to restart all pods for "${resourceName}" in a PRODUCTION context.`}
+  confirmText="Restart"
+  confirmValue={resourceName}
+  requireType={true}
+  productionContext={true}
+  onconfirm={handleRolloutRestart}
+  oncancel={() => showProdRestartConfirm = false}
 />
 
 <style>

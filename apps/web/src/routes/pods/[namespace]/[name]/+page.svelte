@@ -10,6 +10,8 @@
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import YamlEditor from '$lib/components/YamlEditor.svelte';
   import PortForwardDialog from '$lib/components/PortForwardDialog.svelte';
+  import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
+  import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   let namespace = $derived(page.params.namespace);
@@ -177,6 +179,8 @@
           </div>
         {/each}
 
+        <AzureIdentitySection {pod} />
+
         {#if pod.status?.conditions}
           <h3>Conditions</h3>
           <table>
@@ -223,6 +227,7 @@
     confirmText={deleting ? 'Deleting…' : 'Delete'}
     confirmValue={podName}
     requireType={requireTypeName}
+    productionContext={$isProduction}
     onconfirm={handleDelete}
     oncancel={() => { showDeleteDialog = false; deleteError = null; }}
   />
