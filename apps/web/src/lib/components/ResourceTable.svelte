@@ -16,17 +16,62 @@
     hrefFn?: (entry: ResourceEntry) => string | null;
   } = $props();
 
-  let rows = $derived(resources.map((entry) => {
-    try {
-      const content = JSON.parse(entry.content);
-      return columns.map((col) => ({
-        text: col.extract(content),
-        color: col.colorFn?.(content) ?? null,
-      }));
-    } catch {
-      return columns.map(() => ({ text: '—', color: null }));
+  let sortKey = $state<string | null>(null);
+  let sortDir = $state<'asc' | 'desc'>('asc');
+
+  function toggleSort(key: string) {
+    if (sortKey !== key) {
+      sortKey = key;
+      sortDir = 'asc';
+    } else if (sortDir === 'asc') {
+      sortDir = 'desc';
+    } else {
+      sortKey = null;
+      sortDir = 'asc';
     }
-  }));
+  }
+
+  function sortIndicator(key: string): string {
+    if (sortKey !== key) return ' ◇';
+    return sortDir === 'asc' ? ' ▲' : ' ▼';
+  }
+
+  interface RowEntry {
+    index: number;
+    cells: { text: string; color: string | null }[];
+  }
+
+  let rows = $derived.by(() => {
+    const mapped: RowEntry[] = resources.map((entry, index) => {
+      try {
+        const content = JSON.parse(entry.content);
+        return {
+          index,
+          cells: columns.map((col) => ({
+            text: col.extract(content),
+            color: col.colorFn?.(content) ?? null,
+          })),
+        };
+      } catch {
+        return {
+          index,
+          cells: columns.map(() => ({ text: '—', color: null })),
+        };
+      }
+    });
+
+    if (sortKey === null) return mapped;
+
+    const colIdx = columns.findIndex((c) => c.key === sortKey);
+    if (colIdx < 0) return mapped;
+
+    return [...mapped].sort((a, b) => {
+      const aVal = a.cells[colIdx].text;
+      const bVal = b.cells[colIdx].text;
+      const cmp = aVal.localeCompare(bVal, undefined, { numeric: true, sensitivity: 'base' });
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  });
 
   function formatAge(timestamp: string): string {
     const created = new Date(timestamp);
@@ -55,15 +100,19 @@
       <thead>
         <tr>
           {#each columns as col}
-            <th scope="col" style={col.width ? `width: ${col.width}` : ''}>{col.label}</th>
+            <th scope="col" style={col.width ? `width: ${col.width}` : ''}>
+              <button class="sort-btn" onclick={() => toggleSort(col.key)} aria-label="Sort by {col.label}">
+                {col.label}{sortIndicator(col.key)}
+              </button>
+            </th>
           {/each}
         </tr>
       </thead>
       <tbody>
-        {#each rows as row, i (resources[i].name + resources[i].namespace)}
-          {@const href = hrefFn?.(resources[i]) ?? null}
+        {#each rows as row (resources[row.index].name + resources[row.index].namespace)}
+          {@const href = hrefFn?.(resources[row.index]) ?? null}
           <tr>
-            {#each row as cell, j}
+            {#each row.cells as cell, j}
               {#if j === 0 && href}
                 <td class="resource-name"><a {href}>{cell.text}</a></td>
               {:else}
@@ -91,32 +140,46 @@
   thead {
     position: sticky;
     top: 0;
-    background: #1a1a2e;
-    color: #e0e0e0;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
     z-index: 1;
   }
   th, td {
     padding: 0.5rem 0.75rem;
     text-align: left;
-    border-bottom: 1px solid #2a2a3e;
+    border-bottom: 1px solid var(--border);
   }
   tr:hover {
-    background: #16213e;
+    background: var(--bg-hover);
   }
   .resource-name {
     font-weight: 500;
-    color: #4fc3f7;
+    color: var(--accent);
   }
   .resource-name a {
-    color: #4fc3f7;
+    color: var(--accent);
     text-decoration: none;
   }
   .resource-name a:hover {
     text-decoration: underline;
-    color: #58a6ff;
+    color: var(--accent);
+  }
+  .sort-btn {
+    all: unset;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .sort-btn:hover {
+    color: var(--accent);
   }
   .empty {
-    color: #9e9e9e;
+    color: var(--text-muted);
     padding: 2rem;
     text-align: center;
   }

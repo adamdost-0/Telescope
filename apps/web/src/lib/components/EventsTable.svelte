@@ -14,10 +14,63 @@
     lastSeen: string;
   }
 
-  let parsed = $derived(events.map(parseEvent).sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'Warning' ? -1 : 1;
-    return b.lastSeen.localeCompare(a.lastSeen);
-  }));
+  type SortField = 'type' | 'namespace' | 'reason' | 'object' | 'message' | 'count' | 'lastSeen';
+  let sortKey = $state<SortField | null>(null);
+  let sortDir = $state<'asc' | 'desc'>('asc');
+
+  function toggleSort(key: SortField) {
+    if (sortKey !== key) {
+      sortKey = key;
+      sortDir = 'asc';
+    } else if (sortDir === 'asc') {
+      sortDir = 'desc';
+    } else {
+      sortKey = null;
+      sortDir = 'asc';
+    }
+  }
+
+  function sortIndicator(key: SortField): string {
+    if (sortKey !== key) return ' ◇';
+    return sortDir === 'asc' ? ' ▲' : ' ▼';
+  }
+
+  function eventSortValue(evt: ParsedEvent, key: SortField): string | number {
+    switch (key) {
+      case 'type': return evt.type;
+      case 'namespace': return evt.namespace;
+      case 'reason': return evt.reason;
+      case 'object': return evt.object;
+      case 'message': return evt.message;
+      case 'count': return evt.count;
+      case 'lastSeen': return evt.lastSeen;
+    }
+  }
+
+  let parsed = $derived.by(() => {
+    const base = events.map(parseEvent);
+
+    if (sortKey !== null) {
+      const key = sortKey;
+      return [...base].sort((a, b) => {
+        const aVal = eventSortValue(a, key);
+        const bVal = eventSortValue(b, key);
+        let cmp: number;
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+          cmp = aVal - bVal;
+        } else {
+          cmp = String(aVal).localeCompare(String(bVal), undefined, { numeric: true, sensitivity: 'base' });
+        }
+        return sortDir === 'asc' ? cmp : -cmp;
+      });
+    }
+
+    // Default sort: warnings first, then by lastSeen descending
+    return base.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'Warning' ? -1 : 1;
+      return b.lastSeen.localeCompare(a.lastSeen);
+    });
+  });
 
   function parseEvent(entry: ResourceEntry): ParsedEvent {
     try {
@@ -60,13 +113,13 @@
     <table aria-label="Kubernetes events">
       <thead>
         <tr>
-          <th scope="col">Type</th>
-          <th scope="col">Namespace</th>
-          <th scope="col">Reason</th>
-          {#if showObject}<th scope="col">Object</th>{/if}
-          <th scope="col">Message</th>
-          <th scope="col">Count</th>
-          <th scope="col">Last Seen</th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('type')} aria-label="Sort by Type">Type{sortIndicator('type')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('namespace')} aria-label="Sort by Namespace">Namespace{sortIndicator('namespace')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('reason')} aria-label="Sort by Reason">Reason{sortIndicator('reason')}</button></th>
+          {#if showObject}<th scope="col"><button class="sort-btn" onclick={() => toggleSort('object')} aria-label="Sort by Object">Object{sortIndicator('object')}</button></th>{/if}
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('message')} aria-label="Sort by Message">Message{sortIndicator('message')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('count')} aria-label="Sort by Count">Count{sortIndicator('count')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('lastSeen')} aria-label="Sort by Last Seen">Last Seen{sortIndicator('lastSeen')}</button></th>
         </tr>
       </thead>
       <tbody>
@@ -126,6 +179,25 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     border-bottom: 1px solid #21262d;
+  }
+
+  .sort-btn {
+    all: unset;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    user-select: none;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    font-size: 0.75rem;
+  }
+  .sort-btn:hover {
+    color: #58a6ff;
   }
 
   td {

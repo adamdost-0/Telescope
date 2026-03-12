@@ -18,7 +18,54 @@
     new Map(metrics.map((m) => [`${m.namespace}/${m.name}`, m]))
   );
 
-  let parsedPods = $derived(pods.map((p) => parsePod(p)));
+  type SortField = 'name' | 'ready' | 'status' | 'cpu' | 'memory' | 'restarts' | 'age';
+  let sortKey = $state<SortField | null>(null);
+  let sortDir = $state<'asc' | 'desc'>('asc');
+
+  function toggleSort(key: SortField) {
+    if (sortKey !== key) {
+      sortKey = key;
+      sortDir = 'asc';
+    } else if (sortDir === 'asc') {
+      sortDir = 'desc';
+    } else {
+      sortKey = null;
+      sortDir = 'asc';
+    }
+  }
+
+  function sortIndicator(key: SortField): string {
+    if (sortKey !== key) return ' ◇';
+    return sortDir === 'asc' ? ' ▲' : ' ▼';
+  }
+
+  function sortValue(pod: PodInfo, key: SortField): string | number {
+    switch (key) {
+      case 'name': return pod.name;
+      case 'ready': return pod.ready;
+      case 'status': return pod.status;
+      case 'cpu': return pod.cpuMillicores ?? -1;
+      case 'memory': return pod.memoryBytes ?? -1;
+      case 'restarts': return pod.restarts;
+      case 'age': return pod.age;
+    }
+  }
+
+  let parsedPods = $derived.by(() => {
+    const base = pods.map((p) => parsePod(p));
+    if (sortKey === null) return base;
+    return [...base].sort((a, b) => {
+      const aVal = sortValue(a, sortKey!);
+      const bVal = sortValue(b, sortKey!);
+      let cmp: number;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        cmp = aVal - bVal;
+      } else {
+        cmp = String(aVal).localeCompare(String(bVal), undefined, { numeric: true, sensitivity: 'base' });
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  });
 
   function parsePod(entry: ResourceEntry): PodInfo {
     const m = metricsMap.get(`${entry.namespace}/${entry.name}`);
@@ -102,13 +149,13 @@
     <table aria-label="Pod list">
       <thead>
         <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Ready</th>
-          <th scope="col">Status</th>
-          <th scope="col">CPU</th>
-          <th scope="col">Memory</th>
-          <th scope="col">Restarts</th>
-          <th scope="col">Age</th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('name')} aria-label="Sort by Name">Name{sortIndicator('name')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('ready')} aria-label="Sort by Ready">Ready{sortIndicator('ready')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('status')} aria-label="Sort by Status">Status{sortIndicator('status')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('cpu')} aria-label="Sort by CPU">CPU{sortIndicator('cpu')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('memory')} aria-label="Sort by Memory">Memory{sortIndicator('memory')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('restarts')} aria-label="Sort by Restarts">Restarts{sortIndicator('restarts')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('age')} aria-label="Sort by Age">Age{sortIndicator('age')}</button></th>
         </tr>
       </thead>
       <tbody>
@@ -142,38 +189,52 @@
   thead {
     position: sticky;
     top: 0;
-    background: #1a1a2e;
-    color: #e0e0e0;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
   }
   th, td {
     padding: 0.5rem 0.75rem;
     text-align: left;
-    border-bottom: 1px solid #2a2a3e;
+    border-bottom: 1px solid var(--border);
   }
   tr:hover {
-    background: #16213e;
+    background: var(--bg-hover);
   }
   .pod-name a {
     font-weight: 500;
-    color: #4fc3f7;
+    color: var(--accent);
     text-decoration: none;
   }
   .pod-name a:hover {
     text-decoration: underline;
-    color: #58a6ff;
+    color: var(--accent);
   }
-  .status-running { color: #66bb6a; }
-  .status-succeeded { color: #42a5f5; }
-  .status-pending { color: #ffa726; }
-  .status-failed { color: #ef5350; }
-  .status-unknown { color: #bdbdbd; }
+  .status-running { color: var(--success); }
+  .status-succeeded { color: var(--accent); }
+  .status-pending { color: var(--warning); }
+  .status-failed { color: var(--error); }
+  .status-unknown { color: var(--text-secondary); }
   .empty {
-    color: #9e9e9e;
+    color: var(--text-muted);
     padding: 2rem;
     text-align: center;
   }
+  .sort-btn {
+    all: unset;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .sort-btn:hover {
+    color: var(--accent);
+  }
   .metric {
-    color: #b0bec5;
+    color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
 </style>
