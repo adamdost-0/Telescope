@@ -6,6 +6,7 @@
 import {
   isTauri,
   type ClusterContext,
+  type ClusterInfo,
   type ResourceEntry,
   type ConnectionState,
 } from './tauri-commands';
@@ -42,10 +43,13 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
         cluster_server: (c.server as string) ?? null,
         namespace: null,
         is_active: false,
+        auth_type: (c.auth_type as string) ?? 'unknown',
       })) as unknown as T;
     }
     case 'get_connection_state':
       return { state: 'Disconnected' } as unknown as T;
+    case 'get_cluster_info':
+      return null as unknown as T;
     case 'get_resource_counts':
     case 'get_pods':
     case 'get_resources':
@@ -105,6 +109,15 @@ export async function getConnectionState(): Promise<ConnectionState> {
     return await invoke<ConnectionState>('get_connection_state');
   } catch {
     return { state: 'Disconnected' };
+  }
+}
+
+/** Fetch cluster version, auth, and AKS info for the connected context. */
+export async function getClusterInfo(): Promise<ClusterInfo | null> {
+  try {
+    return await invoke<ClusterInfo>('get_cluster_info');
+  } catch {
+    return null;
   }
 }
 

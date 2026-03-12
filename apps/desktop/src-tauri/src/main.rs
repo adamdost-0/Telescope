@@ -30,6 +30,21 @@ struct AppState {
 // Sync commands (read-only)
 // ---------------------------------------------------------------------------
 
+/// Get cluster version and auth info for the connected context.
+#[tauri::command]
+async fn get_cluster_info(
+    state: State<'_, AppState>,
+) -> Result<telescope_engine::ClusterInfo, String> {
+    let ctx = state.active_context.read().await.clone();
+    let context_name = ctx.ok_or_else(|| "Not connected".to_string())?;
+    let client = telescope_engine::client::create_client_for_context(&context_name)
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::client::get_cluster_info(&client, &context_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// List available Kubernetes contexts from kubeconfig.
 #[tauri::command]
 fn list_contexts() -> Result<Vec<ClusterContext>, String> {
@@ -673,6 +688,7 @@ fn main() {
             list_contexts,
             active_context,
             get_connection_state,
+            get_cluster_info,
             get_pods,
             get_resources,
             get_events,

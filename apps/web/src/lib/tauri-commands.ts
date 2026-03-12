@@ -8,6 +8,8 @@ export interface ClusterContext {
   cluster_server: string | null;
   namespace: string | null;
   is_active: boolean;
+  /** Authentication method: "exec" | "token" | "certificate" | "unknown" */
+  auth_type: string;
 }
 
 export interface ResourceEntry {
@@ -37,6 +39,16 @@ export type ConnectionState =
 export interface LogChunk {
   lines: string;
   is_complete: boolean;
+}
+
+export interface ClusterInfo {
+  server_version: string;
+  platform: string;
+  server_url: string;
+  auth_type: string;
+  exec_plugin: string | null;
+  is_aks: boolean;
+  auth_hint: string | null;
 }
 
 /**

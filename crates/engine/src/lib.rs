@@ -10,6 +10,7 @@ pub mod namespace;
 pub mod portforward;
 pub mod watcher;
 
+pub use client::ClusterInfo;
 pub use error::{EngineError, Result};
 pub use kubeconfig::ClusterContext;
 pub use watcher::ResourceWatcher;
