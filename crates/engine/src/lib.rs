@@ -7,6 +7,7 @@ pub mod exec;
 pub mod kubeconfig;
 pub mod logs;
 pub mod namespace;
+pub mod portforward;
 pub mod watcher;
 
 pub use error::{EngineError, Result};

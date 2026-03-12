@@ -76,6 +76,22 @@ fn get_pods(
         .map_err(|e| e.to_string())
 }
 
+/// Get resources by GVK and optional namespace.
+#[tauri::command]
+fn get_resources(
+    state: State<'_, AppState>,
+    gvk: String,
+    namespace: Option<String>,
+) -> Result<Vec<ResourceEntry>, String> {
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| format!("Store lock failed: {}", e))?;
+    store
+        .list(&gvk, namespace.as_deref())
+        .map_err(|e| e.to_string())
+}
+
 /// List events, optionally filtered by involved object name.
 #[tauri::command]
 fn get_events(
@@ -597,6 +613,28 @@ async fn exec_command(
         .map_err(|e| e.to_string())
 }
 
+/// Start port forwarding from a local port to a pod port.
+#[tauri::command]
+async fn start_port_forward(
+    namespace: String,
+    pod: String,
+    local_port: u16,
+    remote_port: u16,
+) -> Result<u16, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    let req = telescope_engine::portforward::PortForwardRequest {
+        namespace,
+        pod,
+        local_port,
+        remote_port,
+    };
+    telescope_engine::portforward::start_port_forward(&client, &req)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -636,6 +674,7 @@ fn main() {
             active_context,
             get_connection_state,
             get_pods,
+            get_resources,
             get_events,
             get_resource_counts,
             count_resources,
@@ -648,6 +687,7 @@ fn main() {
             get_pod_logs,
             list_containers,
             start_log_stream,
+            start_port_forward,
             scale_resource,
             delete_resource,
             apply_resource,
