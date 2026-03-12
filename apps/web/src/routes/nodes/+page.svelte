@@ -3,11 +3,22 @@
   import { getResources } from '$lib/api';
   import { isConnected } from '$lib/stores';
   import ResourceTable from '$lib/components/ResourceTable.svelte';
+  import NodePoolHeader from '$lib/components/NodePoolHeader.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   const GVK = 'v1/Node';
   const PAGE_TITLE = 'Nodes';
+  const OTHER_POOL = 'Other';
+
+  interface NodePool {
+    name: string;
+    vmSize: string;
+    osType: string;
+    mode: string;
+    nodes: ResourceEntry[];
+    readyCount: number;
+  }
 
   function formatAge(timestamp: string): string {
     const created = new Date(timestamp);
@@ -39,6 +50,70 @@
     return roles.length > 0 ? roles.join(', ') : '<none>';
   }
 
+  function getPoolName(obj: any): string | null {
+    const labels = obj?.metadata?.labels ?? {};
+    return labels['agentpool'] ?? labels['kubernetes.azure.com/agentpool'] ?? null;
+  }
+
+  function getPoolVmSize(obj: any): string {
+    return obj?.metadata?.labels?.['node.kubernetes.io/instance-type'] ?? '';
+  }
+
+  function getPoolOsType(obj: any): string {
+    return obj?.metadata?.labels?.['kubernetes.azure.com/os-type']
+      ?? obj?.metadata?.labels?.['beta.kubernetes.io/os']
+      ?? obj?.status?.nodeInfo?.operatingSystem
+      ?? '';
+  }
+
+  function getPoolMode(obj: any): string {
+    const mode = obj?.metadata?.labels?.['kubernetes.azure.com/mode'] ?? '';
+    return mode ? mode.charAt(0).toUpperCase() + mode.slice(1) : '';
+  }
+
+  function groupNodesByPool(entries: ResourceEntry[]): { pools: NodePool[]; hasAksLabels: boolean } {
+    const poolMap = new Map<string, { nodes: ResourceEntry[]; objs: any[] }>();
+    let aksCount = 0;
+
+    for (const entry of entries) {
+      let obj: any;
+      try { obj = JSON.parse(entry.content); } catch { obj = {}; }
+      const pool = getPoolName(obj);
+      if (pool) aksCount++;
+      const key = pool ?? OTHER_POOL;
+      if (!poolMap.has(key)) poolMap.set(key, { nodes: [], objs: [] });
+      const group = poolMap.get(key)!;
+      group.nodes.push(entry);
+      group.objs.push(obj);
+    }
+
+    if (aksCount === 0) return { pools: [], hasAksLabels: false };
+
+    const pools: NodePool[] = [];
+    for (const [name, { nodes, objs }] of poolMap) {
+      const readyCount = objs.filter(o => getNodeStatus(o) === 'Ready').length;
+      // Derive pool-level metadata from the first node in the group
+      const first = objs[0];
+      pools.push({
+        name,
+        vmSize: getPoolVmSize(first),
+        osType: getPoolOsType(first),
+        mode: getPoolMode(first),
+        nodes,
+        readyCount,
+      });
+    }
+
+    // Sort: named pools alphabetically, "Other" last
+    pools.sort((a, b) => {
+      if (a.name === OTHER_POOL) return 1;
+      if (b.name === OTHER_POOL) return -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return { pools, hasAksLabels: true };
+  }
+
   const columns = [
     { key: 'name', label: 'Name', extract: (c: any) => c?.metadata?.name ?? '', width: '25%' },
     { key: 'status', label: 'Status', extract: (c: any) => getNodeStatus(c) },
@@ -58,8 +133,15 @@
   let error: string | null = $state(null);
   let lastUpdated: Date | null = $state(null);
   let lastUpdatedText = $state('');
+  let collapsedPools: Record<string, boolean> = $state({});
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let timestampTimer: ReturnType<typeof setInterval> | null = null;
+
+  let grouped = $derived(groupNodesByPool(resources));
+
+  function togglePool(name: string) {
+    collapsedPools = { ...collapsedPools, [name]: !collapsedPools[name] };
+  }
 
   function formatTimestamp(): string {
     if (!lastUpdated) return '';
@@ -133,7 +215,31 @@
     </div>
   {:else}
     <p class="count">{resources.length} {PAGE_TITLE.toLowerCase()}</p>
-    <ResourceTable {resources} {columns} emptyMessage="No nodes found." hrefFn={(entry) => `/nodes/${entry.name}`} />
+    {#if grouped.hasAksLabels}
+      <div class="pool-list">
+        {#each grouped.pools as pool (pool.name)}
+          <section class="pool-section">
+            <NodePoolHeader
+              poolName={pool.name}
+              nodeCount={pool.nodes.length}
+              readyCount={pool.readyCount}
+              vmSize={pool.vmSize}
+              osType={pool.osType}
+              mode={pool.mode}
+              collapsed={!!collapsedPools[pool.name]}
+              onToggle={() => togglePool(pool.name)}
+            />
+            {#if !collapsedPools[pool.name]}
+              <div class="pool-nodes">
+                <ResourceTable resources={pool.nodes} {columns} emptyMessage="No nodes in this pool." hrefFn={(entry) => `/nodes/${entry.name}`} />
+              </div>
+            {/if}
+          </section>
+        {/each}
+      </div>
+    {:else}
+      <ResourceTable {resources} {columns} emptyMessage="No nodes found." hrefFn={(entry) => `/nodes/${entry.name}`} />
+    {/if}
   {/if}
 </div>
 
@@ -156,4 +262,7 @@
   .not-connected { text-align: center; padding: 3rem 1rem; color: #757575; }
   .not-connected p { margin: 0.25rem 0; font-size: 1.125rem; }
   .not-connected .hint { font-size: 0.875rem; color: #616161; }
+  .pool-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .pool-section { display: flex; flex-direction: column; }
+  .pool-nodes { margin-top: 0.25rem; margin-left: 0.5rem; border-left: 2px solid #2a2a4a; padding-left: 0.5rem; }
 </style>
