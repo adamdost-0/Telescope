@@ -8,8 +8,10 @@ use std::sync::{Arc, Mutex};
 
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::{
-    apps::v1::Deployment,
-    core::v1::{ConfigMap, Event as K8sEvent, Node, Pod, Secret, Service},
+    apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet},
+    batch::v1::{CronJob, Job},
+    core::v1::{ConfigMap, Event as K8sEvent, Node, PersistentVolumeClaim, Pod, Secret, Service},
+    networking::v1::Ingress,
 };
 use k8s_openapi::{ClusterResourceScope, NamespaceResourceScope};
 use kube::{
@@ -348,6 +350,47 @@ impl ResourceWatcher {
     /// Watch Nodes (cluster-scoped).
     pub async fn watch_nodes(&self) -> crate::Result<()> {
         self.watch_cluster_resource::<Node>("v1/Node").await
+    }
+
+    /// Watch StatefulSets in a namespace.
+    pub async fn watch_statefulsets(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<StatefulSet>("apps/v1/StatefulSet", namespace)
+            .await
+    }
+
+    /// Watch DaemonSets in a namespace.
+    pub async fn watch_daemonsets(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<DaemonSet>("apps/v1/DaemonSet", namespace)
+            .await
+    }
+
+    /// Watch ReplicaSets in a namespace.
+    pub async fn watch_replicasets(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<ReplicaSet>("apps/v1/ReplicaSet", namespace)
+            .await
+    }
+
+    /// Watch Jobs in a namespace.
+    pub async fn watch_jobs(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<Job>("batch/v1/Job", namespace).await
+    }
+
+    /// Watch CronJobs in a namespace.
+    pub async fn watch_cronjobs(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<CronJob>("batch/v1/CronJob", namespace)
+            .await
+    }
+
+    /// Watch Ingresses in a namespace.
+    pub async fn watch_ingresses(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<Ingress>("networking.k8s.io/v1/Ingress", namespace)
+            .await
+    }
+
+    /// Watch PersistentVolumeClaims in a namespace.
+    pub async fn watch_pvcs(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<PersistentVolumeClaim>("v1/PersistentVolumeClaim", namespace)
+            .await
     }
 }
 

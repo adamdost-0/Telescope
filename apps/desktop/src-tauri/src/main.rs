@@ -12,6 +12,31 @@ use telescope_core::{ConnectionState, ResourceEntry, ResourceStore};
 use telescope_engine::audit::AuditEntry;
 use telescope_engine::ClusterContext;
 
+/// All watched GVK strings. Used for cache invalidation on connect,
+/// disconnect, namespace switch, and startup cleanup.
+const ALL_WATCHED_GVKS: &[&str] = &[
+    "v1/Pod",
+    "v1/Event",
+    "v1/Node",
+    "apps/v1/Deployment",
+    "apps/v1/StatefulSet",
+    "apps/v1/DaemonSet",
+    "apps/v1/ReplicaSet",
+    "v1/Service",
+    "v1/ConfigMap",
+    "batch/v1/Job",
+    "batch/v1/CronJob",
+    "networking.k8s.io/v1/Ingress",
+    "v1/PersistentVolumeClaim",
+];
+
+/// Clear all watched resource data from the store.
+fn clear_all_resources(store: &ResourceStore) {
+    for gvk in ALL_WATCHED_GVKS {
+        let _ = store.delete_all_by_gvk(gvk);
+    }
+}
+
 /// Application state managed by Tauri.
 ///
 /// `ResourceStore` stays in `std::sync::Mutex` because `rusqlite::Connection`
@@ -143,19 +168,7 @@ fn get_resource_counts(state: State<'_, AppState>) -> Result<Vec<(String, u64)>,
         .lock()
         .map_err(|e| format!("Lock failed: {}", e))?;
     // Security: v1/Secret is excluded — secrets are fetched on-demand, never cached.
-    let gvks = vec![
-        "v1/Pod",
-        "apps/v1/Deployment",
-        "apps/v1/StatefulSet",
-        "apps/v1/DaemonSet",
-        "batch/v1/Job",
-        "batch/v1/CronJob",
-        "v1/Service",
-        "v1/ConfigMap",
-        "v1/Event",
-        "v1/Node",
-    ];
-    let counts: Vec<(String, u64)> = gvks
+    let counts: Vec<(String, u64)> = ALL_WATCHED_GVKS
         .iter()
         .map(|gvk| {
             let count = store.count(gvk, None).unwrap_or(0);
@@ -175,21 +188,9 @@ fn search_resources(
         .store
         .lock()
         .map_err(|e| format!("Store lock failed: {}", e))?;
-    let all_gvks = [
-        "v1/Pod",
-        "apps/v1/Deployment",
-        "v1/Service",
-        "v1/ConfigMap",
-        "v1/Node",
-        "v1/Event",
-        "apps/v1/StatefulSet",
-        "apps/v1/DaemonSet",
-        "batch/v1/Job",
-        "batch/v1/CronJob",
-    ];
     let mut results = Vec::new();
     let query_lower = query.to_lowercase();
-    for gvk in &all_gvks {
+    for gvk in ALL_WATCHED_GVKS {
         if let Ok(entries) = store.list(gvk, None) {
             for entry in entries {
                 if entry.name.to_lowercase().contains(&query_lower)
@@ -364,9 +365,7 @@ async fn connect_to_context(
             .store
             .lock()
             .map_err(|e| format!("Store lock failed: {}", e))?;
-        let _ = store.delete_all_by_gvk("v1/Pod");
-        let _ = store.delete_all_by_gvk("v1/Event");
-        let _ = store.delete_all_by_gvk("v1/Node");
+        clear_all_resources(&store);
     }
 
     // Update connection state to Connecting.
@@ -431,9 +430,7 @@ async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
             .store
             .lock()
             .map_err(|e| format!("Store lock failed: {}", e))?;
-        let _ = store.delete_all_by_gvk("v1/Pod");
-        let _ = store.delete_all_by_gvk("v1/Event");
-        let _ = store.delete_all_by_gvk("v1/Node");
+        clear_all_resources(&store);
     }
 
     // Reset state.
@@ -480,15 +477,13 @@ async fn set_namespace(
     if let Some(ctx) = context_name {
         abort_watch(&state).await;
 
-        // Clear old pod and event data.
+        // Clear old resource data.
         {
             let store = state
                 .store
                 .lock()
                 .map_err(|e| format!("Store lock failed: {}", e))?;
-            let _ = store.delete_all_by_gvk("v1/Pod");
-            let _ = store.delete_all_by_gvk("v1/Event");
-            let _ = store.delete_all_by_gvk("v1/Node");
+            clear_all_resources(&store);
         }
 
         set_connection_state(&app, &state.connection_state, ConnectionState::Connecting).await;
@@ -782,48 +777,79 @@ async fn spawn_watch_task(
         }
     });
 
-    // Spawn the events watcher (cluster-wide — watches all namespaces).
-    let events_watcher = watcher.clone();
-    let events_task = tokio::spawn(async move {
-        if let Err(e) = events_watcher.watch_all_events().await {
+    // Collect auxiliary task handles so the main task can abort them on exit.
+    let mut aux_tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+
+    // -- Cluster-wide / cluster-scoped watchers --
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_all_events().await {
             error!("Events watch error: {}", e);
         }
-    });
+    }));
 
-    // Spawn the nodes watcher (cluster-scoped — no namespace needed).
-    let nodes_watcher = watcher.clone();
-    let nodes_task = tokio::spawn(async move {
-        if let Err(e) = nodes_watcher.watch_nodes().await {
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_nodes().await {
             error!("Node watch error: {}", e);
         }
-    });
+    }));
 
-    // Spawn the main watch task (pods + state machine).
+    // -- Namespaced resource watchers --
+    // Uses a macro to reduce boilerplate for each resource type.
+    macro_rules! spawn_ns_watch {
+        ($watcher:expr, $ns:expr, $tasks:ident, $method:ident, $label:expr) => {{
+            let w = $watcher.clone();
+            let ns_clone = $ns.clone();
+            $tasks.push(tokio::spawn(async move {
+                if let Err(e) = w.$method(&ns_clone).await {
+                    error!("{} watch error: {}", $label, e);
+                }
+            }));
+        }};
+    }
+
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_deployments, "Deployment");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_statefulsets, "StatefulSet");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_daemonsets, "DaemonSet");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_replicasets, "ReplicaSet");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_services, "Service");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_config_maps, "ConfigMap");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_jobs, "Job");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_cronjobs, "CronJob");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_ingresses, "Ingress");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_pvcs, "PVC");
+
+    // Spawn the main watch task (pods + lifecycle coordinator).
     let task = tokio::spawn(async move {
         if let Err(e) = watcher.watch_pods(&ns).await {
-            error!("Watch error: {}", e);
+            error!("Pod watch error: {}", e);
         }
-        // When the pod watch ends, abort the state forwarder and other watchers.
+        // When the pod watch ends, abort the state forwarder and all auxiliary watchers.
         state_forwarder.abort();
-        events_task.abort();
-        nodes_task.abort();
+        for t in aux_tasks {
+            t.abort();
+        }
     });
 
     let mut handle = state.watch_handle.lock().await;
     *handle = Some(task);
 }
 
-/// Restart a Deployment rollout.
+/// Restart a Deployment, StatefulSet, or DaemonSet rollout.
 #[tauri::command]
 async fn rollout_restart(
     state: State<'_, AppState>,
+    gvk: String,
     namespace: String,
     name: String,
 ) -> Result<String, String> {
     let client = telescope_engine::client::create_client()
         .await
         .map_err(|e| e.to_string())?;
-    let outcome = telescope_engine::actions::rollout_restart(&client, &namespace, &name).await;
+    let outcome =
+        telescope_engine::actions::rollout_restart(&client, &gvk, &namespace, &name).await;
     let result_str = if outcome.is_ok() {
         "success"
     } else {
@@ -841,7 +867,7 @@ async fn rollout_restart(
                 .unwrap_or_default(),
             namespace: namespace.clone(),
             action: "rollout_restart".into(),
-            resource_type: "Deployment".into(),
+            resource_type: gvk.clone(),
             resource_name: name.clone(),
             result: result_str.into(),
             detail: None,
@@ -850,16 +876,17 @@ async fn rollout_restart(
     outcome.map_err(|e| e.to_string())
 }
 
-/// Get rollout status for a Deployment.
+/// Get rollout status for a Deployment or StatefulSet.
 #[tauri::command]
 async fn rollout_status(
+    gvk: String,
     namespace: String,
     name: String,
 ) -> Result<telescope_engine::actions::RolloutStatus, String> {
     let client = telescope_engine::client::create_client()
         .await
         .map_err(|e| e.to_string())?;
-    telescope_engine::actions::rollout_status(&client, &namespace, &name)
+    telescope_engine::actions::rollout_status(&client, &gvk, &namespace, &name)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1042,9 +1069,7 @@ fn main() {
     }
 
     // Clear stale data from previous runs.
-    let _ = store.delete_all_by_gvk("v1/Pod");
-    let _ = store.delete_all_by_gvk("v1/Event");
-    let _ = store.delete_all_by_gvk("v1/Node");
+    clear_all_resources(&store);
 
     let app_state = AppState {
         db_path: db_path_str,

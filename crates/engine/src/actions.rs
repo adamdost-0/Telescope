@@ -63,6 +63,21 @@ pub async fn delete_resource(
                 Api::namespaced(client.clone(), namespace);
             api.delete(name, &DeleteParams::default()).await?;
         }
+        "networking.k8s.io/v1/Ingress" => {
+            let api: Api<k8s_openapi::api::networking::v1::Ingress> =
+                Api::namespaced(client.clone(), namespace);
+            api.delete(name, &DeleteParams::default()).await?;
+        }
+        "v1/PersistentVolumeClaim" => {
+            let api: Api<k8s_openapi::api::core::v1::PersistentVolumeClaim> =
+                Api::namespaced(client.clone(), namespace);
+            api.delete(name, &DeleteParams::default()).await?;
+        }
+        "apps/v1/ReplicaSet" => {
+            let api: Api<k8s_openapi::api::apps::v1::ReplicaSet> =
+                Api::namespaced(client.clone(), namespace);
+            api.delete(name, &DeleteParams::default()).await?;
+        }
         _ => {
             return Ok(DeleteResult {
                 success: false,
@@ -127,14 +142,13 @@ pub struct RolloutStatus {
     pub message: String,
 }
 
-/// Restart a Deployment by patching the pod template annotation.
+/// Restart a Deployment, StatefulSet, or DaemonSet by patching the pod template annotation.
 pub async fn rollout_restart(
     client: &Client,
+    gvk: &str,
     namespace: &str,
     name: &str,
 ) -> crate::Result<String> {
-    let api: Api<k8s_openapi::api::apps::v1::Deployment> =
-        Api::namespaced(client.clone(), namespace);
     let now = {
         use std::time::SystemTime;
         let d = SystemTime::now()
@@ -153,50 +167,113 @@ pub async fn rollout_restart(
             }
         }
     });
-    api.patch(
-        name,
-        &PatchParams::apply("telescope"),
-        &Patch::Merge(&patch),
-    )
-    .await?;
-    Ok(format!("Rollout restart initiated for {}", name))
+    let patch_params = PatchParams::apply("telescope");
+
+    match gvk {
+        "apps/v1/Deployment" => {
+            let api: Api<k8s_openapi::api::apps::v1::Deployment> =
+                Api::namespaced(client.clone(), namespace);
+            api.patch(name, &patch_params, &Patch::Merge(&patch))
+                .await?;
+        }
+        "apps/v1/StatefulSet" => {
+            let api: Api<k8s_openapi::api::apps::v1::StatefulSet> =
+                Api::namespaced(client.clone(), namespace);
+            api.patch(name, &patch_params, &Patch::Merge(&patch))
+                .await?;
+        }
+        "apps/v1/DaemonSet" => {
+            let api: Api<k8s_openapi::api::apps::v1::DaemonSet> =
+                Api::namespaced(client.clone(), namespace);
+            api.patch(name, &patch_params, &Patch::Merge(&patch))
+                .await?;
+        }
+        _ => {
+            return Err(crate::EngineError::Other(format!(
+                "Rollout restart not supported for {}",
+                gvk
+            )));
+        }
+    }
+
+    Ok(format!("Rollout restart initiated for {}/{}", gvk, name))
 }
 
-/// Get rollout status for a Deployment.
+/// Get rollout status for a Deployment or StatefulSet.
 pub async fn rollout_status(
     client: &Client,
+    gvk: &str,
     namespace: &str,
     name: &str,
 ) -> crate::Result<RolloutStatus> {
-    let api: Api<k8s_openapi::api::apps::v1::Deployment> =
-        Api::namespaced(client.clone(), namespace);
-    let deploy = api.get(name).await?;
+    match gvk {
+        "apps/v1/Deployment" => {
+            let api: Api<k8s_openapi::api::apps::v1::Deployment> =
+                Api::namespaced(client.clone(), namespace);
+            let deploy = api.get(name).await?;
 
-    let spec_replicas = deploy.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
-    let status = deploy.status.as_ref();
-    let ready = status.and_then(|s| s.ready_replicas).unwrap_or(0);
-    let updated = status.and_then(|s| s.updated_replicas).unwrap_or(0);
-    let available = status.and_then(|s| s.available_replicas).unwrap_or(0);
-    let generation = deploy.metadata.generation.unwrap_or(0);
-    let observed = status.and_then(|s| s.observed_generation).unwrap_or(0);
+            let spec_replicas = deploy.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
+            let status = deploy.status.as_ref();
+            let ready = status.and_then(|s| s.ready_replicas).unwrap_or(0);
+            let updated = status.and_then(|s| s.updated_replicas).unwrap_or(0);
+            let available = status.and_then(|s| s.available_replicas).unwrap_or(0);
+            let generation = deploy.metadata.generation.unwrap_or(0);
+            let observed = status.and_then(|s| s.observed_generation).unwrap_or(0);
 
-    let is_complete = generation <= observed
-        && updated == spec_replicas
-        && ready == spec_replicas
-        && available == spec_replicas;
+            let is_complete = generation <= observed
+                && updated == spec_replicas
+                && ready == spec_replicas
+                && available == spec_replicas;
 
-    Ok(RolloutStatus {
-        desired: spec_replicas,
-        ready,
-        updated,
-        available,
-        is_complete,
-        message: if is_complete {
-            "Rollout complete".into()
-        } else {
-            format!("{}/{} ready", ready, spec_replicas)
-        },
-    })
+            Ok(RolloutStatus {
+                desired: spec_replicas,
+                ready,
+                updated,
+                available,
+                is_complete,
+                message: if is_complete {
+                    "Rollout complete".into()
+                } else {
+                    format!("{}/{} ready", ready, spec_replicas)
+                },
+            })
+        }
+        "apps/v1/StatefulSet" => {
+            let api: Api<k8s_openapi::api::apps::v1::StatefulSet> =
+                Api::namespaced(client.clone(), namespace);
+            let ss = api.get(name).await?;
+
+            let spec_replicas = ss.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
+            let status = ss.status.as_ref();
+            let ready = status.and_then(|s| s.ready_replicas).unwrap_or(0);
+            let updated = status.and_then(|s| s.updated_replicas).unwrap_or(0);
+            let current = status.and_then(|s| s.current_replicas).unwrap_or(0);
+            let generation = ss.metadata.generation.unwrap_or(0);
+            let observed = status.and_then(|s| s.observed_generation).unwrap_or(0);
+
+            let is_complete = generation <= observed
+                && updated == spec_replicas
+                && ready == spec_replicas
+                && current == spec_replicas;
+
+            Ok(RolloutStatus {
+                desired: spec_replicas,
+                ready,
+                updated,
+                available: current,
+                is_complete,
+                message: if is_complete {
+                    "Rollout complete".into()
+                } else {
+                    format!("{}/{} ready", ready, spec_replicas)
+                },
+            })
+        }
+        _ => Err(crate::EngineError::Other(format!(
+            "Rollout status not supported for {}",
+            gvk
+        ))),
+    }
 }
 
 /// Result of applying a resource via server-side apply.

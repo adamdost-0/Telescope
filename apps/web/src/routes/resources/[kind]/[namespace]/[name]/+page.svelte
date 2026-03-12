@@ -28,6 +28,8 @@
 
   const WORKLOAD_KINDS = new Set(['deployments', 'statefulsets', 'daemonsets']);
   const SCALABLE_KINDS = new Set(['deployments', 'statefulsets']);
+  const RESTARTABLE_KINDS = new Set(['deployments', 'statefulsets', 'daemonsets']);
+  const ROLLOUT_STATUS_KINDS = new Set(['deployments', 'statefulsets']);
 
   let kind = $derived(page.params.kind);
   let namespace = $derived(page.params.namespace);
@@ -35,6 +37,8 @@
   let kindInfo = $derived(KIND_MAP[kind]);
   let isWorkload = $derived(WORKLOAD_KINDS.has(kind));
   let isScalable = $derived(SCALABLE_KINDS.has(kind));
+  let isRestartable = $derived(RESTARTABLE_KINDS.has(kind));
+  let hasRolloutStatus = $derived(ROLLOUT_STATUS_KINDS.has(kind));
   let showScale = $state(false);
   let currentReplicas = $derived(resource?.spec?.replicas ?? 1);
 
@@ -146,9 +150,9 @@
   }
 
   async function loadRolloutStatus() {
-    if (kind !== 'deployments') return;
+    if (!hasRolloutStatus || !kindInfo) return;
     try {
-      rollout = await rolloutStatus(namespace, resourceName);
+      rollout = await rolloutStatus(kindInfo.gvk, namespace, resourceName);
     } catch {
       rollout = null;
     }
@@ -160,7 +164,7 @@
     rolloutLoading = true;
     rolloutMessage = null;
     try {
-      rolloutMessage = await rolloutRestart(namespace, resourceName);
+      rolloutMessage = await rolloutRestart(kindInfo.gvk, namespace, resourceName);
       setTimeout(loadRolloutStatus, 2000);
     } catch (e) {
       rolloutMessage = `Error: ${e instanceof Error ? e.message : e}`;
@@ -433,6 +437,47 @@
             {/each}
           {/if}
 
+          <h3>Rollout</h3>
+          <div class="rollout-section">
+            {#if rollout}
+              <dl>
+                <dt>Status</dt>
+                <dd>
+                  {#if rollout.is_complete}
+                    <span class="badge badge-success">Complete</span>
+                  {:else}
+                    <span class="badge badge-pending">In Progress</span>
+                  {/if}
+                  {rollout.message}
+                </dd>
+                <dt>Progress</dt>
+                <dd>{rollout.ready}/{rollout.desired} ready, {rollout.updated}/{rollout.desired} updated</dd>
+              </dl>
+            {/if}
+            <div class="rollout-actions">
+              {#if showRestartConfirm}
+                <span class="confirm-prompt">Restart all pods?</span>
+                <button class="btn btn-danger btn-sm" onclick={handleRolloutRestart} disabled={rolloutLoading}>
+                  {rolloutLoading ? 'Restarting…' : 'Confirm Restart'}
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick={() => showRestartConfirm = false}>Cancel</button>
+              {:else}
+                <button class="btn btn-primary btn-sm" onclick={() => {
+                  if ($isProduction) {
+                    showProdRestartConfirm = true;
+                  } else {
+                    showRestartConfirm = true;
+                  }
+                }} disabled={rolloutLoading}>
+                  Restart Rollout
+                </button>
+              {/if}
+            </div>
+            {#if rolloutMessage}
+              <p class="rollout-message">{rolloutMessage}</p>
+            {/if}
+          </div>
+
         <!-- DaemonSet Summary -->
         {:else if kind === 'daemonsets'}
           <h3>Status</h3>
@@ -459,6 +504,32 @@
           {:else}
             <p class="muted">No selector labels</p>
           {/if}
+
+          <h3>Rollout Restart</h3>
+          <div class="rollout-section">
+            <div class="rollout-actions">
+              {#if showRestartConfirm}
+                <span class="confirm-prompt">Restart all pods?</span>
+                <button class="btn btn-danger btn-sm" onclick={handleRolloutRestart} disabled={rolloutLoading}>
+                  {rolloutLoading ? 'Restarting…' : 'Confirm Restart'}
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick={() => showRestartConfirm = false}>Cancel</button>
+              {:else}
+                <button class="btn btn-primary btn-sm" onclick={() => {
+                  if ($isProduction) {
+                    showProdRestartConfirm = true;
+                  } else {
+                    showRestartConfirm = true;
+                  }
+                }} disabled={rolloutLoading}>
+                  Restart Rollout
+                </button>
+              {/if}
+            </div>
+            {#if rolloutMessage}
+              <p class="rollout-message">{rolloutMessage}</p>
+            {/if}
+          </div>
 
         <!-- Job Summary -->
         {:else if kind === 'jobs'}

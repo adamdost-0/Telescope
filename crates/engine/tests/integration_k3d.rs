@@ -1,6 +1,6 @@
-//! Integration tests against a real Kubernetes cluster (k3d).
+//! Integration tests against a real Kubernetes cluster.
 //!
-//! These tests require a running k3d cluster with test fixtures deployed.
+//! These tests are cluster-agnostic — they work on k3d, AKS, EKS, GKE, etc.
 //! Run: K3D_TEST=1 cargo test -p telescope-engine --test integration_k3d
 
 use std::sync::Arc;
@@ -47,10 +47,10 @@ async fn lists_pods_in_default_namespace() {
         .expect("Failed to list pods");
 
     println!("Found {} pods in default namespace", pod_list.items.len());
-    // With our fixtures: 20 nginx + 1 crashloop = at least 21
+    // Cluster-agnostic: just verify we CAN list pods (any count >= 0 is fine)
     assert!(
-        pod_list.items.len() >= 20,
-        "Expected at least 20 pods from nginx deployment"
+        !pod_list.items.is_empty(),
+        "Expected at least 1 pod in default namespace"
     );
 }
 
@@ -101,11 +101,15 @@ async fn lists_namespaces() {
         .collect();
 
     println!("Namespaces: {:?}", names);
-    assert!(names.contains(&"default".to_string()));
     assert!(
-        names.contains(&"telescope-test".to_string()),
-        "Expected telescope-test namespace from fixtures"
+        names.contains(&"default".to_string()),
+        "Expected 'default' namespace"
     );
+    assert!(
+        names.contains(&"kube-system".to_string()),
+        "Expected 'kube-system' namespace"
+    );
+    // Don't assert telescope-test — that's k3d-specific
 }
 
 #[tokio::test]
@@ -118,9 +122,56 @@ async fn lists_contexts_from_kubeconfig() {
 
     println!("Found {} contexts", contexts.len());
     assert!(!contexts.is_empty(), "Expected at least one context");
+    // Don't assert k3d-specific context name
+}
 
-    // k3d creates a context named k3d-<cluster-name>
-    let k3d_ctx = contexts.iter().find(|c| c.name.starts_with("k3d-"));
-    assert!(k3d_ctx.is_some(), "Expected a k3d context");
-    println!("k3d context: {:?}", k3d_ctx.unwrap().name);
+#[tokio::test]
+async fn can_list_deployments() {
+    if !should_run() {
+        return;
+    }
+    let client = telescope_engine::client::create_client()
+        .await
+        .expect("client");
+    use k8s_openapi::api::apps::v1::Deployment;
+    use kube::Api;
+    let api: Api<Deployment> = Api::namespaced(client, "default");
+    let list = api
+        .list(&Default::default())
+        .await
+        .expect("list deployments");
+    println!("Found {} deployments in default", list.items.len());
+    // Just verify the API call works
+}
+
+#[tokio::test]
+async fn can_list_services() {
+    if !should_run() {
+        return;
+    }
+    let client = telescope_engine::client::create_client()
+        .await
+        .expect("client");
+    use k8s_openapi::api::core::v1::Service;
+    use kube::Api;
+    let api: Api<Service> = Api::namespaced(client, "default");
+    let list = api.list(&Default::default()).await.expect("list services");
+    println!("Found {} services in default", list.items.len());
+    assert!(
+        !list.items.is_empty(),
+        "Expected at least kubernetes service"
+    );
+}
+
+#[tokio::test]
+async fn metrics_api_check() {
+    if !should_run() {
+        return;
+    }
+    let client = telescope_engine::client::create_client()
+        .await
+        .expect("client");
+    let available = telescope_engine::metrics::is_metrics_available(&client).await;
+    println!("Metrics API available: {}", available);
+    // Don't assert — metrics-server may or may not be installed
 }

@@ -193,14 +193,14 @@ export interface RolloutStatus {
   message: string;
 }
 
-/** Restart a Deployment rollout. */
-export async function rolloutRestart(namespace: string, name: string): Promise<string> {
-  return invoke<string>('rollout_restart', { namespace, name });
+/** Restart a Deployment, StatefulSet, or DaemonSet rollout. */
+export async function rolloutRestart(gvk: string, namespace: string, name: string): Promise<string> {
+  return invoke<string>('rollout_restart', { gvk, namespace, name });
 }
 
-/** Get rollout status for a Deployment. */
-export async function rolloutStatus(namespace: string, name: string): Promise<RolloutStatus> {
-  return invoke<RolloutStatus>('rollout_status', { namespace, name });
+/** Get rollout status for a Deployment or StatefulSet. */
+export async function rolloutStatus(gvk: string, namespace: string, name: string): Promise<RolloutStatus> {
+  return invoke<RolloutStatus>('rollout_status', { gvk, namespace, name });
 }
 
 /** Delete a namespaced Kubernetes resource by GVK, namespace, and name. */
