@@ -7,8 +7,10 @@ import {
   isTauri,
   type ClusterContext,
   type ClusterInfo,
+  type HelmRelease,
   type ResourceEntry,
   type ConnectionState,
+  type PodMetrics,
 } from './tauri-commands';
 
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -74,6 +76,12 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
     case 'scale_resource':
     case 'start_port_forward':
       return undefined as unknown as T;
+    case 'get_pod_metrics':
+      return [] as unknown as T;
+    case 'check_metrics_available':
+      return false as unknown as T;
+    case 'list_helm_releases':
+      return [] as unknown as T;
     default:
       throw new Error(`Command "${command}" not available in web mode`);
   }
@@ -286,4 +294,31 @@ export async function scaleResource(gvk: string, namespace: string, name: string
 /** Start a port-forward session to a pod. Returns the local port number. */
 export async function startPortForward(namespace: string, pod: string, localPort: number, remotePort: number): Promise<number> {
   return invoke<number>('start_port_forward', { namespace, pod, localPort, remotePort });
+}
+
+/** Fetch pod-level CPU/memory metrics from the metrics-server API. */
+export async function getPodMetrics(namespace?: string): Promise<PodMetrics[]> {
+  try {
+    return await invoke<PodMetrics[]>('get_pod_metrics', { namespace: namespace ?? null });
+  } catch {
+    return [];
+  }
+}
+
+/** Check whether the metrics-server API is reachable on the cluster. */
+export async function checkMetricsAvailable(): Promise<boolean> {
+  try {
+    return await invoke<boolean>('check_metrics_available');
+  } catch {
+    return false;
+  }
+}
+
+/** List Helm releases across all namespaces (or a specific one). */
+export async function listHelmReleases(namespace?: string): Promise<HelmRelease[]> {
+  try {
+    return await invoke<HelmRelease[]>('list_helm_releases', { namespace: namespace ?? null });
+  } catch {
+    return [];
+  }
 }
