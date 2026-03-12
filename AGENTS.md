@@ -109,3 +109,14 @@ For detailed context on each area, consult the nested `AGENTS.md` files:
 3. **Respect the scaffold state:** This is v0.0.1 — many advanced features are planned but not built
 4. **Update nested AGENTS.md files** when making structural changes to a subsystem
 5. **Keep docs aspirational:** `docs/` can describe future architecture, but mark unimplemented features clearly
+6. **After a completed, validated change set:** commit it, push the branch upstream, then create and push a release tag matching `v*` so `.github/workflows/release.yml` runs
+
+## Release Tagging Policy
+
+- Release automation is triggered by Git tags that match `v*` via `.github/workflows/release.yml`.
+- Unless the user specifies a version, use the next sensible SemVer-style tag in the existing sequence.
+- Current default behavior for agent-delivered changes:
+  1. finish the code/doc change,
+  2. run the relevant existing validations,
+  3. commit and push upstream,
+  4. create and push the next `v*` release tag to trigger a fresh build/release run.

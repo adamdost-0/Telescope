@@ -50,6 +50,12 @@ pnpm -C apps/desktop bundle
 - Desktop Rust/Tauri build steps are excluded from Linux Rust CI and run separately on Windows/macOS.
 - Prefer repo-defined commands and workflow commands over inventing new ones.
 
+## Delivery and Release Behavior
+
+- After a change set is complete and validated, push the branch upstream instead of leaving work only in the local checkout.
+- Then create and push a release tag that matches `v*` so `.github/workflows/release.yml` triggers a fresh release/build run.
+- Unless the user requests a specific version, continue the existing tag sequence with the next sensible SemVer-style release tag.
+
 ## Guidance
 
 - Rust dependency direction is `api → engine → core`.

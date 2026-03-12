@@ -6,6 +6,8 @@
 
 **Primary workflow:** `ci.yml` — runs on all PRs and pushes to `main`.
 
+**Release workflow:** `release.yml` — runs on pushed Git tags matching `v*`.
+
 ## Current CI Jobs
 
 ### 1. Rust Job (`rust`)
@@ -65,6 +67,20 @@ pnpm -C apps/desktop build          # Tauri debug build
 - **Windows:** Windows SDK
 - **Linux:** Excluded (GTK/WebKit system deps not in CI environment)
 
+### 5. Release Workflow (`release.yml`)
+
+Runs on: pushed tags matching `v*`
+
+Builds:
+```bash
+pnpm install --frozen-lockfile
+pnpm -C apps/desktop bundle
+```
+
+Publishes:
+- Windows and macOS desktop release artifacts
+- GitHub Release entries via `softprops/action-gh-release`
+
 ## CI Enforcement Summary
 
 What CI actually enforces (vs. what's aspirational):
@@ -78,6 +94,7 @@ What CI actually enforces (vs. what's aspirational):
 | Web E2E tests | ✅ Yes | Playwright against stub server |
 | JavaScript linting | ⚠️ Partial | `pnpm lint` runs but many scripts are no-ops |
 | Desktop builds | ✅ Yes | On Windows/macOS only |
+| Tagged release builds | ✅ Yes | `release.yml` runs on `v*` tags |
 | Hub deployment | ❌ No | No deployment pipeline yet |
 | Security scanning | ❌ No | No Dependabot, CodeQL, or audit checks |
 
@@ -98,7 +115,7 @@ High-priority CI gaps:
 1. **Real JavaScript linting:** ESLint + svelte-eslint-parser not configured
 2. **Security scanning:** No Dependabot, `cargo audit`, or CodeQL
 3. **Code coverage:** No coverage reporting (Codecov, Coveralls, etc.)
-4. **Release automation:** No tagged release builds or artifact publishing
+4. **Release automation:** Tagged desktop release builds exist; broader release/versioning policy still needs discipline
 5. **Deployment pipelines:** No CD for `apps/hub` or `apps/web`
 6. **Docker image publishing:** `apps/hub` Dockerfile exists but not published
 7. **Changelog automation:** No release notes generation
@@ -165,10 +182,17 @@ Total: ~10-15 minutes for full CI pass (jobs run in parallel).
 Planned but not implemented:
 
 - **Nightly builds:** Scheduled workflow for continuous integration
-- **Release workflow:** Triggered on version tags, publishes artifacts
 - **Deployment workflow:** CD pipeline for `apps/hub` and `apps/web`
 - **Benchmark tracking:** Performance regression detection
 - **Multi-cluster E2E:** Test against real K8s clusters (GKE, AKS, EKS)
+
+## Agent Delivery Policy
+
+- After validated changes are finished, agents should:
+  1. commit the completed work,
+  2. push the branch upstream,
+  3. create and push a release tag that matches `v*` so the release workflow runs.
+- If the user does not provide a version, continue the existing SemVer-style tag sequence.
 
 ## Code Conventions
 
