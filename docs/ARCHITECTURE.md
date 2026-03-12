@@ -1,5 +1,7 @@
 # Telescope — Architecture
 
+This document describes the implemented architecture of Telescope v0.5.0.
+
 ## Goals
 
 - Avoid Electron; keep resident memory low.
@@ -193,25 +195,134 @@ apps/desktop     → telescope-desktop  (depends on engine + core; excluded from
 
 ## Storage
 
-- **SQLite ResourceStore** (`crates/core/src/store.rs`) — Single `resources` table with columns: `gvk`, `namespace`, `name`, `resource_version`, `content` (full JSON), `updated_at`. WAL mode for concurrent read/write.
-- Database file path is set at app startup and stored in `AppState`.
+**SQLite ResourceStore** (`crates/core/src/store.rs`) — WAL-mode SQLite database at `~/.telescope/resources.db`.
+
+### Pragmas
+
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA foreign_keys = ON;
+```
+
+### Schema
+
+```sql
+CREATE TABLE IF NOT EXISTS resources (
+    gvk              TEXT NOT NULL,
+    namespace        TEXT NOT NULL DEFAULT '',
+    name             TEXT NOT NULL,
+    resource_version TEXT NOT NULL DEFAULT '',
+    content          TEXT NOT NULL,        -- full JSON representation
+    updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (gvk, namespace, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
+    ON resources (gvk, namespace);
+```
+
+### Tracked resource types
+
+| GVK | Capabilities |
+|-----|-------------|
+| `v1/Pod` | Watch, list, logs, exec, port-forward, delete, apply |
+| `v1/Node` | Watch, list, AKS node-pool grouping |
+| `v1/Event` | Watch, list, filter by involved object |
+| `v1/Namespace` | List |
+| `v1/Service` | List, delete, apply |
+| `v1/ConfigMap` | List, delete, apply |
+| `v1/Secret` | List, delete, apply |
+| `apps/v1/Deployment` | List, scale, rollout restart/status, delete, apply |
+| `apps/v1/StatefulSet` | List, scale, delete, apply |
+| `apps/v1/DaemonSet` | List, delete, apply |
+| `batch/v1/Job` | List, delete, apply |
+| `batch/v1/CronJob` | List, delete, apply |
 
 ---
 
 ## Security Model
 
-- Kubeconfig references stored; credentials are not copied.
-- Auth metadata extracted from kubeconfig: `exec` (kubelogin), `token`, `certificate`.
-- Secrets masked in the UI; `Secret` resource values are not persisted by default.
-- Destructive operations (delete, scale, apply) support server-side dry-run.
-- Production context detection (`prod-detection.ts`) warns before dangerous operations.
+### Implemented
+
+- ✅ **Kubeconfig references** — reads `~/.kube/config` directly via kube-rs; does not copy or embed credentials.
+- ✅ **Auth type detection** — identifies exec plugin, token, or certificate auth per context (`kubeconfig.rs`).
+- ✅ **Exec plugin support** — delegates to kubelogin / az CLI for Azure Entra ID auth.
+- ✅ **AKS auth hints** — surfaces human-readable auth description (e.g., "Authenticated via Azure Entra ID (kubelogin)") in `ClusterInfo`.
+- ✅ **Production guardrails** — name-pattern detection (`/prod/i`, `/production/i`, `/\bprd\b/i`, `/\blive\b/i` in `prod-detection.ts`). Production contexts force type-to-confirm on destructive operations via `ConfirmDialog`.
+- ✅ **Server-side dry-run** — `apply_resource` supports `dry_run: bool` for safe preview before mutation.
+- ✅ **Database isolation** — SQLite store at `~/.telescope/resources.db` (per-user home directory).
+
+### Not yet implemented
+
+- 🔲 OS keychain envelope encryption for stored tokens
+- 🔲 Secret value masking in UI (values currently visible in raw JSON)
+- 🔲 Audit log for destructive operations
 
 ## AKS-Specific
 
-- `is_aks_url()` detection for AKS clusters.
-- `exec` auth support for `kubelogin` / `az` flows via kubeconfig `exec` provider.
-- Dedicated components: `AksAddons`, `AzureIdentitySection`, `NodePoolHeader`.
-- Azure API integration for nodepool operations is planned but not yet implemented.
+- ✅ **Auth type detection** — `is_aks_url()` identifies AKS clusters (`*.azmk8s.io`); `exec` auth delegates to kubelogin / az CLI for Azure Entra ID flows.
+- ✅ **Node pool visibility** — label parsing (`agentpool`, `kubernetes.azure.com/agentpool`) with grouping by pool. Extracts VM size (`node.kubernetes.io/instance-type`), OS type (`kubernetes.azure.com/os-type`), and mode (`kubernetes.azure.com/mode`: System/User). Component: `NodePoolHeader`.
+- ✅ **Add-on status** — pod pattern detection for Container Insights (`ama-logs`, `omsagent`), Azure Policy, Key Vault CSI, KEDA, Flux GitOps, Ingress NGINX. Status derived from pod phase. Component: `AksAddons`.
+- ✅ **Portal deep links** — constructs Azure Portal URLs by parsing server URL (`*.hcp.*.azmk8s.io`) to extract subscription, resource group, and cluster name. Links to cluster overview page.
+- ✅ **Workload Identity visibility** — detects `azure.workload.identity/use` pod label and `azure.workload.identity/client-id` service account annotation. Component: `AzureIdentitySection`.
+- 🔲 Azure API integration for nodepool scale/upgrade (planned, not yet implemented).
+
+---
+
+## Tauri Command Registry
+
+25 commands registered via `tauri::generate_handler![]` in `apps/desktop/src-tauri/src/main.rs`.
+
+### Connection & context
+
+| Command | Signature | Description |
+|---------|-----------|-------------|
+| `list_contexts` | `() → Vec<ClusterContext>` | List kubeconfig contexts |
+| `active_context` | `(state) → Option<String>` | Current active context |
+| `connect_to_context` | `(app, state, context_name: String) → ()` | Connect to a cluster |
+| `disconnect` | `(app, state) → ()` | Disconnect from cluster |
+| `set_namespace` | `(app, state, namespace: String) → ()` | Change watched namespace |
+| `get_namespace` | `(state) → String` | Get current namespace |
+| `get_connection_state` | `(state) → ConnectionState` | Connection status |
+
+### Resource queries
+
+| Command | Signature | Description |
+|---------|-----------|-------------|
+| `get_cluster_info` | `(state) → ClusterInfo` | Cluster version, auth, AKS info |
+| `get_pods` | `(state, namespace?) → Vec<ResourceEntry>` | List pods |
+| `get_resources` | `(state, gvk, namespace?) → Vec<ResourceEntry>` | List resources by GVK |
+| `get_events` | `(state, namespace?, involved_object?) → Vec<ResourceEntry>` | List/filter events |
+| `get_resource_counts` | `(state) → Vec<(String, u64)>` | Resource counts by GVK |
+| `count_resources` | `(state, gvk, namespace?) → u64` | Count resources |
+| `get_resource` | `(state, gvk, namespace, name) → Option<ResourceEntry>` | Get single resource |
+| `list_namespaces` | `(state) → Vec<String>` | List namespaces |
+
+### Log streaming
+
+| Command | Signature | Description |
+|---------|-----------|-------------|
+| `get_pod_logs` | `(namespace, pod, container?, previous?, tail_lines?) → String` | Snapshot log fetch |
+| `list_containers` | `(namespace, pod) → Vec<String>` | List pod containers |
+| `start_log_stream` | `(app, namespace, pod, container?, tail_lines?) → ()` | Follow logs; emits `log-chunk` events |
+
+### Resource actions
+
+| Command | Signature | Description |
+|---------|-----------|-------------|
+| `scale_resource` | `(gvk, namespace, name, replicas: i32) → String` | Scale deployment/statefulset |
+| `delete_resource` | `(gvk, namespace, name) → String` | Delete a resource |
+| `apply_resource` | `(json_content, dry_run: bool) → ApplyResult` | Server-side apply |
+| `rollout_restart` | `(namespace, name) → String` | Rollout restart |
+| `rollout_status` | `(namespace, name) → RolloutStatus` | Rollout status |
+
+### Container exec & port-forward
+
+| Command | Signature | Description |
+|---------|-----------|-------------|
+| `exec_command` | `(namespace, pod, container?, command: Vec<String>) → ExecResult` | Non-interactive exec |
+| `start_port_forward` | `(namespace, pod, local_port, remote_port) → u16` | Port-forward; returns bound port |
 
 ---
 
