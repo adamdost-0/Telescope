@@ -949,18 +949,6 @@
     white-space: nowrap;
   }
 
-  .yaml-view {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 6px;
-    padding: 1rem;
-    overflow: auto;
-    max-height: 70vh;
-    font-size: 0.8rem;
-    line-height: 1.5;
-    color: #c9d1d9;
-  }
-
   .yaml-tab { margin-top: 0.5rem; }
   .yaml-actions { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
   .action-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }

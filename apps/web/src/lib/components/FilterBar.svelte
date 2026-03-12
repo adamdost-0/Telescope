@@ -1,6 +1,10 @@
 <script lang="ts">
   let { query = '', onfilter }: { query?: string; onfilter?: (q: string) => void } = $props();
-  let input = $state(query);
+  let input = $state('');
+
+  $effect(() => {
+    input = query;
+  });
 
   function handleInput(e: Event) {
     input = (e.target as HTMLInputElement).value;

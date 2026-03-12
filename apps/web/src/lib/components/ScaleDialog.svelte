@@ -4,7 +4,7 @@
     resourceName = '',
     currentReplicas = 1,
     onscale,
-    oncancel
+    oncancel,
   }: {
     open: boolean;
     resourceName?: string;
@@ -13,32 +13,76 @@
     oncancel?: () => void;
   } = $props();
 
-  let replicas = $state(currentReplicas);
+  let replicas = $state(0);
+  let replicasInput: HTMLInputElement | undefined = $state();
+
+  function handleOverlayClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) {
+      oncancel?.();
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      oncancel?.();
+    }
+  }
 
   $effect(() => {
     replicas = currentReplicas;
+
+    if (open && replicasInput) {
+      replicasInput.focus();
+      replicasInput.select();
+    }
   });
 </script>
 
 {#if open}
-  <div class="overlay" role="presentation" onclick={oncancel}>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="overlay" role="presentation" onclick={handleOverlayClick} onkeydown={handleKeydown}>
     <div
       class="dialog"
       role="dialog"
-      aria-label="Scale resource"
-      onclick={(e) => e.stopPropagation()}
+      aria-modal="true"
+      aria-labelledby="scale-dialog-title"
+      aria-describedby="scale-dialog-hint"
+      tabindex="-1"
     >
-      <h3>Scale {resourceName}</h3>
+      <h3 id="scale-dialog-title">Scale {resourceName}</h3>
       <div class="scale-controls">
-        <button class="stepper" onclick={() => (replicas = Math.max(0, replicas - 1))}>−</button>
-        <input type="number" bind:value={replicas} min="0" max="100" />
-        <button class="stepper" onclick={() => replicas++}>+</button>
+        <button
+          class="stepper"
+          type="button"
+          aria-label="Decrease replicas"
+          onclick={() => (replicas = Math.max(0, replicas - 1))}
+        >
+          −
+        </button>
+        <input
+          bind:this={replicasInput}
+          type="number"
+          bind:value={replicas}
+          min="0"
+          max="100"
+          aria-label="Desired replica count"
+        />
+        <button
+          class="stepper"
+          type="button"
+          aria-label="Increase replicas"
+          onclick={() => replicas++}
+        >
+          +
+        </button>
       </div>
-      <p class="hint">{currentReplicas} → {replicas} replicas</p>
+      <p class="hint" id="scale-dialog-hint">{currentReplicas} → {replicas} replicas</p>
       <div class="actions">
-        <button class="cancel" onclick={oncancel}>Cancel</button>
+        <button class="cancel" type="button" onclick={oncancel}>Cancel</button>
         <button
           class="confirm"
+          type="button"
           onclick={() => onscale?.(replicas)}
           disabled={replicas === currentReplicas}
         >

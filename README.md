@@ -19,7 +19,7 @@
 ## Features
 
 ### Core Kubernetes IDE
-- 📦 **Resource Explorer** — Browse Pods, Deployments, Services, ConfigMaps, Secrets, Nodes, Events, and more
+- 📦 **Resource Explorer** — Browse Pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, Services, Ingresses, ConfigMaps, Secrets, PVCs, Nodes, and Events
 - 📋 **Log Viewer** — Stream pod logs with container selector, search, and previous logs
 - 💻 **Exec Terminal** — Run commands in containers
 - ⇌ **Port Forward** — TCP tunneling with local/remote port mapping
@@ -59,7 +59,7 @@ pnpm -C apps/desktop bundle  # Release build
 1. Launch Telescope
 2. Your kubeconfig contexts appear automatically
 3. Select a context — pods and resources load in real-time
-4. Navigate using the sidebar: Workloads, Network, Config, Storage, Events
+4. Navigate using the sidebar: Workloads (Pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs), Network, Config, Storage, Events
 
 ## Development
 

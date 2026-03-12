@@ -80,6 +80,10 @@
     if (href === '/overview') return page.url.pathname === '/overview';
     return page.url.pathname.startsWith(href);
   }
+
+  function isDisabled(href: string): boolean {
+    return !$isConnected && href !== '/' && href !== '/overview' && href !== '/settings';
+  }
 </script>
 
 <aside class="sidebar" class:collapsed>
@@ -95,7 +99,7 @@
           <ul>
             {#each section.items as item}
               <li>
-                <a href={item.href} class:active={isActive(item.href)} class:disabled={!$isConnected && item.href !== '/' && item.href !== '/overview' && item.href !== '/settings'} title={!$isConnected && item.href !== '/' && item.href !== '/overview' && item.href !== '/settings' ? 'Connect to a cluster first' : undefined}>
+                <a href={item.href} class:active={isActive(item.href)} class:disabled={isDisabled(item.href)} title={isDisabled(item.href) ? 'Connect to a cluster first' : undefined} aria-disabled={isDisabled(item.href)} tabindex={isDisabled(item.href) ? -1 : undefined}>
                   <span class="icon">{item.icon}</span>
                   <span class="label">{item.label}</span>
                 </a>
@@ -109,7 +113,7 @@
     <nav aria-label="Resource navigation (collapsed)">
       {#each sections as section}
         {#each section.items as item}
-          <a href={item.href} class="icon-only" class:active={isActive(item.href)} title={item.label}>
+          <a href={item.href} class="icon-only" class:active={isActive(item.href)} class:disabled={isDisabled(item.href)} title={isDisabled(item.href) ? `${item.label} — connect to a cluster first` : item.label} aria-disabled={isDisabled(item.href)} tabindex={isDisabled(item.href) ? -1 : undefined}>
             {item.icon}
           </a>
         {/each}
@@ -179,4 +183,5 @@
   }
   .icon-only:hover { background: var(--bg-tertiary); }
   .icon-only.active { background: var(--bg-hover); color: var(--accent); }
+  .icon-only.disabled { opacity: 0.4; pointer-events: none; }
 </style>

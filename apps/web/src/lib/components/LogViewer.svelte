@@ -16,7 +16,7 @@
   let searchQuery = $state('');
   let tailLines = $state(500);
 
-  let logContainer: HTMLElement;
+  let logContainer: HTMLElement | undefined = $state();
   let cleanup: (() => void) | null = null;
 
   let filteredLogs = $derived.by(() => {

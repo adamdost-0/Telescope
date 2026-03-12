@@ -22,41 +22,79 @@
   } = $props();
 
   let typed = $state('');
+  let confirmInput: HTMLInputElement | undefined = $state();
+  let confirmButton: HTMLButtonElement | undefined = $state();
   let effectiveRequireType = $derived(requireType || productionContext);
   let canConfirm = $derived(!effectiveRequireType || typed === confirmValue);
+  let describedBy = $derived(
+    effectiveRequireType ? 'confirm-dialog-message confirm-dialog-hint' : 'confirm-dialog-message',
+  );
+
+  function handleOverlayClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) {
+      oncancel?.();
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      oncancel?.();
+    }
+  }
 
   $effect(() => {
-    if (open) typed = '';
+    if (open) {
+      typed = '';
+    }
+  });
+
+  $effect(() => {
+    if (open) {
+      (effectiveRequireType ? confirmInput : confirmButton)?.focus();
+    }
   });
 </script>
 
 {#if open}
-  <div class="overlay" role="presentation" onclick={oncancel}>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="overlay" role="presentation" onclick={handleOverlayClick} onkeydown={handleKeydown}>
     <div
       class="dialog"
       role="alertdialog"
-      aria-label={title}
-      onclick={(e) => e.stopPropagation()}
+      aria-modal="true"
+      aria-labelledby="confirm-dialog-title"
+      aria-describedby={describedBy}
+      tabindex="-1"
     >
-      <h3>{title}</h3>
+      <h3 id="confirm-dialog-title">{title}</h3>
       {#if productionContext}
         <p class="prod-warning">⚠️ You are operating in a PRODUCTION context</p>
       {/if}
-      <p class="message">{message}</p>
+      <p class="message" id="confirm-dialog-message">{message}</p>
       {#if effectiveRequireType}
-        <p class="type-hint">
+        <p class="type-hint" id="confirm-dialog-hint">
           Type <strong>{confirmValue}</strong> to confirm:
         </p>
         <input
+          bind:this={confirmInput}
           type="text"
           bind:value={typed}
           placeholder={confirmValue}
-          autofocus
+          aria-label={
+            confirmValue ? `Type ${confirmValue} to confirm` : 'Type the confirmation value to confirm'
+          }
         />
       {/if}
       <div class="actions">
-        <button class="cancel" onclick={oncancel}>Cancel</button>
-        <button class="confirm" onclick={onconfirm} disabled={!canConfirm}>
+        <button class="cancel" type="button" onclick={oncancel}>Cancel</button>
+        <button
+          bind:this={confirmButton}
+          class="confirm"
+          type="button"
+          onclick={onconfirm}
+          disabled={!canConfirm}
+        >
           {confirmText}
         </button>
       </div>

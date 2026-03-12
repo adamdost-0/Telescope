@@ -80,7 +80,7 @@ that closes the gap between "viewer" and "IDE".
 | 5 | **Scale deployments** | Adjust replica count for Deployments, StatefulSets, ReplicaSets. Inline number input or +/- stepper on resource row. Shows current vs desired replicas during rollout. | ✅ Core Lens feature |
 | 6 | **Rollout actions** | Restart: triggers `kubectl rollout restart`. History: show revision list with change-cause annotations. Rollback: revert to selected revision with confirmation. Status: show rollout progress (available/updated/ready counts). | ✅ Core Lens feature |
 | 7 | **Create resource from YAML** | "New Resource" button opens blank YAML editor with kind/apiVersion template picker. Apply creates the resource with dry-run validation. | ✅ Core Lens feature |
-| 8 | **Resource detail pages** | Extend pod detail pattern to Deployments, Services, StatefulSets, Jobs — each with Summary/Events/YAML tabs and kind-specific info (e.g., endpoints for Services, pod template for Deployments). | ✅ Core Lens feature |
+| 8 | **Resource detail pages** | Extend pod detail pattern to Deployments, Services, StatefulSets, DaemonSets, Jobs, and CronJobs — each with Summary/Events/YAML tabs and kind-specific info (e.g., endpoints for Services, rollout/update details for StatefulSets and DaemonSets, schedule and active runs for CronJobs). | ✅ Core Lens feature |
 | 9 | **Node list** | Show all cluster nodes with: status (Ready/NotReady), capacity vs allocatable (CPU, memory, pods), conditions, kernel/OS/container-runtime info, labels/taints. | ✅ Core Lens feature |
 | 10 | **Cluster overview dashboard** | Landing page after connecting: cluster health (API server reachable, component statuses), resource counts by kind, recent warning events, node summary. | ✅ Core Lens feature |
 

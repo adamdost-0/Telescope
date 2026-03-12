@@ -4,10 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "node -e \"require('node:fs').rmSync('.svelte-kit/output', { recursive: true, force: true })\" && vite build",
     "preview": "vite preview",
-    "lint": "echo \"(todo)\"",
-    "test": "vitest run",
+    "lint": "pnpm run build",
+    "test": "vitest run --pool=forks --poolOptions.forks.singleFork=true",
     "e2e": "playwright test"
   },
   "dependencies": {

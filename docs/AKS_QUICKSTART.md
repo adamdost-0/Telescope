@@ -25,7 +25,7 @@ pnpm -C apps/desktop dev
 ## Step 4: Explore
 - **Overview**: Cluster health, resource counts, pod phases
 - **Pods**: Real-time pod list with CPU/memory metrics
-- **Deployments**: Scale, rollout restart, rollback
+- **Workloads**: Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs each have dedicated blades with detail views
 - **Helm**: View and manage Helm releases (aks-managed-* releases visible)
 - **Nodes**: AKS node pools grouped by pool name + VM size
 - **Events**: Cluster-wide events including kube-system

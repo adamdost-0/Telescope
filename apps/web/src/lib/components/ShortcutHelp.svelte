@@ -1,5 +1,6 @@
 <script lang="ts">
   let { open = false, onclose }: { open: boolean; onclose?: () => void } = $props();
+  let closeButton: HTMLButtonElement | undefined = $state();
 
   const shortcuts = [
     { keys: 'Ctrl+K', action: 'Search resources' },
@@ -16,8 +17,10 @@
     { keys: 'Escape', action: 'Close dialog/overlay' },
   ];
 
-  function handleOverlayClick() {
-    onclose?.();
+  function handleOverlayClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) {
+      onclose?.();
+    }
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -26,16 +29,29 @@
       onclose?.();
     }
   }
+
+  $effect(() => {
+    if (open && closeButton) {
+      closeButton.focus();
+    }
+  });
 </script>
 
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="overlay" onclick={handleOverlayClick} onkeydown={handleKeydown}>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
+  <div class="overlay" role="presentation" onclick={handleOverlayClick} onkeydown={handleKeydown}>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="shortcut-help-title" tabindex="-1">
       <div class="modal-header">
-        <h2>⌨️ Keyboard Shortcuts</h2>
-        <button class="close-btn" onclick={() => onclose?.()}>✕</button>
+        <h2 id="shortcut-help-title">⌨️ Keyboard Shortcuts</h2>
+        <button
+          bind:this={closeButton}
+          class="close-btn"
+          type="button"
+          aria-label="Close keyboard shortcuts"
+          onclick={() => onclose?.()}
+        >
+          ✕
+        </button>
       </div>
       <div class="shortcuts-grid">
         {#each shortcuts as shortcut}

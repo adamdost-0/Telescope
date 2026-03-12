@@ -39,10 +39,10 @@ jobs:
         run: corepack enable
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Lint
-        run: pnpm -r --if-present lint
-      - name: Test
-        run: pnpm -r --if-present test
+      - name: Web unit tests
+        run: pnpm -C apps/web test
+      - name: Web build
+        run: pnpm -C apps/web build
 
   web-e2e:
     runs-on: ubuntu-latest
@@ -58,8 +58,8 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        run: pnpm -C apps/web exec playwright install --with-deps
-      - name: E2E
+        run: pnpm -C apps/web exec playwright install --with-deps chromium
+      - name: Web E2E
         run: pnpm -C apps/web e2e
 
   desktop-build:

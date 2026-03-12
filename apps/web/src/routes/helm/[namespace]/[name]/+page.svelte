@@ -356,7 +356,7 @@
     border: 1px solid rgba(239, 83, 80, 0.3);
   }
 
-  .summary h3, .tab-content h3 {
+  .summary h3 {
     color: #8b949e;
     font-size: 0.8rem;
     text-transform: uppercase;
@@ -413,24 +413,6 @@
   .mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.8rem; }
   .status-badge { font-weight: 500; }
   .updated { color: #8b949e; font-size: 0.8rem; }
-
-  .placeholder-card {
-    text-align: center;
-    padding: 3rem 2rem;
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    margin-top: 1rem;
-  }
-  .placeholder-icon {
-    font-size: 2rem;
-    display: block;
-    margin-bottom: 0.75rem;
-  }
-  .placeholder-card p {
-    margin: 0.25rem 0;
-    color: #8b949e;
-  }
 
   .upgrade-section {
     margin-top: 1rem;

@@ -92,6 +92,12 @@
     selectedIndex = 0;
   }
 
+  function handleOverlayClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) {
+      close();
+    }
+  }
+
   function selectEntry(entry: ResourceEntry) {
     close();
     goto(routeForEntry(entry));
@@ -141,20 +147,19 @@
 
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="overlay" onkeydown={handleKeydown} onclick={close}>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="palette" onclick={(e) => e.stopPropagation()}>
+  <div class="overlay" role="presentation" onkeydown={handleKeydown} onclick={handleOverlayClick}>
+    <div class="palette" role="dialog" aria-modal="true" aria-label="Search resources" tabindex="-1">
       <div class="search-bar">
         <span class="search-icon">🔍</span>
         <input
           bind:this={inputEl}
           bind:value={query}
           oninput={handleInput}
-          onkeydown={handleKeydown}
           placeholder="Search resources… (name or kind)"
           type="text"
           spellcheck="false"
           autocomplete="off"
+          aria-label="Search resources"
         />
         <kbd class="hint">ESC</kbd>
       </div>

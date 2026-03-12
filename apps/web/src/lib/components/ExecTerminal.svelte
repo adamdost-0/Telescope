@@ -7,11 +7,22 @@
     containers: string[];
   } = $props();
 
-  let selectedContainer = $state(containers[0] ?? '');
+  let selectedContainer = $state('');
   let command = $state('');
   let history: Array<{ cmd: string; stdout: string; stderr: string; success: boolean }> = $state([]);
   let running = $state(false);
   let outputEl: HTMLDivElement | undefined = $state(undefined);
+
+  $effect(() => {
+    if (containers.length === 0) {
+      selectedContainer = '';
+      return;
+    }
+
+    if (!selectedContainer || !containers.includes(selectedContainer)) {
+      selectedContainer = containers[0] ?? '';
+    }
+  });
 
   async function runCommand() {
     if (!command.trim() || running) return;

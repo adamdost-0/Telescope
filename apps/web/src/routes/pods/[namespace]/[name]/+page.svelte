@@ -497,18 +497,6 @@
   .apply-success { color: #66bb6a; font-size: 0.8rem; }
   .apply-error { color: #ef5350; font-size: 0.8rem; }
 
-  .yaml-view {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 6px;
-    padding: 1rem;
-    overflow: auto;
-    max-height: 70vh;
-    font-size: 0.8rem;
-    line-height: 1.5;
-    color: #c9d1d9;
-  }
-
   .sparkline-row {
     display: flex;
     gap: 1.5rem;

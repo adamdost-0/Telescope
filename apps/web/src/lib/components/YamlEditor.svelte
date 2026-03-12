@@ -5,7 +5,7 @@
     onchange?: (value: string) => void;
   } = $props();
 
-  let edited = $state(content);
+  let edited = $state('');
 
   $effect(() => { edited = content; });
 

@@ -1,3 +1,4 @@
+import { env as publicEnv } from '$env/dynamic/public';
 /**
  * Unified API layer that works in both Tauri (desktop) and browser (web) contexts.
  * Desktop: Uses Tauri invoke for IPC.
@@ -36,8 +37,10 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 
 const HUB_URL =
   typeof window !== 'undefined'
-    ? (window as any).__TELESCOPE_HUB_URL__ || 'http://localhost:3001'
-    : 'http://localhost:3001';
+    ? ((window as Window & { __TELESCOPE_HUB_URL__?: string }).__TELESCOPE_HUB_URL__ ??
+      publicEnv.PUBLIC_ENGINE_HTTP_BASE ??
+      'http://localhost:3001')
+    : (publicEnv.PUBLIC_ENGINE_HTTP_BASE ?? 'http://localhost:3001');
 
 async function webFallback<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const base = `${HUB_URL}/api/v1`;
