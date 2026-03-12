@@ -11,6 +11,7 @@ import {
   type ResourceEntry,
   type ConnectionState,
   type PodMetrics,
+  type NodeMetricsData,
 } from './tauri-commands';
 
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -77,9 +78,12 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
     case 'start_port_forward':
       return undefined as unknown as T;
     case 'get_pod_metrics':
+    case 'get_node_metrics':
       return [] as unknown as T;
     case 'check_metrics_available':
       return false as unknown as T;
+    case 'list_helm_releases':
+      return [] as unknown as T;
     case 'list_helm_releases':
       return [] as unknown as T;
     default:
@@ -318,6 +322,15 @@ export async function checkMetricsAvailable(): Promise<boolean> {
 export async function listHelmReleases(namespace?: string): Promise<HelmRelease[]> {
   try {
     return await invoke<HelmRelease[]>('list_helm_releases', { namespace: namespace ?? null });
+  } catch {
+    return [];
+  }
+}
+
+/** Fetch node-level CPU/memory metrics with allocatable percentages. */
+export async function getNodeMetrics(): Promise<NodeMetricsData[]> {
+  try {
+    return await invoke<NodeMetricsData[]>('get_node_metrics');
   } catch {
     return [];
   }

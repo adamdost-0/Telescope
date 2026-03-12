@@ -65,6 +65,16 @@ export interface PodMetrics {
   memory_bytes: number;
 }
 
+export interface NodeMetricsData {
+  name: string;
+  cpu_millicores: number;
+  memory_bytes: number;
+  cpu_allocatable: number;
+  memory_allocatable: number;
+  cpu_percent: number;
+  memory_percent: number;
+}
+
 export interface HelmRelease {
   name: string;
   namespace: string;

@@ -686,6 +686,16 @@ async fn check_metrics_available() -> Result<bool, String> {
     Ok(telescope_engine::metrics::is_metrics_available(&client).await)
 }
 
+#[tauri::command]
+async fn get_node_metrics() -> Result<Vec<telescope_engine::metrics::NodeMetricsData>, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::metrics::get_node_metrics(&client)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -749,6 +759,7 @@ fn main() {
             exec_command,
             get_pod_metrics,
             check_metrics_available,
+            get_node_metrics,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");

@@ -56,6 +56,12 @@
         { label: 'PVCs', href: '/resources/pvcs', icon: '💾' },
       ]
     },
+    {
+      title: 'Helm',
+      items: [
+        { label: 'Releases', href: '/helm', icon: '⎈' },
+      ]
+    },
   ];
 
   function isActive(href: string): boolean {
