@@ -22,6 +22,8 @@
   let valuesLoading = $state(false);
   let valuesError: string | null = $state(null);
   let copied = $state(false);
+  let valuesRevealed = $state(false);
+  let showRevealDialog = $state(false);
 
   // Rollback state
   let rollbackTarget: HelmRelease | null = $state(null);
@@ -81,18 +83,32 @@
     }
   }
 
-  async function loadValues() {
+  async function loadValues(reveal = false) {
     valuesLoading = true;
     valuesError = null;
     try {
-      const yaml = await getHelmReleaseValues(namespace, releaseName);
+      const yaml = await getHelmReleaseValues(namespace, releaseName, reveal);
       valuesYaml = yaml;
       editedValues = yaml;
+      valuesRevealed = reveal;
     } catch (e) {
       valuesError = e instanceof Error ? e.message : 'Failed to load values';
     } finally {
       valuesLoading = false;
     }
+  }
+
+  function requestReveal() {
+    showRevealDialog = true;
+  }
+
+  function confirmReveal() {
+    showRevealDialog = false;
+    loadValues(true);
+  }
+
+  function hideValues() {
+    loadValues(false);
   }
 
   function generateUpgradeCommand(): string {
@@ -190,6 +206,17 @@
         {:else if valuesError}
           <p role="alert" class="error">{valuesError}</p>
         {:else}
+          <div class="values-toolbar">
+            {#if valuesRevealed}
+              <div class="reveal-warning">
+                <span>⚠️ Sensitive values are now visible</span>
+                <button class="hide-btn" onclick={hideValues}>🔒 Hide Sensitive Values</button>
+              </div>
+            {:else}
+              <button class="reveal-btn" onclick={requestReveal}>🔓 Reveal Sensitive Values</button>
+            {/if}
+          </div>
+
           <YamlEditor content={valuesYaml} onchange={(v) => { editedValues = v; }} />
 
           <div class="upgrade-section">
@@ -273,6 +300,15 @@
   productionContext={namespace === 'production' || namespace === 'prod'}
   onconfirm={confirmRollback}
   oncancel={() => { showRollbackDialog = false; }}
+/>
+
+<ConfirmDialog
+  open={showRevealDialog}
+  title="Reveal Sensitive Values"
+  message="This will display unredacted passwords, tokens, and other secrets. Make sure no one can see your screen."
+  confirmText="Reveal"
+  onconfirm={confirmReveal}
+  oncancel={() => { showRevealDialog = false; }}
 />
 
 <style>
@@ -474,5 +510,45 @@
     background: rgba(239, 83, 80, 0.12);
     border: 1px solid rgba(239, 83, 80, 0.3);
     color: #ef5350;
+  }
+
+  .values-toolbar {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+  .reveal-btn {
+    background: #21262d;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    padding: 0.4rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  .reveal-btn:hover { background: #30363d; }
+  .hide-btn {
+    background: transparent;
+    color: #58a6ff;
+    border: 1px solid #58a6ff;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    margin-left: 0.75rem;
+  }
+  .hide-btn:hover { background: rgba(88, 166, 255, 0.1); }
+  .reveal-warning {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    color: #ffc107;
+    padding: 0.4rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
   }
 </style>

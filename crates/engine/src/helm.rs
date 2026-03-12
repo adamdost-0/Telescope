@@ -227,6 +227,66 @@ fn validate_k8s_name(name: &str) -> crate::Result<()> {
     Ok(())
 }
 
+/// Keys whose values should be redacted in Helm values display.
+const SENSITIVE_KEYS: &[&str] = &[
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "apikey",
+    "api_key",
+    "apiKey",
+    "connectionstring",
+    "connection_string",
+    "connectionString",
+    "private_key",
+    "privateKey",
+    "private-key",
+    "client_secret",
+    "clientSecret",
+    "client-secret",
+    "access_key",
+    "accessKey",
+    "access-key",
+    "secret_key",
+    "secretKey",
+    "secret-key",
+    "credentials",
+    "auth",
+];
+
+const REDACTED: &str = "●●●●●●●●";
+
+/// Redact sensitive values in a JSON value tree.
+///
+/// Walks the tree and replaces string values whose key (case-insensitive)
+/// contains any of [`SENSITIVE_KEYS`] with a fixed placeholder.
+pub fn redact_sensitive_values(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, val) in map.iter_mut() {
+                let key_lower = key.to_lowercase();
+                if SENSITIVE_KEYS
+                    .iter()
+                    .any(|s| key_lower.contains(&s.to_lowercase()))
+                {
+                    if val.is_string() {
+                        *val = serde_json::Value::String(REDACTED.to_string());
+                    }
+                } else {
+                    redact_sensitive_values(val);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                redact_sensitive_values(item);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Roll back a Helm release to a specific revision using the `helm` CLI.
 pub async fn rollback_release(namespace: &str, name: &str, revision: i32) -> crate::Result<String> {
     validate_k8s_name(namespace)?;
@@ -338,5 +398,73 @@ mod tests {
         let data = make_helm_secret_data(json);
         let values = extract_values_from_release(&data).expect("should extract");
         assert!(values.contains("No custom values"));
+    }
+
+    #[test]
+    fn redact_sensitive_values_redacts_password() {
+        let mut val = serde_json::json!({
+            "database": {
+                "host": "db.example.com",
+                "password": "s3cret!",
+                "port": 5432
+            },
+            "apiKey": "ak-12345",
+            "nested": {
+                "auth_token": "tok-xyz"
+            }
+        });
+        redact_sensitive_values(&mut val);
+
+        assert_eq!(val["database"]["host"], "db.example.com");
+        assert_eq!(val["database"]["password"], REDACTED);
+        assert_eq!(val["database"]["port"], 5432);
+        assert_eq!(val["apiKey"], REDACTED);
+        assert_eq!(val["nested"]["auth_token"], REDACTED);
+    }
+
+    #[test]
+    fn redact_sensitive_values_handles_arrays() {
+        let mut val = serde_json::json!([
+            {"name": "svc1", "secret": "hidden"},
+            {"name": "svc2", "url": "https://example.com"}
+        ]);
+        redact_sensitive_values(&mut val);
+
+        assert_eq!(val[0]["name"], "svc1");
+        assert_eq!(val[0]["secret"], REDACTED);
+        assert_eq!(val[1]["name"], "svc2");
+        assert_eq!(val[1]["url"], "https://example.com");
+    }
+
+    #[test]
+    fn redact_sensitive_values_case_insensitive() {
+        let mut val = serde_json::json!({
+            "DB_PASSWORD": "foo",
+            "AccessKey": "bar",
+            "connectionString": "Server=x",
+            "normalKey": "visible"
+        });
+        redact_sensitive_values(&mut val);
+
+        assert_eq!(val["DB_PASSWORD"], REDACTED);
+        assert_eq!(val["AccessKey"], REDACTED);
+        assert_eq!(val["connectionString"], REDACTED);
+        assert_eq!(val["normalKey"], "visible");
+    }
+
+    #[test]
+    fn redact_sensitive_values_skips_non_string_sensitive() {
+        let mut val = serde_json::json!({
+            "password": 12345,
+            "auth": true,
+            "secret": {"nested": "value"}
+        });
+        let original = val.clone();
+        redact_sensitive_values(&mut val);
+
+        // Non-string sensitive values are left unchanged
+        assert_eq!(val["password"], original["password"]);
+        assert_eq!(val["auth"], original["auth"]);
+        assert_eq!(val["secret"], original["secret"]);
     }
 }

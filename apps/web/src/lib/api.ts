@@ -340,9 +340,10 @@ export async function getHelmReleaseHistory(namespace: string, name: string): Pr
   }
 }
 
-/** Get user-supplied values for the latest revision of a Helm release. */
-export async function getHelmReleaseValues(namespace: string, name: string): Promise<string> {
-  return invoke<string>('get_helm_release_values', { namespace, name });
+/** Get user-supplied values for the latest revision of a Helm release.
+ *  Sensitive keys are redacted by default; pass `reveal: true` to see raw values. */
+export async function getHelmReleaseValues(namespace: string, name: string, reveal = false): Promise<string> {
+  return invoke<string>('get_helm_release_values', { namespace, name, reveal });
 }
 
 /** Roll back a Helm release to a specific revision using the helm CLI. */

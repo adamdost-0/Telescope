@@ -224,14 +224,28 @@ async fn get_helm_release_history(
 }
 
 /// Get the user-supplied values for the latest revision of a Helm release.
+///
+/// By default, sensitive keys (passwords, tokens, secrets, etc.) are redacted.
+/// Pass `reveal: true` to return unredacted values.
 #[tauri::command]
-async fn get_helm_release_values(namespace: String, name: String) -> Result<String, String> {
+async fn get_helm_release_values(
+    namespace: String,
+    name: String,
+    reveal: Option<bool>,
+) -> Result<String, String> {
     let client = telescope_engine::client::create_client()
         .await
         .map_err(|e| e.to_string())?;
-    telescope_engine::helm::get_release_values(&client, &namespace, &name)
+    let mut values = telescope_engine::helm::get_release_values(&client, &namespace, &name)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if !reveal.unwrap_or(false) {
+        if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&values) {
+            telescope_engine::helm::redact_sensitive_values(&mut json);
+            values = serde_json::to_string_pretty(&json).unwrap_or(values);
+        }
+    }
+    Ok(values)
 }
 
 /// Roll back a Helm release to a specific revision using the helm CLI.
