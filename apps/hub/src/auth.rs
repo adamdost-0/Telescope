@@ -144,6 +144,20 @@ fn decode_jwt_claims(token: &str) -> Option<AuthUser> {
 }
 
 // ---------------------------------------------------------------------------
+// Cluster access control
+// ---------------------------------------------------------------------------
+
+/// Check whether the authenticated user may access a given cluster context.
+///
+/// For v1 every authenticated (non-empty email) user can access every
+/// cluster. A future version will read per-user/group restrictions from
+/// a config file or `TELESCOPE_ACL` environment variable.
+pub fn user_can_access_cluster(user: &AuthUser, _context_name: &str) -> bool {
+    // TODO: Read from config file for per-user/group restrictions
+    !user.email.is_empty()
+}
+
+// ---------------------------------------------------------------------------
 // Auth routes
 // ---------------------------------------------------------------------------
 
@@ -222,5 +236,25 @@ mod tests {
         // Ensure OIDC_ENABLED is not set (it shouldn't be in test env).
         std::env::remove_var("OIDC_ENABLED");
         assert!(OidcConfig::from_env().is_none());
+    }
+
+    #[test]
+    fn user_can_access_cluster_allows_authenticated() {
+        let user = AuthUser {
+            email: "alice@contoso.com".into(),
+            name: "Alice".into(),
+            groups: vec!["devs".into()],
+        };
+        assert!(user_can_access_cluster(&user, "prod-east"));
+    }
+
+    #[test]
+    fn user_can_access_cluster_denies_empty_email() {
+        let user = AuthUser {
+            email: String::new(),
+            name: "Ghost".into(),
+            groups: vec![],
+        };
+        assert!(!user_can_access_cluster(&user, "prod-east"));
     }
 }

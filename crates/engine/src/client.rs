@@ -173,3 +173,39 @@ pub async fn create_client_for_context(context_name: &str) -> crate::Result<Clie
     let client = Client::try_from(config)?;
     Ok(client)
 }
+
+/// Create a client for a specific kubeconfig context that impersonates the
+/// given user. The hub's service account must hold the `impersonate` RBAC
+/// verb for Users and Groups.
+///
+/// When `user_email` is empty or `"anonymous@local"`, no impersonation
+/// headers are injected and the hub's own identity is used.
+pub async fn create_client_for_context_as_user(
+    context_name: &str,
+    user_email: &str,
+    groups: &[String],
+) -> crate::Result<Client> {
+    let kubeconfig = Kubeconfig::read()?;
+    let options = KubeConfigOptions {
+        context: Some(context_name.to_string()),
+        ..Default::default()
+    };
+    let mut config = kube::Config::from_custom_kubeconfig(kubeconfig, &options)
+        .await
+        .map_err(|e| {
+            crate::EngineError::Other(format!(
+                "Failed to build config for context '{}': {}",
+                context_name, e
+            ))
+        })?;
+
+    if !user_email.is_empty() && user_email != "anonymous@local" {
+        config.auth_info.impersonate = Some(user_email.to_string());
+        if !groups.is_empty() {
+            config.auth_info.impersonate_groups = Some(groups.to_vec());
+        }
+    }
+
+    let client = Client::try_from(config)?;
+    Ok(client)
+}

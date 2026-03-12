@@ -50,6 +50,11 @@ pub struct EventQuery {
     pub involved_object: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct AuditQuery {
+    pub limit: Option<usize>,
+}
+
 // ---------------------------------------------------------------------------
 // Response helpers
 // ---------------------------------------------------------------------------
@@ -93,6 +98,14 @@ pub async fn connect(
 ) -> ApiResult<serde_json::Value> {
     info!(actor = %user.email, "Connecting to context: {}", body.context_name);
 
+    // Check cluster access.
+    if !crate::auth::user_can_access_cluster(&user, &body.context_name) {
+        return Err(api_err(
+            axum::http::StatusCode::FORBIDDEN,
+            "Access denied for this cluster",
+        ));
+    }
+
     // Abort any existing watch task.
     abort_watch(&state).await;
 
@@ -110,14 +123,19 @@ pub async fn connect(
     // Update connection state to Connecting.
     set_connection_state(&state.connection_state, ConnectionState::Connecting).await;
 
-    // Build a kube client for the requested context.
-    let client = telescope_engine::client::create_client_for_context(&body.context_name)
-        .await
-        .map_err(|e| {
-            let msg = format!("Failed to connect: {}", e);
-            error!("{}", msg);
-            api_err(axum::http::StatusCode::BAD_REQUEST, msg)
-        })?;
+    // Build a kube client for the requested context, impersonating the
+    // authenticated user when OIDC is enabled.
+    let client = telescope_engine::client::create_client_for_context_as_user(
+        &body.context_name,
+        &user.email,
+        &user.groups,
+    )
+    .await
+    .map_err(|e| {
+        let msg = format!("Failed to connect: {}", e);
+        error!("{}", msg);
+        api_err(axum::http::StatusCode::BAD_REQUEST, msg)
+    })?;
 
     // Update active context and read namespace.
     {
@@ -316,6 +334,8 @@ pub async fn list_namespaces(State(state): State<Arc<HubState>>) -> ApiResult<Ve
 // ---------------------------------------------------------------------------
 
 pub async fn get_pod_logs(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
     Path((namespace, name)): Path<(String, String)>,
     Query(params): Query<PodLogQuery>,
 ) -> ApiResult<serde_json::Value> {
@@ -324,16 +344,43 @@ pub async fn get_pod_logs(
         .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let req = telescope_engine::logs::LogRequest {
-        namespace,
-        pod: name,
+        namespace: namespace.clone(),
+        pod: name.clone(),
         container: params.container,
         previous: params.previous.unwrap_or(false),
         tail_lines: params.tail.or(Some(1000)),
         follow: false,
     };
 
-    let logs = telescope_engine::logs::get_pod_logs(&client, &req)
+    let ctx_name = state
+        .active_context
+        .read()
         .await
+        .clone()
+        .unwrap_or_default();
+
+    let result = telescope_engine::logs::get_pod_logs(&client, &req).await;
+
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: user.email.clone(),
+            context: ctx_name,
+            namespace,
+            action: "get_logs".into(),
+            resource_type: "v1/Pod".into(),
+            resource_name: name,
+            result: if result.is_ok() {
+                "success".into()
+            } else {
+                "failure".into()
+            },
+            detail: result.as_ref().err().map(|e| e.to_string()),
+        },
+    );
+
+    let logs = result
         .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(serde_json::json!({ "logs": logs })))
@@ -435,6 +482,25 @@ pub async fn list_crds() -> ApiResult<Vec<telescope_engine::crd::CrdInfo>> {
         .await
         .map(Json)
         .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/audit?limit=100
+// ---------------------------------------------------------------------------
+
+pub async fn get_audit_log(
+    State(state): State<Arc<HubState>>,
+    Query(params): Query<AuditQuery>,
+) -> Json<Vec<serde_json::Value>> {
+    let limit = params.limit.unwrap_or(100);
+    let content = std::fs::read_to_string(&state.audit_log_path).unwrap_or_default();
+    let entries: Vec<serde_json::Value> = content
+        .lines()
+        .rev()
+        .take(limit)
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    Json(entries)
 }
 
 // ---------------------------------------------------------------------------

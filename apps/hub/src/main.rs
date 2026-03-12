@@ -82,6 +82,7 @@ async fn main() {
         .route("/helm/releases", get(routes::helm_releases))
         .route("/metrics/pods", get(routes::pod_metrics))
         .route("/crds", get(routes::list_crds))
+        .route("/audit", get(routes::get_audit_log))
         .layer(axum::middleware::from_fn(auth::auth_middleware))
         .with_state(Arc::clone(&hub_state));
 
