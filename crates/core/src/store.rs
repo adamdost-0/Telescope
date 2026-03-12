@@ -36,6 +36,7 @@ impl ResourceStore {
         let conn = Connection::open(path)?;
         let store = Self { conn };
         store.init()?;
+        store.migrate()?;
         Ok(store)
     }
 
@@ -64,8 +65,44 @@ impl ResourceStore {
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER PRIMARY KEY
+            );
         ",
         )
+    }
+
+    /// Returns the current schema version, or 0 if not yet set.
+    fn get_schema_version(&self) -> SqlResult<u32> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT COALESCE(MAX(version), 0) FROM schema_version")?;
+        stmt.query_row([], |row| row.get(0))
+    }
+
+    /// Record the schema version after a migration step.
+    fn set_schema_version(&self, version: u32) -> SqlResult<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO schema_version (version) VALUES (?1)",
+            params![version],
+        )?;
+        Ok(())
+    }
+
+    /// Run sequential schema migrations.
+    fn migrate(&self) -> SqlResult<()> {
+        let current = self.get_schema_version()?;
+
+        if current < 1 {
+            // Version 1 is the initial schema created in init().
+            self.set_schema_version(1)?;
+        }
+
+        // Future migrations:
+        // if current < 2 { ... self.set_schema_version(2)?; }
+
+        Ok(())
     }
 
     /// Insert or update a resource.
@@ -435,5 +472,36 @@ mod tests {
         assert!(store.delete_preference("theme").unwrap());
         assert_eq!(store.get_preference("theme").unwrap(), None);
         assert!(!store.delete_preference("theme").unwrap());
+    }
+
+    // ── Schema migration tests ───────────────────────────────────────
+
+    #[test]
+    fn schema_version_set_on_open() {
+        let store = ResourceStore::open(":memory:").unwrap();
+        assert_eq!(store.get_schema_version().unwrap(), 1);
+    }
+
+    #[test]
+    fn reopen_does_not_change_version() {
+        // Simulate re-open by calling migrate again on the same connection
+        let store = ResourceStore::open(":memory:").unwrap();
+        assert_eq!(store.get_schema_version().unwrap(), 1);
+        store.migrate().unwrap();
+        assert_eq!(store.get_schema_version().unwrap(), 1);
+    }
+
+    #[test]
+    fn schema_version_table_exists() {
+        let store = ResourceStore::open(":memory:").unwrap();
+        let count: u32 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }
