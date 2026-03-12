@@ -1,13 +1,15 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { getResources } from '$lib/api';
+  import { getResources, getNodeMetrics, checkMetricsAvailable } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
-  import type { ResourceEntry } from '$lib/tauri-commands';
+  import type { ResourceEntry, NodeMetricsData } from '$lib/tauri-commands';
 
   let nodeName = $derived(page.params.name);
 
   let node: any = $state(null);
+  let metrics: NodeMetricsData | null = $state(null);
+  let metricsAvailable = $state(false);
   let loading = $state(true);
   let activeTab = $state('summary');
   let error: string | null = $state(null);
@@ -16,19 +18,40 @@
     { id: 'summary', label: 'Summary' },
     { id: 'conditions', label: 'Conditions' },
     { id: 'capacity', label: 'Capacity' },
+    { id: 'metrics', label: 'Metrics' },
     { id: 'yaml', label: 'YAML' },
   ];
+
+  function usageColor(pct: number): string {
+    if (pct < 70) return '#66bb6a';
+    if (pct < 90) return '#ffa726';
+    return '#ef5350';
+  }
+
+  function usageLabel(pct: number): string {
+    if (pct < 70) return 'Normal';
+    if (pct < 90) return 'Warning';
+    return 'Critical';
+  }
 
   async function loadNode() {
     loading = true;
     error = null;
     try {
-      const resources = await getResources('v1/Node', null as unknown as string);
+      const [resources, available] = await Promise.all([
+        getResources('v1/Node', null as unknown as string),
+        checkMetricsAvailable(),
+      ]);
+      metricsAvailable = available;
       const entry = resources.find((r: ResourceEntry) => r.name === nodeName);
       if (entry) {
         node = JSON.parse(entry.content);
       } else {
         error = `Node "${nodeName}" not found`;
+      }
+      if (available) {
+        const allMetrics = await getNodeMetrics();
+        metrics = allMetrics.find(m => m.name === nodeName) ?? null;
       }
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load node';
@@ -176,6 +199,68 @@
         </table>
       </div>
 
+    {:else if activeTab === 'metrics'}
+      <div class="tab-content">
+        {#if !metricsAvailable}
+          <p class="muted">Metrics server is not available on this cluster. Install metrics-server to see resource usage.</p>
+        {:else if !metrics}
+          <p class="muted">No metrics data available for this node.</p>
+        {:else}
+          <h3>Resource Usage</h3>
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-label">CPU Usage</div>
+              <div class="metric-value" style="color: {usageColor(metrics.cpu_percent)}">{metrics.cpu_millicores}m / {metrics.cpu_allocatable}m</div>
+              <div class="metric-bar">
+                <div class="metric-bar-fill" style="width: {Math.min(metrics.cpu_percent, 100)}%; background: {usageColor(metrics.cpu_percent)}"></div>
+              </div>
+              <div class="metric-detail">
+                <span style="color: {usageColor(metrics.cpu_percent)}">{metrics.cpu_percent}%</span> of allocatable — {usageLabel(metrics.cpu_percent)}
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Memory Usage</div>
+              <div class="metric-value" style="color: {usageColor(metrics.memory_percent)}">{Math.round(metrics.memory_bytes / (1024 * 1024))}Mi / {Math.round(metrics.memory_allocatable / (1024 * 1024))}Mi</div>
+              <div class="metric-bar">
+                <div class="metric-bar-fill" style="width: {Math.min(metrics.memory_percent, 100)}%; background: {usageColor(metrics.memory_percent)}"></div>
+              </div>
+              <div class="metric-detail">
+                <span style="color: {usageColor(metrics.memory_percent)}">{metrics.memory_percent}%</span> of allocatable — {usageLabel(metrics.memory_percent)}
+              </div>
+            </div>
+          </div>
+
+          <h3>Capacity vs Usage</h3>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Resource</th>
+                <th scope="col">Used</th>
+                <th scope="col">Allocatable</th>
+                <th scope="col">Capacity</th>
+                <th scope="col">% of Allocatable</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>CPU</td>
+                <td>{metrics.cpu_millicores}m</td>
+                <td>{metrics.cpu_allocatable}m</td>
+                <td>{node?.status?.capacity?.cpu ?? 'N/A'}</td>
+                <td style="color: {usageColor(metrics.cpu_percent)}">{metrics.cpu_percent}%</td>
+              </tr>
+              <tr>
+                <td>Memory</td>
+                <td>{Math.round(metrics.memory_bytes / (1024 * 1024))}Mi</td>
+                <td>{Math.round(metrics.memory_allocatable / (1024 * 1024))}Mi</td>
+                <td>{node?.status?.capacity?.memory ?? 'N/A'}</td>
+                <td style="color: {usageColor(metrics.memory_percent)}">{metrics.memory_percent}%</td>
+              </tr>
+            </tbody>
+          </table>
+        {/if}
+      </div>
+
     {:else if activeTab === 'yaml'}
       <pre class="yaml-view"><code>{JSON.stringify(node, null, 2)}</code></pre>
     {/if}
@@ -302,5 +387,53 @@
     font-size: 0.8rem;
     line-height: 1.5;
     color: #c9d1d9;
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .metric-card {
+    background: #1a1a2e;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 1rem;
+  }
+
+  .metric-label {
+    color: #8b949e;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+  }
+
+  .metric-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    font-family: monospace;
+    margin-bottom: 0.5rem;
+  }
+
+  .metric-bar {
+    height: 6px;
+    background: #21262d;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+  }
+
+  .metric-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+
+  .metric-detail {
+    font-size: 0.8rem;
+    color: #8b949e;
   }
 </style>

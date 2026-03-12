@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getResources } from '$lib/api';
+  import { getResources, getNodeMetrics, checkMetricsAvailable } from '$lib/api';
   import { isConnected } from '$lib/stores';
   import ResourceTable from '$lib/components/ResourceTable.svelte';
   import NodePoolHeader from '$lib/components/NodePoolHeader.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
-  import type { ResourceEntry } from '$lib/tauri-commands';
+  import type { ResourceEntry, NodeMetricsData } from '$lib/tauri-commands';
 
   const GVK = 'v1/Node';
   const PAGE_TITLE = 'Nodes';
@@ -114,13 +114,36 @@
     return { pools, hasAksLabels: true };
   }
 
+  function usageColor(pct: number): string {
+    if (pct < 70) return '#66bb6a';
+    if (pct < 90) return '#ffa726';
+    return '#ef5350';
+  }
+
   const columns = [
-    { key: 'name', label: 'Name', extract: (c: any) => c?.metadata?.name ?? '', width: '25%' },
+    { key: 'name', label: 'Name', extract: (c: any) => c?.metadata?.name ?? '', width: '20%' },
     { key: 'status', label: 'Status', extract: (c: any) => getNodeStatus(c) },
     { key: 'roles', label: 'Roles', extract: (c: any) => getNodeRoles(c) },
     { key: 'version', label: 'Version', extract: (c: any) => c?.status?.nodeInfo?.kubeletVersion ?? '' },
     { key: 'cpu', label: 'CPU', extract: (c: any) => c?.status?.capacity?.cpu ?? '' },
     { key: 'memory', label: 'Memory', extract: (c: any) => c?.status?.capacity?.memory ?? '' },
+    { key: 'cpu_used', label: 'CPU Used', extract: (c: any) => {
+      const m = metricsMap[c?.metadata?.name ?? ''];
+      if (!m) return '—';
+      return `${m.cpu_millicores}m (${m.cpu_percent}%)`;
+    }, colorFn: (c: any) => {
+      const m = metricsMap[c?.metadata?.name ?? ''];
+      return m ? usageColor(m.cpu_percent) : null;
+    }},
+    { key: 'mem_used', label: 'Mem Used', extract: (c: any) => {
+      const m = metricsMap[c?.metadata?.name ?? ''];
+      if (!m) return '—';
+      const mib = Math.round(m.memory_bytes / (1024 * 1024));
+      return `${mib}Mi (${m.memory_percent}%)`;
+    }, colorFn: (c: any) => {
+      const m = metricsMap[c?.metadata?.name ?? ''];
+      return m ? usageColor(m.memory_percent) : null;
+    }},
     { key: 'age', label: 'Age', extract: (c: any) => {
       const ts = c?.metadata?.creationTimestamp;
       return ts ? formatAge(ts) : 'Unknown';
@@ -128,6 +151,7 @@
   ];
 
   let resources: ResourceEntry[] = $state([]);
+  let nodeMetrics: NodeMetricsData[] = $state([]);
   let loading = $state(true);
   let refreshing = $state(false);
   let error: string | null = $state(null);
@@ -136,6 +160,10 @@
   let collapsedPools: Record<string, boolean> = $state({});
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let timestampTimer: ReturnType<typeof setInterval> | null = null;
+
+  let metricsMap: Record<string, NodeMetricsData> = $derived(
+    Object.fromEntries(nodeMetrics.map(m => [m.name, m]))
+  );
 
   let grouped = $derived(groupNodesByPool(resources));
 
@@ -152,12 +180,19 @@
   }
 
   async function loadResources() {
-    if (!$isConnected) { loading = false; resources = []; return; }
+    if (!$isConnected) { loading = false; resources = []; nodeMetrics = []; return; }
     const isInitial = resources.length === 0 && !lastUpdated;
     if (isInitial) loading = true; else refreshing = true;
     error = null;
     try {
-      resources = await getResources(GVK, null as unknown as string);
+      const [nodes, available] = await Promise.all([
+        getResources(GVK, null as unknown as string),
+        checkMetricsAvailable(),
+      ]);
+      resources = nodes;
+      if (available) {
+        nodeMetrics = await getNodeMetrics();
+      }
       lastUpdated = new Date();
       lastUpdatedText = formatTimestamp();
     } catch (e) {

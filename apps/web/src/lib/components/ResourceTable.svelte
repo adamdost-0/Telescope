@@ -6,6 +6,7 @@
     label: string;
     extract: (content: any) => string;
     width?: string;
+    colorFn?: (content: any) => string | null;
   }
 
   let { resources = [], columns = [], emptyMessage = 'No resources found.', hrefFn }: {
@@ -18,9 +19,12 @@
   let rows = $derived(resources.map((entry) => {
     try {
       const content = JSON.parse(entry.content);
-      return columns.map((col) => col.extract(content));
+      return columns.map((col) => ({
+        text: col.extract(content),
+        color: col.colorFn?.(content) ?? null,
+      }));
     } catch {
-      return columns.map(() => '—');
+      return columns.map(() => ({ text: '—', color: null }));
     }
   }));
 
@@ -61,9 +65,9 @@
           <tr>
             {#each row as cell, j}
               {#if j === 0 && href}
-                <td class="resource-name"><a {href}>{cell}</a></td>
+                <td class="resource-name"><a {href}>{cell.text}</a></td>
               {:else}
-                <td class:resource-name={j === 0}>{cell}</td>
+                <td class:resource-name={j === 0} style={cell.color ? `color: ${cell.color}` : ''}>{cell.text}</td>
               {/if}
             {/each}
           </tr>
