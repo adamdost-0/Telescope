@@ -116,6 +116,7 @@
       <button type="button" onclick={loadResources}>Retry</button>
     </div>
   {:else}
+    <p class="security-note">🔒 Secrets are fetched on-demand for security. They are not cached locally.</p>
     <p class="count">{resources.length} {PAGE_TITLE.toLowerCase()}</p>
     <ResourceTable {resources} {columns} emptyMessage="No secrets found in this namespace." hrefFn={(entry) => `/resources/secrets/${entry.namespace}/${entry.name}`} />
   {/if}
@@ -140,4 +141,5 @@
   .not-connected { text-align: center; padding: 3rem 1rem; color: #757575; }
   .not-connected p { margin: 0.25rem 0; font-size: 1.125rem; }
   .not-connected .hint { font-size: 0.875rem; color: #616161; }
+  .security-note { color: #ffb74d; font-size: 0.8125rem; margin-bottom: 0.5rem; padding: 0.5rem 0.75rem; background: rgba(255, 183, 77, 0.08); border-radius: 4px; border-left: 3px solid #ffb74d; }
 </style>

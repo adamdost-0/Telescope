@@ -140,6 +140,7 @@ fn get_resource_counts(state: State<'_, AppState>) -> Result<Vec<(String, u64)>,
         .store
         .lock()
         .map_err(|e| format!("Lock failed: {}", e))?;
+    // Security: v1/Secret is excluded — secrets are fetched on-demand, never cached.
     let gvks = vec![
         "v1/Pod",
         "apps/v1/Deployment",
@@ -149,7 +150,6 @@ fn get_resource_counts(state: State<'_, AppState>) -> Result<Vec<(String, u64)>,
         "batch/v1/CronJob",
         "v1/Service",
         "v1/ConfigMap",
-        "v1/Secret",
         "v1/Event",
         "v1/Node",
     ];
@@ -745,6 +745,13 @@ fn main() {
 
     let db_path_str = db_path.to_string_lossy().to_string();
     let store = ResourceStore::open(&db_path_str).expect("Failed to initialize resource store");
+
+    // Set restrictive file permissions on the database (Unix only).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&db_path, std::fs::Permissions::from_mode(0o600)).ok();
+    }
 
     // Clear stale data from previous runs.
     let _ = store.delete_all_by_gvk("v1/Pod");

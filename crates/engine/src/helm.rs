@@ -218,8 +218,20 @@ pub async fn get_release_values(
     }
 }
 
+/// Validate that a string is a valid Kubernetes resource name (RFC 1123 DNS subdomain).
+fn validate_k8s_name(name: &str) -> crate::Result<()> {
+    let re = regex::Regex::new(r"^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$").unwrap();
+    if name.is_empty() || name.len() > 253 || !re.is_match(name) {
+        return Err(crate::EngineError::Other(format!("Invalid name: {}", name)));
+    }
+    Ok(())
+}
+
 /// Roll back a Helm release to a specific revision using the `helm` CLI.
 pub async fn rollback_release(namespace: &str, name: &str, revision: i32) -> crate::Result<String> {
+    validate_k8s_name(namespace)?;
+    validate_k8s_name(name)?;
+
     let output = std::process::Command::new("helm")
         .args([
             "rollback",
