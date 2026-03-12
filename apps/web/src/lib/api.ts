@@ -154,11 +154,11 @@ export async function getResources(gvk: string, namespace?: string): Promise<Res
   }
 }
 
-/** Fetch events for a given namespace, optionally filtered by involved object name. */
-export async function getEvents(namespace: string, involvedObject?: string): Promise<ResourceEntry[]> {
+/** Fetch events, optionally filtered by namespace and/or involved object name. */
+export async function getEvents(namespace?: string | null, involvedObject?: string): Promise<ResourceEntry[]> {
   try {
     return await invoke<ResourceEntry[]>('get_events', {
-      namespace,
+      namespace: namespace ?? null,
       involvedObject: involvedObject ?? null,
     });
   } catch {

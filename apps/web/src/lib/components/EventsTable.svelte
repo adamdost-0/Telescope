@@ -6,6 +6,7 @@
   interface ParsedEvent {
     type: string;
     reason: string;
+    namespace: string;
     object: string;
     message: string;
     count: number;
@@ -26,6 +27,7 @@
       return {
         type: e.type ?? 'Normal',
         reason: e.reason ?? '',
+        namespace: e.metadata?.namespace ?? entry.namespace ?? '',
         object: objRef,
         message: e.message ?? '',
         count: e.count ?? 1,
@@ -33,7 +35,7 @@
         lastSeen: e.lastTimestamp ?? e.firstTimestamp ?? '',
       };
     } catch {
-      return { type: 'Normal', reason: '', object: '', message: '', count: 1, firstSeen: '', lastSeen: '' };
+      return { type: 'Normal', reason: '', namespace: '', object: '', message: '', count: 1, firstSeen: '', lastSeen: '' };
     }
   }
 
@@ -59,6 +61,7 @@
       <thead>
         <tr>
           <th scope="col">Type</th>
+          <th scope="col">Namespace</th>
           <th scope="col">Reason</th>
           {#if showObject}<th scope="col">Object</th>{/if}
           <th scope="col">Message</th>
@@ -74,6 +77,7 @@
                 {evt.type}
               </span>
             </td>
+            <td class="namespace">{evt.namespace}</td>
             <td class="reason">{evt.reason}</td>
             {#if showObject}<td class="object">{evt.object}</td>{/if}
             <td class="message">{evt.message}</td>
@@ -162,6 +166,12 @@
 
   .reason {
     font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .namespace {
+    font-family: monospace;
+    color: #8b949e;
     white-space: nowrap;
   }
 

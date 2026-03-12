@@ -208,6 +208,87 @@ impl ResourceWatcher {
         Ok(())
     }
 
+    /// Watch loop for namespaced resources watched cluster-wide via `Api::all()`.
+    ///
+    /// Unlike `run_watch_loop`, this extracts the namespace from each
+    /// object's metadata so events are stored with their actual namespace.
+    async fn run_watch_loop_dynamic_ns<K>(&self, api: Api<K>, gvk: &str) -> crate::Result<()>
+    where
+        K: KubeResource<DynamicType = ()>
+            + Clone
+            + std::fmt::Debug
+            + serde::de::DeserializeOwned
+            + Serialize
+            + Send
+            + 'static,
+    {
+        let gvk_str = gvk.to_string();
+
+        self.transition(&ConnectionEvent::Connect);
+        self.transition(&ConnectionEvent::Authenticated);
+        self.transition(&ConnectionEvent::SyncStarted);
+
+        let watcher_config = watcher::Config::default();
+        let mut stream = watcher(api, watcher_config).boxed();
+
+        let mut synced = false;
+
+        loop {
+            match stream.try_next().await {
+                Ok(Some(event)) => match event {
+                    Event::Apply(obj) => {
+                        let ns = obj.namespace().unwrap_or_default();
+                        if let Some(entry) = resource_to_entry(&gvk_str, &ns, &obj) {
+                            if let Err(e) = self.store.lock().unwrap().upsert(&entry) {
+                                error!("Failed to upsert {}: {}", gvk_str, e);
+                            }
+                        }
+                    }
+                    Event::Delete(obj) => {
+                        let ns = obj.namespace().unwrap_or_default();
+                        let name = obj.name_any();
+                        if let Err(e) = self.store.lock().unwrap().delete(&gvk_str, &ns, &name) {
+                            error!("Failed to delete {}: {}", gvk_str, e);
+                        }
+                    }
+                    Event::Init => {
+                        info!("Initial LIST started for {} (all namespaces)", gvk_str);
+                        let _ = self.store.lock().unwrap().delete_all_by_gvk(&gvk_str);
+                    }
+                    Event::InitApply(obj) => {
+                        let ns = obj.namespace().unwrap_or_default();
+                        if let Some(entry) = resource_to_entry(&gvk_str, &ns, &obj) {
+                            if let Err(e) = self.store.lock().unwrap().upsert(&entry) {
+                                error!("Failed to upsert {} during init: {}", gvk_str, e);
+                            }
+                        }
+                    }
+                    Event::InitDone => {
+                        info!("Initial sync complete for {} (all namespaces)", gvk_str);
+                        if !synced {
+                            synced = true;
+                            self.transition(&ConnectionEvent::SyncComplete);
+                        }
+                    }
+                },
+                Ok(None) => {
+                    warn!("Watch stream ended for {} (all namespaces)", gvk_str);
+                    self.transition(&ConnectionEvent::Disconnected);
+                    break;
+                }
+                Err(e) => {
+                    error!("Watch error for {} (all namespaces): {}", gvk_str, e);
+                    self.transition(&ConnectionEvent::WatchError {
+                        message: e.to_string(),
+                    });
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     // -----------------------------------------------------------------
     // Convenience wrappers for common resource types
     // -----------------------------------------------------------------
@@ -243,6 +324,17 @@ impl ResourceWatcher {
     /// Watch Events in a namespace.
     pub async fn watch_events(&self, namespace: &str) -> crate::Result<()> {
         self.watch_resource::<K8sEvent>("v1/Event", namespace).await
+    }
+
+    /// Watch Events across all namespaces (cluster-wide).
+    ///
+    /// Unlike namespace-scoped `watch_events`, this captures events from
+    /// every namespace (kube-system, default, etc.), which is essential
+    /// for AKS and other managed clusters where important events are
+    /// scattered across namespaces.
+    pub async fn watch_all_events(&self) -> crate::Result<()> {
+        let api: Api<K8sEvent> = Api::all(self.client.clone());
+        self.run_watch_loop_dynamic_ns(api, "v1/Event").await
     }
 
     /// Watch Nodes (cluster-scoped).

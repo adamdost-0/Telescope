@@ -590,11 +590,10 @@ async fn spawn_watch_task(
         }
     });
 
-    // Spawn the events watcher (secondary — no state machine transitions).
+    // Spawn the events watcher (cluster-wide — watches all namespaces).
     let events_watcher = watcher.clone();
-    let ns_events = ns.clone();
     let events_task = tokio::spawn(async move {
-        if let Err(e) = events_watcher.watch_events(&ns_events).await {
+        if let Err(e) = events_watcher.watch_all_events().await {
             error!("Events watch error: {}", e);
         }
     });

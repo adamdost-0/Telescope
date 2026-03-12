@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getEvents } from '$lib/api';
-  import { selectedNamespace, isConnected } from '$lib/stores';
+  import { namespaces, isConnected } from '$lib/stores';
   import EventsTable from '$lib/components/EventsTable.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
@@ -11,18 +11,30 @@
   let error: string | null = $state(null);
   let lastUpdated: Date | null = $state(null);
   let filterType = $state('all');
+  let filterNamespace = $state('__all__');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   let filteredEvents = $derived.by(() => {
-    if (filterType === 'all') return events;
-    return events.filter((e) => {
-      try {
-        return JSON.parse(e.content).type === filterType;
-      } catch {
-        return false;
-      }
-    });
+    let result = events;
+    if (filterType !== 'all') {
+      result = result.filter((e) => {
+        try {
+          return JSON.parse(e.content).type === filterType;
+        } catch {
+          return false;
+        }
+      });
+    }
+    if (filterNamespace !== '__all__') {
+      result = result.filter((e) => e.namespace === filterNamespace);
+    }
+    return result;
   });
+
+  /** Unique namespaces present in the current events list. */
+  let eventNamespaces = $derived(
+    [...new Set(events.map((e) => e.namespace).filter(Boolean))].sort()
+  );
 
   async function loadEvents() {
     if (!$isConnected) {
@@ -33,7 +45,7 @@
     loading = events.length === 0;
     error = null;
     try {
-      events = await getEvents($selectedNamespace);
+      events = await getEvents(null);
       lastUpdated = new Date();
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load events';
@@ -43,8 +55,7 @@
   }
 
   $effect(() => {
-    // Re-load when namespace or connection state changes
-    const _ns = $selectedNamespace;
+    // Re-load when connection state changes
     const _conn = $isConnected;
     loadEvents();
   });
@@ -62,6 +73,16 @@
   <header>
     <h1>Events</h1>
     <div class="controls">
+      <select
+        value={filterNamespace}
+        onchange={(e) => (filterNamespace = (e.target as HTMLSelectElement).value)}
+        aria-label="Filter by namespace"
+      >
+        <option value="__all__">All Namespaces</option>
+        {#each eventNamespaces as ns}
+          <option value={ns}>{ns}</option>
+        {/each}
+      </select>
       <select
         value={filterType}
         onchange={(e) => (filterType = (e.target as HTMLSelectElement).value)}
