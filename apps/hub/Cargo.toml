@@ -17,3 +17,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = "0.4"
 kube = { version = "3.0.1", features = ["client", "config"] }
+base64 = "0.22"

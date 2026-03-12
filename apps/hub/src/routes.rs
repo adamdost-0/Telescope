@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
-use axum::Json;
+use axum::{Extension, Json};
 use serde::Deserialize;
 use tracing::{error, info};
 
 use telescope_core::{ConnectionState, ResourceEntry};
 use telescope_engine::audit::AuditEntry;
 
+use crate::auth::AuthUser;
 use crate::state::{clear_all_resources, HubState};
 
 // ---------------------------------------------------------------------------
@@ -87,9 +88,10 @@ pub async fn list_contexts() -> ApiResult<Vec<telescope_engine::ClusterContext>>
 
 pub async fn connect(
     State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
     Json(body): Json<ConnectRequest>,
 ) -> ApiResult<serde_json::Value> {
-    info!("Connecting to context: {}", body.context_name);
+    info!(actor = %user.email, "Connecting to context: {}", body.context_name);
 
     // Abort any existing watch task.
     abort_watch(&state).await;
@@ -131,6 +133,7 @@ pub async fn connect(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: user.email.clone(),
             context: body.context_name.clone(),
             namespace: namespace.clone(),
             action: "connect".into(),
@@ -156,14 +159,17 @@ pub async fn connect(
 // POST /api/v1/disconnect
 // ---------------------------------------------------------------------------
 
-pub async fn disconnect(State(state): State<Arc<HubState>>) -> ApiResult<serde_json::Value> {
+pub async fn disconnect(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+) -> ApiResult<serde_json::Value> {
     let ctx_name = state
         .active_context
         .read()
         .await
         .clone()
         .unwrap_or_default();
-    info!("Disconnecting");
+    info!(actor = %user.email, "Disconnecting");
 
     abort_watch(&state).await;
 
@@ -188,6 +194,7 @@ pub async fn disconnect(State(state): State<Arc<HubState>>) -> ApiResult<serde_j
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: user.email.clone(),
             context: ctx_name.clone(),
             namespace: String::new(),
             action: "disconnect".into(),

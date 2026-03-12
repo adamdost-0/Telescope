@@ -310,6 +310,7 @@ async fn helm_rollback(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
             context: state
                 .active_context
                 .read()
@@ -394,6 +395,7 @@ async fn connect_to_context(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
             context: context_name.clone(),
             namespace: namespace.clone(),
             action: "connect".into(),
@@ -445,6 +447,7 @@ async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
             context: ctx_name.clone(),
             namespace: String::new(),
             action: "disconnect".into(),
@@ -625,6 +628,7 @@ async fn scale_resource(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
             context: state
                 .active_context
                 .read()
@@ -663,6 +667,7 @@ async fn delete_resource(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
             context: state
                 .active_context
                 .read()
@@ -705,6 +710,7 @@ async fn apply_resource(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
             context: state
                 .active_context
                 .read()
@@ -859,6 +865,7 @@ async fn rollout_restart(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
             context: state
                 .active_context
                 .read()
@@ -927,6 +934,7 @@ async fn exec_command(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
             context: state
                 .active_context
                 .read()

@@ -7,6 +7,7 @@ use std::io::Write;
 #[derive(Debug, Clone, Serialize)]
 pub struct AuditEntry {
     pub timestamp: String,
+    pub actor: String,
     pub context: String,
     pub namespace: String,
     pub action: String,
@@ -42,6 +43,7 @@ mod tests {
 
         let entry = AuditEntry {
             timestamp: "2025-01-01T00:00:00Z".to_string(),
+            actor: "test-user@example.com".to_string(),
             context: "test-ctx".to_string(),
             namespace: "default".to_string(),
             action: "delete".to_string(),

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
+mod auth;
 mod routes;
 mod state;
 mod ws;
@@ -55,32 +56,51 @@ async fn main() {
         std::fs::set_permissions(&db_path, std::fs::Permissions::from_mode(0o600)).ok();
     }
 
+    if let Some(oidc) = auth::OidcConfig::from_env() {
+        tracing::info!(
+            issuer = %oidc.issuer_url,
+            client_id = %oidc.client_id,
+            "OIDC authentication enabled"
+        );
+    } else {
+        tracing::info!("OIDC authentication disabled — all requests are anonymous");
+    }
+
+    // API routes protected by auth middleware.
+    let api_routes = Router::new()
+        .route("/contexts", get(routes::list_contexts))
+        .route("/connect", post(routes::connect))
+        .route("/disconnect", post(routes::disconnect))
+        .route("/connection-state", get(routes::connection_state))
+        .route("/resources", get(routes::get_resources))
+        .route("/pods", get(routes::get_pods))
+        .route("/events", get(routes::get_events))
+        .route("/namespaces", get(routes::list_namespaces))
+        .route("/pods/{namespace}/{name}/logs", get(routes::get_pod_logs))
+        .route("/cluster-info", get(routes::cluster_info))
+        .route("/search", get(routes::search))
+        .route("/helm/releases", get(routes::helm_releases))
+        .route("/metrics/pods", get(routes::pod_metrics))
+        .route("/crds", get(routes::list_crds))
+        .layer(axum::middleware::from_fn(auth::auth_middleware))
+        .with_state(Arc::clone(&hub_state));
+
     let app = Router::new()
-        // Health check
+        // Health check (unauthenticated)
         .route("/healthz", get(|| async { "ok" }))
+        // Auth routes (unauthenticated)
+        .route("/auth/login", get(auth::login))
+        .route("/auth/callback", get(auth::auth_callback))
+        .route("/auth/logout", post(auth::logout))
+        // /auth/me needs the auth middleware to populate AuthUser
+        .route(
+            "/auth/me",
+            get(auth::me).layer(axum::middleware::from_fn(auth::auth_middleware)),
+        )
         // WebSocket
         .route("/ws", get(ws_handler))
-        // Context / connection lifecycle
-        .route("/api/v1/contexts", get(routes::list_contexts))
-        .route("/api/v1/connect", post(routes::connect))
-        .route("/api/v1/disconnect", post(routes::disconnect))
-        .route("/api/v1/connection-state", get(routes::connection_state))
-        // Resource queries
-        .route("/api/v1/resources", get(routes::get_resources))
-        .route("/api/v1/pods", get(routes::get_pods))
-        .route("/api/v1/events", get(routes::get_events))
-        .route("/api/v1/namespaces", get(routes::list_namespaces))
-        .route(
-            "/api/v1/pods/{namespace}/{name}/logs",
-            get(routes::get_pod_logs),
-        )
-        .route("/api/v1/cluster-info", get(routes::cluster_info))
-        .route("/api/v1/search", get(routes::search))
-        // Helm
-        .route("/api/v1/helm/releases", get(routes::helm_releases))
-        // Metrics & CRDs
-        .route("/api/v1/metrics/pods", get(routes::pod_metrics))
-        .route("/api/v1/crds", get(routes::list_crds))
+        // API routes
+        .nest("/api/v1", api_routes)
         // Middleware
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
