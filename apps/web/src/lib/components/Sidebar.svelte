@@ -20,6 +20,7 @@
       title: 'Cluster',
       items: [
         { label: 'Overview', href: '/overview', icon: '📊' },
+        { label: 'Create', href: '/create', icon: '➕' },
         { label: 'Nodes', href: '/nodes', icon: '🖥️' },
         { label: 'Events', href: '/events', icon: '⚡' },
       ]
