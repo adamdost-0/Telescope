@@ -5,6 +5,7 @@
   import Tabs from '$lib/components/Tabs.svelte';
   import YamlEditor from '$lib/components/YamlEditor.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
   import type { HelmRelease } from '$lib/tauri-commands';
 
   let releaseName = $derived(page.params.name);
@@ -159,7 +160,12 @@
 
 <div class="detail-page">
   <header class="detail-header">
-    <a href="/helm" class="back">← Helm Releases</a>
+    <Breadcrumbs crumbs={[
+      { label: 'Overview', href: '/' },
+      { label: 'Helm', href: '/helm' },
+      { label: namespace, href: `/helm?namespace=${encodeURIComponent(namespace)}` },
+      { label: releaseName }
+    ]} />
     <h1>{releaseName}</h1>
     <span class="namespace-badge">{namespace}</span>
   </header>
@@ -325,13 +331,6 @@
     margin-bottom: 1.5rem;
     flex-wrap: wrap;
   }
-
-  .back {
-    color: #58a6ff;
-    text-decoration: none;
-    font-size: 0.875rem;
-  }
-  .back:hover { text-decoration: underline; }
 
   h1 {
     font-size: 1.25rem;

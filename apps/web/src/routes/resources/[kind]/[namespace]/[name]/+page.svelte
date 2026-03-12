@@ -9,6 +9,7 @@
   import ScaleDialog from '$lib/components/ScaleDialog.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
+  import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
   import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -241,7 +242,12 @@
 
 <div class="detail-page">
   <header class="detail-header">
-    <a href="/resources/{kind}?namespace={encodeURIComponent(namespace)}" class="back">← {kindInfo?.label ?? kind} ({namespace})</a>
+    <Breadcrumbs crumbs={[
+      { label: 'Overview', href: '/' },
+      { label: kindInfo?.label ?? kind, href: `/resources/${kind}` },
+      { label: namespace, href: `/resources/${kind}?namespace=${encodeURIComponent(namespace)}` },
+      { label: resourceName }
+    ]} />
     <h1>{resourceName}</h1>
     <span class="namespace-badge">{namespace}</span>
     {#if isScalable && resource}
@@ -744,13 +750,6 @@
     margin-bottom: 1.5rem;
     flex-wrap: wrap;
   }
-
-  .back {
-    color: #58a6ff;
-    text-decoration: none;
-    font-size: 0.875rem;
-  }
-  .back:hover { text-decoration: underline; }
 
   h1 {
     font-size: 1.25rem;

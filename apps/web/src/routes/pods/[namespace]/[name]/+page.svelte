@@ -12,6 +12,7 @@
   import PortForwardDialog from '$lib/components/PortForwardDialog.svelte';
   import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
+  import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
   import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -153,7 +154,12 @@
 
 <div class="detail-page">
   <header class="detail-header">
-    <a href="/pods" class="back">← Pods</a>
+    <Breadcrumbs crumbs={[
+      { label: 'Overview', href: '/' },
+      { label: 'Pods', href: '/pods' },
+      { label: namespace, href: `/pods?namespace=${encodeURIComponent(namespace)}` },
+      { label: podName }
+    ]} />
     <h1>{podName}</h1>
     <span class="namespace-badge">{namespace}</span>
     {#if pod}
@@ -308,13 +314,6 @@
     margin-bottom: 1.5rem;
     flex-wrap: wrap;
   }
-
-  .back {
-    color: #58a6ff;
-    text-decoration: none;
-    font-size: 0.875rem;
-  }
-  .back:hover { text-decoration: underline; }
 
   h1 {
     font-size: 1.25rem;

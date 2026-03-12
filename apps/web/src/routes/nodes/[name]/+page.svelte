@@ -4,6 +4,7 @@
   import { getResources, getNodeMetrics, checkMetricsAvailable } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
+  import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
   import type { ResourceEntry, NodeMetricsData } from '$lib/tauri-commands';
 
   let nodeName = $derived(page.params.name);
@@ -111,7 +112,11 @@
 
 <div class="detail-page">
   <header class="detail-header">
-    <a href="/nodes" class="back">← Nodes</a>
+    <Breadcrumbs crumbs={[
+      { label: 'Overview', href: '/' },
+      { label: 'Nodes', href: '/nodes' },
+      { label: nodeName }
+    ]} />
     <h1>{nodeName}</h1>
   </header>
 
@@ -332,13 +337,6 @@
     margin-bottom: 1.5rem;
     flex-wrap: wrap;
   }
-
-  .back {
-    color: #58a6ff;
-    text-decoration: none;
-    font-size: 0.875rem;
-  }
-  .back:hover { text-decoration: underline; }
 
   h1 {
     font-size: 1.25rem;
