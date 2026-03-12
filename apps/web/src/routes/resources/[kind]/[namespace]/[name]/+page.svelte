@@ -1,11 +1,12 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { getResources, getEvents, getPods, rolloutRestart, rolloutStatus, applyResource } from '$lib/api';
+  import { getResources, getEvents, getPods, rolloutRestart, rolloutStatus, applyResource, scaleResource } from '$lib/api';
   import type { RolloutStatus } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import EventsTable from '$lib/components/EventsTable.svelte';
   import YamlEditor from '$lib/components/YamlEditor.svelte';
+  import ScaleDialog from '$lib/components/ScaleDialog.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   const KIND_MAP: Record<string, { gvk: string; label: string }> = {
@@ -22,12 +23,16 @@
   };
 
   const WORKLOAD_KINDS = new Set(['deployments', 'statefulsets', 'daemonsets']);
+  const SCALABLE_KINDS = new Set(['deployments', 'statefulsets']);
 
   let kind = $derived(page.params.kind);
   let namespace = $derived(page.params.namespace);
   let resourceName = $derived(page.params.name);
   let kindInfo = $derived(KIND_MAP[kind]);
   let isWorkload = $derived(WORKLOAD_KINDS.has(kind));
+  let isScalable = $derived(SCALABLE_KINDS.has(kind));
+  let showScale = $state(false);
+  let currentReplicas = $derived(resource?.spec?.replicas ?? 1);
 
   let resource: any = $state(null);
   let events: ResourceEntry[] = $state([]);
@@ -196,6 +201,17 @@
   function truncate(str: string, max: number): string {
     return str.length > max ? str.slice(0, max) + '…' : str;
   }
+
+  async function handleScale(replicas: number) {
+    showScale = false;
+    if (!kindInfo) return;
+    try {
+      await scaleResource(kindInfo.gvk, namespace, resourceName, replicas);
+      await loadResource();
+    } catch (e) {
+      console.error('Scale failed:', e);
+    }
+  }
 </script>
 
 <div class="detail-page">
@@ -203,6 +219,9 @@
     <a href="/resources/{kind}" class="back">← {kindInfo?.label ?? kind}</a>
     <h1>{resourceName}</h1>
     <span class="namespace-badge">{namespace}</span>
+    {#if isScalable && resource}
+      <button class="action-btn" onclick={() => showScale = true}>⚖ Scale</button>
+    {/if}
   </header>
 
   {#if loading}
@@ -642,6 +661,14 @@
     {/if}
   {/if}
 </div>
+
+<ScaleDialog
+  open={showScale}
+  resourceName={resourceName}
+  currentReplicas={currentReplicas}
+  onscale={handleScale}
+  oncancel={() => showScale = false}
+/>
 
 <style>
   .detail-page {

@@ -2,13 +2,14 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import { getPods, getEvents, deleteResource, listContainers, applyResource } from '$lib/api';
+  import { getPods, getEvents, deleteResource, listContainers, applyResource, startPortForward } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import LogViewer from '$lib/components/LogViewer.svelte';
   import EventsTable from '$lib/components/EventsTable.svelte';
   import ExecTerminal from '$lib/components/ExecTerminal.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import YamlEditor from '$lib/components/YamlEditor.svelte';
+  import PortForwardDialog from '$lib/components/PortForwardDialog.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   let namespace = $derived(page.params.namespace);
@@ -20,6 +21,7 @@
   let activeTab = $state('summary');
   let error: string | null = $state(null);
   let showDeleteDialog = $state(false);
+  let showPortForward = $state(false);
   let deleting = $state(false);
   let deleteError: string | null = $state(null);
   let containerNames: string[] = $state([]);
@@ -34,6 +36,9 @@
 
   const PROTECTED_NAMESPACES = ['kube-system', 'kube-public', 'kube-node-lease'];
   let requireTypeName = $derived(PROTECTED_NAMESPACES.includes(namespace));
+  let availablePorts: number[] = $derived(
+    pod?.spec?.containers?.flatMap((c: any) => c.ports?.map((p: any) => p.containerPort) ?? []) ?? []
+  );
 
   const tabs = [
     { id: 'summary', label: 'Summary' },
@@ -105,6 +110,15 @@
     applyMessage = null;
     applyError = false;
   }
+
+  async function handlePortForward(localPort: number, remotePort: number) {
+    showPortForward = false;
+    try {
+      await startPortForward(namespace, podName, localPort, remotePort);
+    } catch (e) {
+      console.error('Port forward failed:', e);
+    }
+  }
 </script>
 
 <div class="detail-page">
@@ -113,6 +127,7 @@
     <h1>{podName}</h1>
     <span class="namespace-badge">{namespace}</span>
     {#if pod}
+      <button class="action-btn" onclick={() => showPortForward = true}>⇌ Port Forward</button>
       <button class="danger-btn" onclick={() => showDeleteDialog = true}>🗑 Delete</button>
     {/if}
   </header>
@@ -216,6 +231,15 @@
     <p class="error" role="alert">{deleteError}</p>
   {/if}
 </div>
+
+<PortForwardDialog
+  open={showPortForward}
+  podName={podName}
+  {namespace}
+  {availablePorts}
+  onforward={handlePortForward}
+  oncancel={() => showPortForward = false}
+/>
 
 <style>
   .detail-page {

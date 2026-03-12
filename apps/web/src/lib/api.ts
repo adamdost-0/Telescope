@@ -67,6 +67,9 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
       return { stdout: 'Exec not available in web mode', stderr: '', success: false } as unknown as T;
     case 'apply_resource':
       return { success: true, message: 'Applied (stub)' } as unknown as T;
+    case 'scale_resource':
+    case 'start_port_forward':
+      return undefined as unknown as T;
     default:
       throw new Error(`Command "${command}" not available in web mode`);
   }
@@ -260,4 +263,14 @@ export interface ApplyResult {
 /** Apply (create or update) a Kubernetes resource from a JSON/YAML manifest. */
 export async function applyResource(manifest: string, dryRun = false): Promise<ApplyResult> {
   return invoke<ApplyResult>('apply_resource', { manifest, dryRun });
+}
+
+/** Scale a Deployment or StatefulSet to the desired replica count. */
+export async function scaleResource(gvk: string, namespace: string, name: string, replicas: number): Promise<string> {
+  return invoke<string>('scale_resource', { gvk, namespace, name, replicas });
+}
+
+/** Start a port-forward session to a pod. Returns the local port number. */
+export async function startPortForward(namespace: string, pod: string, localPort: number, remotePort: number): Promise<number> {
+  return invoke<number>('start_port_forward', { namespace, pod, localPort, remotePort });
 }
