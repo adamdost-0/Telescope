@@ -210,8 +210,29 @@
                 {container.ports.map((p: any) => `${p.containerPort}/${p.protocol ?? 'TCP'}`).join(', ')}
               </span>
             {/if}
+            {#if container.resources}
+              <div class="resources">
+                {#if container.resources.requests}
+                  <span class="resource-detail">Requests: CPU {container.resources.requests.cpu ?? '-'}, Mem {container.resources.requests.memory ?? '-'}</span>
+                {/if}
+                {#if container.resources.limits}
+                  <span class="resource-detail">Limits: CPU {container.resources.limits.cpu ?? '-'}, Mem {container.resources.limits.memory ?? '-'}</span>
+                {/if}
+              </div>
+            {:else}
+              <span class="no-resources">No resource requests/limits set</span>
+            {/if}
           </div>
         {/each}
+
+        {#if pod.metadata?.ownerReferences}
+          <h3>Owner</h3>
+          {#each pod.metadata.ownerReferences as ref}
+            <p>
+              {ref.kind}: <a class="owner-link" href="/resources/{ref.kind.toLowerCase()}s/{pod.metadata.namespace}/{ref.name}">{ref.name}</a>
+            </p>
+          {/each}
+        {/if}
 
         <AzureIdentitySection {pod} />
 
@@ -417,6 +438,29 @@
     color: #8b949e;
     font-size: 0.8rem;
     font-family: monospace;
+  }
+  .resources {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin-top: 0.25rem;
+  }
+  .resource-detail {
+    color: #8b949e;
+    font-size: 0.8rem;
+    font-family: monospace;
+  }
+  .no-resources {
+    color: #6e7681;
+    font-size: 0.8rem;
+    font-style: italic;
+  }
+  .owner-link {
+    color: #58a6ff;
+    text-decoration: none;
+  }
+  .owner-link:hover {
+    text-decoration: underline;
   }
 
   .muted { color: #6e7681; font-size: 0.875rem; }

@@ -5,6 +5,8 @@
     name: string;
     namespace: string;
     status: string;
+    statusClass: string;
+    image: string;
     restarts: number;
     age: string;
     ready: string;
@@ -18,7 +20,7 @@
     new Map(metrics.map((m) => [`${m.namespace}/${m.name}`, m]))
   );
 
-  type SortField = 'name' | 'ready' | 'status' | 'cpu' | 'memory' | 'restarts' | 'age';
+  type SortField = 'name' | 'ready' | 'status' | 'image' | 'cpu' | 'memory' | 'restarts' | 'age';
   let sortKey = $state<SortField | null>(null);
   let sortDir = $state<'asc' | 'desc'>('asc');
 
@@ -44,6 +46,7 @@
       case 'name': return pod.name;
       case 'ready': return pod.ready;
       case 'status': return pod.status;
+      case 'image': return pod.image;
       case 'cpu': return pod.cpuMillicores ?? -1;
       case 'memory': return pod.memoryBytes ?? -1;
       case 'restarts': return pod.restarts;
@@ -67,11 +70,47 @@
     });
   });
 
+  function getMainImage(entry: ResourceEntry): string {
+    try {
+      const obj = JSON.parse(entry.content);
+      const containers = obj?.spec?.containers ?? [];
+      if (containers.length === 0) return '';
+      const img = containers[0].image ?? '';
+      return img.length > 40 ? '...' + img.slice(-37) : img;
+    } catch { return ''; }
+  }
+
+  function getDetailedStatus(obj: any): { status: string; class: string } {
+    const phase = obj?.status?.phase ?? 'Unknown';
+    const containers = obj?.status?.containerStatuses ?? [];
+
+    for (const c of containers) {
+      if (c.state?.waiting?.reason === 'CrashLoopBackOff')
+        return { status: 'CrashLoopBackOff', class: 'status-failed' };
+      if (c.state?.waiting?.reason === 'ImagePullBackOff')
+        return { status: 'ImagePullBackOff', class: 'status-failed' };
+      if (c.state?.waiting?.reason === 'ErrImagePull')
+        return { status: 'ErrImagePull', class: 'status-failed' };
+      if (c.state?.terminated?.reason === 'OOMKilled')
+        return { status: 'OOMKilled', class: 'status-failed' };
+      if (c.state?.terminated?.reason === 'Error')
+        return { status: 'Error', class: 'status-failed' };
+    }
+
+    const initContainers = obj?.status?.initContainerStatuses ?? [];
+    for (const c of initContainers) {
+      if (c.state?.waiting)
+        return { status: `Init:${c.state.waiting.reason ?? 'Waiting'}`, class: 'status-pending' };
+    }
+
+    return { status: phase, class: `status-${phase.toLowerCase()}` };
+  }
+
   function parsePod(entry: ResourceEntry): PodInfo {
     const m = metricsMap.get(`${entry.namespace}/${entry.name}`);
     try {
       const obj = JSON.parse(entry.content);
-      const status = obj?.status?.phase ?? 'Unknown';
+      const detailed = getDetailedStatus(obj);
       const containers = obj?.status?.containerStatuses ?? [];
       const restarts = containers.reduce((sum: number, c: any) => sum + (c.restartCount ?? 0), 0);
       const readyCount = containers.filter((c: any) => c.ready).length;
@@ -82,7 +121,9 @@
       return {
         name: entry.name,
         namespace: entry.namespace,
-        status,
+        status: detailed.status,
+        statusClass: detailed.class,
+        image: getMainImage(entry),
         restarts,
         age,
         ready: `${readyCount}/${totalCount}`,
@@ -94,6 +135,8 @@
         name: entry.name,
         namespace: entry.namespace,
         status: 'Unknown',
+        statusClass: 'status-unknown',
+        image: getMainImage(entry),
         restarts: 0,
         age: 'Unknown',
         ready: '0/0',
@@ -131,15 +174,7 @@
     return `${(mi / 1024).toFixed(1)}Gi`;
   }
 
-  function statusClass(status: string): string {
-    switch (status) {
-      case 'Running': return 'status-running';
-      case 'Succeeded': return 'status-succeeded';
-      case 'Pending': return 'status-pending';
-      case 'Failed': return 'status-failed';
-      default: return 'status-unknown';
-    }
-  }
+
 </script>
 
 {#if parsedPods.length === 0}
@@ -152,6 +187,7 @@
           <th scope="col"><button class="sort-btn" onclick={() => toggleSort('name')} aria-label="Sort by Name">Name{sortIndicator('name')}</button></th>
           <th scope="col"><button class="sort-btn" onclick={() => toggleSort('ready')} aria-label="Sort by Ready">Ready{sortIndicator('ready')}</button></th>
           <th scope="col"><button class="sort-btn" onclick={() => toggleSort('status')} aria-label="Sort by Status">Status{sortIndicator('status')}</button></th>
+          <th scope="col"><button class="sort-btn" onclick={() => toggleSort('image')} aria-label="Sort by Image">Image{sortIndicator('image')}</button></th>
           <th scope="col"><button class="sort-btn" onclick={() => toggleSort('cpu')} aria-label="Sort by CPU">CPU{sortIndicator('cpu')}</button></th>
           <th scope="col"><button class="sort-btn" onclick={() => toggleSort('memory')} aria-label="Sort by Memory">Memory{sortIndicator('memory')}</button></th>
           <th scope="col"><button class="sort-btn" onclick={() => toggleSort('restarts')} aria-label="Sort by Restarts">Restarts{sortIndicator('restarts')}</button></th>
@@ -163,7 +199,8 @@
           <tr>
             <td class="pod-name"><a href="/pods/{pod.namespace}/{pod.name}">{pod.name}</a></td>
             <td>{pod.ready}</td>
-            <td><span class={statusClass(pod.status)}>{pod.status}</span></td>
+            <td><span class={pod.statusClass}>{pod.status}</span></td>
+            <td class="image-cell" title={pod.image}>{pod.image}</td>
             <td class="metric">{formatCpu(pod.cpuMillicores)}</td>
             <td class="metric">{formatMemory(pod.memoryBytes)}</td>
             <td>{pod.restarts}</td>
@@ -236,5 +273,13 @@
   .metric {
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
+  }
+  .image-cell {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    max-width: 20rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>
