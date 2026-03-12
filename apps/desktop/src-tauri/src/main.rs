@@ -9,6 +9,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use telescope_core::{ConnectionState, ResourceEntry, ResourceStore};
+use telescope_engine::audit::AuditEntry;
 use telescope_engine::ClusterContext;
 
 /// Application state managed by Tauri.
@@ -19,6 +20,7 @@ use telescope_engine::ClusterContext;
 struct AppState {
     #[allow(dead_code)]
     db_path: String,
+    audit_log_path: String,
     store: Arc<Mutex<ResourceStore>>,
     connection_state: Arc<RwLock<ConnectionState>>,
     watch_handle: TokioMutex<Option<JoinHandle<()>>>,
@@ -250,10 +252,37 @@ async fn get_helm_release_values(
 
 /// Roll back a Helm release to a specific revision using the helm CLI.
 #[tauri::command]
-async fn helm_rollback(namespace: String, name: String, revision: i32) -> Result<String, String> {
-    telescope_engine::helm::rollback_release(&namespace, &name, revision)
-        .await
-        .map_err(|e| e.to_string())
+async fn helm_rollback(
+    state: State<'_, AppState>,
+    namespace: String,
+    name: String,
+    revision: i32,
+) -> Result<String, String> {
+    let outcome = telescope_engine::helm::rollback_release(&namespace, &name, revision).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: namespace.clone(),
+            action: "helm_rollback".into(),
+            resource_type: "HelmRelease".into(),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: Some(format!("revision={}", revision)),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
 }
 
 /// List available namespaces from the connected cluster.
@@ -321,6 +350,20 @@ async fn connect_to_context(
     // Spawn the watcher background task.
     spawn_watch_task(&app, &state, client, &namespace).await;
 
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: context_name.clone(),
+            namespace: namespace.clone(),
+            action: "connect".into(),
+            resource_type: "context".into(),
+            resource_name: context_name.clone(),
+            result: "success".into(),
+            detail: None,
+        },
+    );
+
     info!(
         "Watch started for context={}, namespace={}",
         context_name, namespace
@@ -331,6 +374,12 @@ async fn connect_to_context(
 /// Disconnect from the current cluster.
 #[tauri::command]
 async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let ctx_name = state
+        .active_context
+        .read()
+        .await
+        .clone()
+        .unwrap_or_default();
     info!("Disconnecting");
 
     abort_watch(&state).await;
@@ -353,6 +402,20 @@ async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     }
 
     set_connection_state(&app, &state.connection_state, ConnectionState::Disconnected).await;
+
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: ctx_name.clone(),
+            namespace: String::new(),
+            action: "disconnect".into(),
+            resource_type: "context".into(),
+            resource_name: ctx_name,
+            result: "success".into(),
+            detail: None,
+        },
+    );
 
     Ok(())
 }
@@ -506,6 +569,7 @@ async fn start_log_stream(
 /// Scale a Deployment or StatefulSet to the specified replica count.
 #[tauri::command]
 async fn scale_resource(
+    state: State<'_, AppState>,
     gvk: String,
     namespace: String,
     name: String,
@@ -514,20 +578,70 @@ async fn scale_resource(
     let client = telescope_engine::client::create_client()
         .await
         .map_err(|e| e.to_string())?;
-    telescope_engine::actions::scale_resource(&client, &gvk, &namespace, &name, replicas)
-        .await
-        .map_err(|e| e.to_string())
+    let outcome =
+        telescope_engine::actions::scale_resource(&client, &gvk, &namespace, &name, replicas).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: namespace.clone(),
+            action: "scale".into(),
+            resource_type: gvk.clone(),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: Some(format!("replicas={}", replicas)),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
 }
 
 /// Delete a namespaced Kubernetes resource by GVK, namespace, and name.
 #[tauri::command]
-async fn delete_resource(gvk: String, namespace: String, name: String) -> Result<String, String> {
+async fn delete_resource(
+    state: State<'_, AppState>,
+    gvk: String,
+    namespace: String,
+    name: String,
+) -> Result<String, String> {
     let client = telescope_engine::client::create_client()
         .await
         .map_err(|e| e.to_string())?;
-    let result = telescope_engine::actions::delete_resource(&client, &gvk, &namespace, &name)
-        .await
-        .map_err(|e| e.to_string())?;
+    let outcome =
+        telescope_engine::actions::delete_resource(&client, &gvk, &namespace, &name).await;
+    let result_str = match &outcome {
+        Ok(r) if r.success => "success",
+        _ => "failure",
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: namespace.clone(),
+            action: "delete".into(),
+            resource_type: gvk.clone(),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: None,
+        },
+    );
+    let result = outcome.map_err(|e| e.to_string())?;
     if result.success {
         Ok(result.message)
     } else {
@@ -538,15 +652,38 @@ async fn delete_resource(gvk: String, namespace: String, name: String) -> Result
 /// Apply a resource from JSON/YAML content using server-side apply.
 #[tauri::command]
 async fn apply_resource(
+    state: State<'_, AppState>,
     json_content: String,
     dry_run: bool,
 ) -> Result<telescope_engine::actions::ApplyResult, String> {
     let client = telescope_engine::client::create_client()
         .await
         .map_err(|e| e.to_string())?;
-    telescope_engine::actions::apply_resource(&client, &json_content, dry_run)
-        .await
-        .map_err(|e| e.to_string())
+    let outcome = telescope_engine::actions::apply_resource(&client, &json_content, dry_run).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: String::new(),
+            action: "apply".into(),
+            resource_type: "resource".into(),
+            resource_name: String::new(),
+            result: result_str.into(),
+            detail: Some(format!("dry_run={}", dry_run)),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -637,13 +774,39 @@ async fn spawn_watch_task(
 
 /// Restart a Deployment rollout.
 #[tauri::command]
-async fn rollout_restart(namespace: String, name: String) -> Result<String, String> {
+async fn rollout_restart(
+    state: State<'_, AppState>,
+    namespace: String,
+    name: String,
+) -> Result<String, String> {
     let client = telescope_engine::client::create_client()
         .await
         .map_err(|e| e.to_string())?;
-    telescope_engine::actions::rollout_restart(&client, &namespace, &name)
-        .await
-        .map_err(|e| e.to_string())
+    let outcome = telescope_engine::actions::rollout_restart(&client, &namespace, &name).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: namespace.clone(),
+            action: "rollout_restart".into(),
+            resource_type: "Deployment".into(),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: None,
+        },
+    );
+    outcome.map_err(|e| e.to_string())
 }
 
 /// Get rollout status for a Deployment.
@@ -668,11 +831,15 @@ async fn rollout_status(
 /// Execute a command in a running container (non-interactive).
 #[tauri::command]
 async fn exec_command(
+    state: State<'_, AppState>,
     namespace: String,
     pod: String,
     container: Option<String>,
     command: Vec<String>,
 ) -> Result<telescope_engine::exec::ExecResult, String> {
+    let cmd_detail = command.join(" ");
+    let audit_ns = namespace.clone();
+    let audit_pod = pod.clone();
     let client = telescope_engine::client::create_client()
         .await
         .map_err(|e| e.to_string())?;
@@ -682,9 +849,31 @@ async fn exec_command(
         container,
         command,
     };
-    telescope_engine::exec::exec_command(&client, &req)
-        .await
-        .map_err(|e| e.to_string())
+    let outcome = telescope_engine::exec::exec_command(&client, &req).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: audit_ns,
+            action: "exec".into(),
+            resource_type: "Pod".into(),
+            resource_name: audit_pod,
+            result: result_str.into(),
+            detail: Some(cmd_detail),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
 }
 
 /// Start port forwarding from a local port to a pod port.
@@ -767,6 +956,20 @@ fn main() {
         std::fs::set_permissions(&db_path, std::fs::Permissions::from_mode(0o600)).ok();
     }
 
+    let audit_path = data_dir.join("audit.log").to_string_lossy().to_string();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&audit_path)
+            .is_ok()
+        {
+            std::fs::set_permissions(&audit_path, std::fs::Permissions::from_mode(0o600)).ok();
+        }
+    }
+
     // Clear stale data from previous runs.
     let _ = store.delete_all_by_gvk("v1/Pod");
     let _ = store.delete_all_by_gvk("v1/Event");
@@ -774,6 +977,7 @@ fn main() {
 
     let app_state = AppState {
         db_path: db_path_str,
+        audit_log_path: audit_path,
         store: Arc::new(Mutex::new(store)),
         connection_state: Arc::new(RwLock::new(ConnectionState::Disconnected)),
         watch_handle: TokioMutex::new(None),
