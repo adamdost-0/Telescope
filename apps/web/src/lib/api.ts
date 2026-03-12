@@ -34,72 +34,124 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   return webFallback<T>(command, args);
 }
 
-async function webFallback<T>(command: string, _args?: Record<string, unknown>): Promise<T> {
+const HUB_URL =
+  typeof window !== 'undefined'
+    ? (window as any).__TELESCOPE_HUB_URL__ || 'http://localhost:3001'
+    : 'http://localhost:3001';
+
+async function webFallback<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const base = `${HUB_URL}/api/v1`;
+
   switch (command) {
+    // ── Read operations (hub-backed) ──────────────────────────────────────
     case 'list_contexts': {
-      // In web mode, fetch from /api/clusters and map to ClusterContext format
-      const res = await fetch('/api/clusters');
-      if (!res.ok) return [] as unknown as T;
-      const data = await res.json();
-      const clusters = data.clusters ?? [];
-      return clusters.map((c: Record<string, unknown>) => ({
-        name: (c.name as string) ?? (c.id as string),
-        cluster_server: (c.server as string) ?? null,
-        namespace: null,
-        is_active: false,
-        auth_type: (c.auth_type as string) ?? 'unknown',
-      })) as unknown as T;
+      const res = await fetch(`${base}/contexts`);
+      return (await res.json()) as T;
     }
-    case 'get_connection_state':
-      return { state: 'Disconnected' } as unknown as T;
-    case 'get_cluster_info':
-      return null as unknown as T;
+    case 'connect_to_context': {
+      const res = await fetch(`${base}/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contextName: args?.contextName }),
+      });
+      return (await res.json()) as T;
+    }
+    case 'disconnect': {
+      await fetch(`${base}/disconnect`, { method: 'POST' });
+      return undefined as T;
+    }
+    case 'get_connection_state': {
+      const res = await fetch(`${base}/connection-state`);
+      return (await res.json()) as T;
+    }
+    case 'get_pods': {
+      const ns = args?.namespace ? `?namespace=${args.namespace}` : '';
+      const res = await fetch(`${base}/pods${ns}`);
+      return (await res.json()) as T;
+    }
+    case 'get_resources': {
+      const params = new URLSearchParams();
+      if (args?.gvk) params.set('gvk', args.gvk as string);
+      if (args?.namespace) params.set('namespace', args.namespace as string);
+      const res = await fetch(`${base}/resources?${params}`);
+      return (await res.json()) as T;
+    }
+    case 'get_events': {
+      const params = new URLSearchParams();
+      if (args?.namespace) params.set('namespace', args.namespace as string);
+      if (args?.involvedObject) params.set('involved_object', args.involvedObject as string);
+      const res = await fetch(`${base}/events?${params}`);
+      return (await res.json()) as T;
+    }
+    case 'list_namespaces': {
+      const res = await fetch(`${base}/namespaces`);
+      return (await res.json()) as T;
+    }
+    case 'get_pod_logs': {
+      const params = new URLSearchParams();
+      if (args?.container) params.set('container', args.container as string);
+      if (args?.tailLines) params.set('tail', String(args.tailLines));
+      if (args?.previous) params.set('previous', 'true');
+      const res = await fetch(`${base}/pods/${args?.namespace}/${args?.pod}/logs?${params}`);
+      return (await res.text()) as T;
+    }
+    case 'get_cluster_info': {
+      const res = await fetch(`${base}/cluster-info`);
+      return (await res.json()) as T;
+    }
+    case 'search_resources': {
+      const res = await fetch(`${base}/search?q=${encodeURIComponent(args?.query as string)}`);
+      return (await res.json()) as T;
+    }
+    case 'list_helm_releases': {
+      const ns = args?.namespace ? `?namespace=${args.namespace}` : '';
+      const res = await fetch(`${base}/helm/releases${ns}`);
+      return (await res.json()) as T;
+    }
+    case 'get_pod_metrics': {
+      const ns = args?.namespace ? `?namespace=${args.namespace}` : '';
+      const res = await fetch(`${base}/metrics/pods${ns}`);
+      return (await res.json()) as T;
+    }
+    case 'check_metrics_available': {
+      try {
+        const res = await fetch(`${base}/metrics/pods`);
+        return res.ok as unknown as T;
+      } catch {
+        return false as unknown as T;
+      }
+    }
+    case 'list_crds': {
+      const res = await fetch(`${base}/crds`);
+      return (await res.json()) as T;
+    }
     case 'get_resource_counts':
-    case 'get_pods':
-    case 'get_resources':
-    case 'get_events':
-    case 'search_resources':
+      // Hub doesn't have this endpoint yet — compute client-side
       return [] as unknown as T;
-    case 'list_namespaces':
-      return ['default'] as unknown as T;
-    case 'connect_to_context':
-    case 'disconnect':
+
+    // ── Write operations (deferred to next iteration) ─────────────────────
     case 'set_namespace':
-      return undefined as unknown as T;
-    case 'delete_resource':
-      return 'Deleted (stub)' as unknown as T;
-    case 'rollout_restart':
-      return 'Rollout restart initiated (stub)' as unknown as T;
-    case 'rollout_status':
-      return { desired: 1, ready: 1, updated: 1, available: 1, is_complete: true, message: 'Rollout complete' } as unknown as T;
-    case 'exec_command':
-      return { stdout: 'Exec not available in web mode', stderr: '', success: false } as unknown as T;
-    case 'apply_resource':
-      return { success: true, message: 'Applied (stub)' } as unknown as T;
     case 'scale_resource':
+    case 'delete_resource':
+    case 'apply_resource':
+    case 'rollout_restart':
+    case 'rollout_status':
     case 'start_port_forward':
-      return undefined as unknown as T;
-    case 'get_pod_metrics':
-    case 'get_node_metrics':
-      return [] as unknown as T;
-    case 'check_metrics_available':
-      return false as unknown as T;
-    case 'list_helm_releases':
-      return [] as unknown as T;
-    case 'get_helm_release_history':
-      return [] as unknown as T;
-    case 'get_helm_release_values':
-      return '# Values not available in web mode\n' as unknown as T;
+    case 'exec_command':
     case 'helm_rollback':
-      return 'Rollback not available in web mode' as unknown as T;
+    case 'get_helm_release_history':
+    case 'get_helm_release_values':
+    case 'list_containers':
+    case 'start_log_stream':
+    case 'active_context':
+    case 'get_node_metrics':
     case 'get_preference':
-      return null as unknown as T;
     case 'set_preference':
       return undefined as unknown as T;
-    case 'list_crds':
-      return [] as unknown as T;
+
     default:
-      throw new Error(`Command "${command}" not available in web mode`);
+      console.warn(`[telescope] No hub mapping for command: ${command}`);
+      return undefined as unknown as T;
   }
 }
 
