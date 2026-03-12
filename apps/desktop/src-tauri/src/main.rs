@@ -165,6 +165,47 @@ fn get_resource_counts(state: State<'_, AppState>) -> Result<Vec<(String, u64)>,
     Ok(counts)
 }
 
+/// Search across all cached resource types by name or GVK substring match.
+#[tauri::command]
+fn search_resources(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<ResourceEntry>, String> {
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| format!("Store lock failed: {}", e))?;
+    let all_gvks = [
+        "v1/Pod",
+        "apps/v1/Deployment",
+        "v1/Service",
+        "v1/ConfigMap",
+        "v1/Node",
+        "v1/Event",
+        "apps/v1/StatefulSet",
+        "apps/v1/DaemonSet",
+        "batch/v1/Job",
+        "batch/v1/CronJob",
+    ];
+    let mut results = Vec::new();
+    let query_lower = query.to_lowercase();
+    for gvk in &all_gvks {
+        if let Ok(entries) = store.list(gvk, None) {
+            for entry in entries {
+                if entry.name.to_lowercase().contains(&query_lower)
+                    || entry.gvk.to_lowercase().contains(&query_lower)
+                {
+                    results.push(entry);
+                    if results.len() >= 20 {
+                        return Ok(results);
+                    }
+                }
+            }
+        }
+    }
+    Ok(results)
+}
+
 /// Count resources by GVK and optional namespace.
 #[tauri::command]
 fn count_resources(
@@ -934,6 +975,35 @@ async fn get_node_metrics() -> Result<Vec<telescope_engine::metrics::NodeMetrics
 // Entry point
 // ---------------------------------------------------------------------------
 
+// ── CRD discovery commands ────────────────────────────────────────────────
+
+/// List all Custom Resource Definitions installed on the cluster.
+#[tauri::command]
+async fn list_crds() -> Result<Vec<telescope_engine::crd::CrdInfo>, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::crd::list_crds(&client)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ── User preference commands ──────────────────────────────────────────────
+
+#[tauri::command]
+fn get_preference(state: State<'_, AppState>, key: String) -> Result<Option<String>, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.get_preference(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_preference(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store
+        .set_preference(&key, &value)
+        .map_err(|e| e.to_string())
+}
+
 fn main() {
     tracing_subscriber::fmt::init();
     eprintln!("[telescope] Starting Telescope desktop app");
@@ -996,6 +1066,7 @@ fn main() {
             get_resources,
             get_events,
             get_resource_counts,
+            search_resources,
             count_resources,
             get_resource,
             list_namespaces,
@@ -1020,6 +1091,9 @@ fn main() {
             get_pod_metrics,
             check_metrics_available,
             get_node_metrics,
+            list_crds,
+            get_preference,
+            set_preference,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");

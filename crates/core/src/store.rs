@@ -59,6 +59,11 @@ impl ResourceStore {
 
             CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
                 ON resources (gvk, namespace);
+
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
         ",
         )
     }
@@ -155,6 +160,35 @@ impl ResourceStore {
                 |row| row.get(0),
             ),
         }
+    }
+
+    /// Get a user preference by key.
+    pub fn get_preference(&self, key: &str) -> SqlResult<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value FROM user_preferences WHERE key = ?1")?;
+        let mut rows = stmt.query_map(params![key], |row| row.get(0))?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Set a user preference (insert or replace).
+    pub fn set_preference(&self, key: &str, value: &str) -> SqlResult<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO user_preferences (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a user preference by key. Returns true if a row was removed.
+    pub fn delete_preference(&self, key: &str) -> SqlResult<bool> {
+        let rows = self
+            .conn
+            .execute("DELETE FROM user_preferences WHERE key = ?1", params![key])?;
+        Ok(rows > 0)
     }
 
     fn row_to_entry(row: &rusqlite::Row<'_>) -> SqlResult<ResourceEntry> {
@@ -363,5 +397,43 @@ mod tests {
             .unwrap();
         assert_eq!(got.content, large_json);
         assert!(got.content.len() > 10_000);
+    }
+
+    // ── Preference tests ─────────────────────────────────────────────
+
+    #[test]
+    fn preference_set_and_get() {
+        let store = ResourceStore::open(":memory:").unwrap();
+        store.set_preference("theme", "dark").unwrap();
+        assert_eq!(
+            store.get_preference("theme").unwrap(),
+            Some("dark".to_string())
+        );
+    }
+
+    #[test]
+    fn preference_missing_returns_none() {
+        let store = ResourceStore::open(":memory:").unwrap();
+        assert_eq!(store.get_preference("nonexistent").unwrap(), None);
+    }
+
+    #[test]
+    fn preference_upsert_replaces() {
+        let store = ResourceStore::open(":memory:").unwrap();
+        store.set_preference("theme", "dark").unwrap();
+        store.set_preference("theme", "light").unwrap();
+        assert_eq!(
+            store.get_preference("theme").unwrap(),
+            Some("light".to_string())
+        );
+    }
+
+    #[test]
+    fn preference_delete() {
+        let store = ResourceStore::open(":memory:").unwrap();
+        store.set_preference("theme", "dark").unwrap();
+        assert!(store.delete_preference("theme").unwrap());
+        assert_eq!(store.get_preference("theme").unwrap(), None);
+        assert!(!store.delete_preference("theme").unwrap());
     }
 }

@@ -62,6 +62,18 @@
         { label: 'Releases', href: '/helm', icon: '⎈' },
       ]
     },
+    {
+      title: 'Custom Resources',
+      items: [
+        { label: 'CRDs', href: '/crds', icon: '🧩' },
+      ]
+    },
+    {
+      title: 'System',
+      items: [
+        { label: 'Settings', href: '/settings', icon: '⚙️' },
+      ]
+    },
   ];
 
   function isActive(href: string): boolean {
@@ -83,7 +95,7 @@
           <ul>
             {#each section.items as item}
               <li>
-                <a href={item.href} class:active={isActive(item.href)} class:disabled={!$isConnected && item.href !== '/' && item.href !== '/overview'} title={!$isConnected && item.href !== '/' && item.href !== '/overview' ? 'Connect to a cluster first' : undefined}>
+                <a href={item.href} class:active={isActive(item.href)} class:disabled={!$isConnected && item.href !== '/' && item.href !== '/overview' && item.href !== '/settings'} title={!$isConnected && item.href !== '/' && item.href !== '/overview' && item.href !== '/settings' ? 'Connect to a cluster first' : undefined}>
                   <span class="icon">{item.icon}</span>
                   <span class="label">{item.label}</span>
                 </a>
@@ -110,8 +122,8 @@
   .sidebar {
     width: 220px;
     min-height: 100vh;
-    background: #0d1117;
-    border-right: 1px solid #21262d;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     transition: width 0.2s;
@@ -124,19 +136,19 @@
   .toggle {
     background: none;
     border: none;
-    color: #8b949e;
+    color: var(--text-secondary);
     padding: 0.75rem;
     cursor: pointer;
     text-align: right;
     font-size: 0.875rem;
   }
-  .toggle:hover { color: #e0e0e0; }
+  .toggle:hover { color: var(--text-primary); }
   .section { margin-bottom: 0.5rem; }
   .section-title {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #484f58;
+    color: var(--text-muted);
     padding: 0.25rem 0.75rem;
     margin: 0.5rem 0 0.25rem;
   }
@@ -146,25 +158,25 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.375rem 0.75rem;
-    color: #8b949e;
+    color: var(--text-secondary);
     text-decoration: none;
     font-size: 0.85rem;
     border-radius: 4px;
     margin: 1px 4px;
     transition: background 0.15s;
   }
-  li a:hover { background: #161b22; color: #e0e0e0; }
-  li a.active { background: #1f2937; color: #58a6ff; font-weight: 500; }
+  li a:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+  li a.active { background: var(--bg-hover); color: var(--accent); font-weight: 500; }
   li a.disabled { opacity: 0.4; pointer-events: none; }
   .icon { font-size: 1rem; width: 1.25rem; text-align: center; }
   .icon-only {
     display: block;
     padding: 0.5rem;
     text-align: center;
-    color: #8b949e;
+    color: var(--text-secondary);
     text-decoration: none;
     font-size: 1.1rem;
   }
-  .icon-only:hover { background: #161b22; }
-  .icon-only.active { background: #1f2937; color: #58a6ff; }
+  .icon-only:hover { background: var(--bg-tertiary); }
+  .icon-only.active { background: var(--bg-hover); color: var(--accent); }
 </style>

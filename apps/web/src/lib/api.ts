@@ -7,6 +7,7 @@ import {
   isTauri,
   type ClusterContext,
   type ClusterInfo,
+  type CrdInfo,
   type HelmRelease,
   type ResourceEntry,
   type ConnectionState,
@@ -57,6 +58,7 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
     case 'get_pods':
     case 'get_resources':
     case 'get_events':
+    case 'search_resources':
       return [] as unknown as T;
     case 'list_namespaces':
       return ['default'] as unknown as T;
@@ -90,6 +92,12 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
       return '# Values not available in web mode\n' as unknown as T;
     case 'helm_rollback':
       return 'Rollback not available in web mode' as unknown as T;
+    case 'get_preference':
+      return null as unknown as T;
+    case 'set_preference':
+      return undefined as unknown as T;
+    case 'list_crds':
+      return [] as unknown as T;
     default:
       throw new Error(`Command "${command}" not available in web mode`);
   }
@@ -99,6 +107,15 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
 export async function getResourceCounts(): Promise<[string, number][]> {
   try {
     return await invoke<[string, number][]>('get_resource_counts');
+  } catch {
+    return [];
+  }
+}
+
+/** Search across all cached resource types by name or GVK substring match (max 20 results). */
+export async function searchResources(query: string): Promise<ResourceEntry[]> {
+  try {
+    return await invoke<ResourceEntry[]>('search_resources', { query });
   } catch {
     return [];
   }
@@ -351,6 +368,15 @@ export async function helmRollback(namespace: string, name: string, revision: nu
   return invoke<string>('helm_rollback', { namespace, name, revision });
 }
 
+/** List all Custom Resource Definitions installed on the cluster. */
+export async function listCrds(): Promise<CrdInfo[]> {
+  try {
+    return await invoke<CrdInfo[]>('list_crds');
+  } catch {
+    return [];
+  }
+}
+
 /** Fetch node-level CPU/memory metrics with allocatable percentages. */
 export async function getNodeMetrics(): Promise<NodeMetricsData[]> {
   try {
@@ -358,4 +384,20 @@ export async function getNodeMetrics(): Promise<NodeMetricsData[]> {
   } catch {
     return [];
   }
+}
+
+// ── User preferences ─────────────────────────────────────────────────────
+
+/** Read a single user preference by key. */
+export async function getPreference(key: string): Promise<string | null> {
+  try {
+    return await invoke<string | null>('get_preference', { key });
+  } catch {
+    return null;
+  }
+}
+
+/** Write a single user preference. */
+export async function setPreference(key: string, value: string): Promise<void> {
+  await invoke<void>('set_preference', { key, value });
 }
