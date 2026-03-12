@@ -75,6 +75,23 @@ export interface NodeMetricsData {
   memory_percent: number;
 }
 
+export interface CrdInfo {
+  /** Full CRD name, e.g. "certificates.cert-manager.io" */
+  name: string;
+  /** API group, e.g. "cert-manager.io" */
+  group: string;
+  /** Kind, e.g. "Certificate" */
+  kind: string;
+  /** Served version, e.g. "v1" */
+  version: string;
+  /** "Namespaced" or "Cluster" */
+  scope: string;
+  /** Plural resource name, e.g. "certificates" */
+  plural: string;
+  /** Short names for kubectl */
+  short_names: string[];
+}
+
 export interface HelmRelease {
   name: string;
   namespace: string;

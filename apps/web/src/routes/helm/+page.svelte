@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { listHelmReleases } from '$lib/api';
   import { isConnected } from '$lib/stores';
+  import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import type { HelmRelease } from '$lib/tauri-commands';
 
@@ -11,8 +12,15 @@
   let error: string | null = $state(null);
   let lastUpdated: Date | null = $state(null);
   let lastUpdatedText = $state('');
+  let filterQuery = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let timestampTimer: ReturnType<typeof setInterval> | null = null;
+
+  let filtered = $derived.by(() => {
+    if (!filterQuery) return releases;
+    const q = filterQuery.toLowerCase();
+    return releases.filter(r => r.name.toLowerCase().includes(q));
+  });
 
   function formatTimestamp(): string {
     if (!lastUpdated) return '';
@@ -109,7 +117,8 @@
       <button type="button" onclick={loadReleases}>Retry</button>
     </div>
   {:else}
-    <p class="count">{releases.length} release{releases.length !== 1 ? 's' : ''}</p>
+    <FilterBar query={filterQuery} onfilter={(q) => filterQuery = q} />
+    <p class="count">{filterQuery ? `${filtered.length} of ${releases.length}` : releases.length} release{(filterQuery ? filtered.length : releases.length) !== 1 ? 's' : ''}</p>
     <div class="table-wrapper">
       <table>
         <thead>
@@ -124,7 +133,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each releases as release (release.name + '/' + release.namespace)}
+          {#each filtered as release (release.name + '/' + release.namespace)}
             <tr>
               <td class="name"><a href="/helm/{release.namespace}/{release.name}">{release.name}</a></td>
               <td>{release.namespace}</td>

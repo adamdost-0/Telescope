@@ -3,6 +3,7 @@
   import { getResources } from '$lib/api';
   import { selectedNamespace, isConnected } from '$lib/stores';
   import ResourceTable from '$lib/components/ResourceTable.svelte';
+  import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -46,8 +47,15 @@
   let error: string | null = $state(null);
   let lastUpdated: Date | null = $state(null);
   let lastUpdatedText = $state('');
+  let filterQuery = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let timestampTimer: ReturnType<typeof setInterval> | null = null;
+
+  let filtered = $derived.by(() => {
+    if (!filterQuery) return resources;
+    const q = filterQuery.toLowerCase();
+    return resources.filter(r => r.name.toLowerCase().includes(q));
+  });
 
   function formatTimestamp(): string {
     if (!lastUpdated) return '';
@@ -122,8 +130,9 @@
       <button type="button" onclick={loadResources}>Retry</button>
     </div>
   {:else}
-    <p class="count">{resources.length} {PAGE_TITLE.toLowerCase()}</p>
-    <ResourceTable {resources} {columns} emptyMessage="No deployments found in this namespace." hrefFn={(entry) => `/resources/deployments/${entry.namespace}/${entry.name}`} />
+    <FilterBar query={filterQuery} onfilter={(q) => filterQuery = q} />
+    <p class="count">{filterQuery ? `${filtered.length} of ${resources.length}` : resources.length} {PAGE_TITLE.toLowerCase()}</p>
+    <ResourceTable resources={filtered} {columns} emptyMessage="No deployments found in this namespace." hrefFn={(entry) => `/resources/deployments/${entry.namespace}/${entry.name}`} />
   {/if}
 </div>
 

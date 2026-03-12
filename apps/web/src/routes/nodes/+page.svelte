@@ -4,6 +4,7 @@
   import { isConnected } from '$lib/stores';
   import ResourceTable from '$lib/components/ResourceTable.svelte';
   import NodePoolHeader from '$lib/components/NodePoolHeader.svelte';
+  import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import type { ResourceEntry, NodeMetricsData } from '$lib/tauri-commands';
 
@@ -157,6 +158,7 @@
   let error: string | null = $state(null);
   let lastUpdated: Date | null = $state(null);
   let lastUpdatedText = $state('');
+  let filterQuery = $state('');
   let collapsedPools: Record<string, boolean> = $state({});
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let timestampTimer: ReturnType<typeof setInterval> | null = null;
@@ -165,7 +167,13 @@
     Object.fromEntries(nodeMetrics.map(m => [m.name, m]))
   );
 
-  let grouped = $derived(groupNodesByPool(resources));
+  let filtered = $derived.by(() => {
+    if (!filterQuery) return resources;
+    const q = filterQuery.toLowerCase();
+    return resources.filter(r => r.name.toLowerCase().includes(q));
+  });
+
+  let grouped = $derived(groupNodesByPool(filtered));
 
   function togglePool(name: string) {
     collapsedPools = { ...collapsedPools, [name]: !collapsedPools[name] };
@@ -249,7 +257,8 @@
       <button type="button" onclick={loadResources}>Retry</button>
     </div>
   {:else}
-    <p class="count">{resources.length} {PAGE_TITLE.toLowerCase()}</p>
+    <FilterBar query={filterQuery} onfilter={(q) => filterQuery = q} />
+    <p class="count">{filterQuery ? `${filtered.length} of ${resources.length}` : resources.length} {PAGE_TITLE.toLowerCase()}</p>
     {#if grouped.hasAksLabels}
       <div class="pool-list">
         {#each grouped.pools as pool (pool.name)}
@@ -273,7 +282,7 @@
         {/each}
       </div>
     {:else}
-      <ResourceTable {resources} {columns} emptyMessage="No nodes found." hrefFn={(entry) => `/nodes/${entry.name}`} />
+      <ResourceTable resources={filtered} {columns} emptyMessage="No nodes found." hrefFn={(entry) => `/nodes/${entry.name}`} />
     {/if}
   {/if}
 </div>

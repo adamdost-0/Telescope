@@ -3,6 +3,7 @@
   import { getEvents } from '$lib/api';
   import { namespaces, isConnected } from '$lib/stores';
   import EventsTable from '$lib/components/EventsTable.svelte';
+  import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -97,7 +98,7 @@
           Updated {Math.floor((Date.now() - lastUpdated.getTime()) / 1000)}s ago
         </span>
       {/if}
-      <span class="count">{filteredEvents.length} events</span>
+      <span class="count">{filterQuery ? `${filteredEvents.length} of ${events.length}` : filteredEvents.length} events</span>
     </div>
   </header>
 
@@ -108,6 +109,7 @@
   {:else if error}
     <p class="error" role="alert">{error}</p>
   {:else}
+    <FilterBar query={filterQuery} onfilter={(q) => filterQuery = q} />
     <EventsTable events={filteredEvents} />
   {/if}
 </div>

@@ -3,11 +3,19 @@
   import { getPods, getPodMetrics } from '$lib/api';
   import { selectedNamespace, isConnected } from '$lib/stores';
   import PodTable from '$lib/components/PodTable.svelte';
+  import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import type { ResourceEntry, PodMetrics } from '$lib/tauri-commands';
 
   let pods: ResourceEntry[] = $state([]);
   let metrics: PodMetrics[] = $state([]);
+  let filterQuery = $state('');
+
+  let filteredPods = $derived.by(() => {
+    if (!filterQuery) return pods;
+    const q = filterQuery.toLowerCase();
+    return pods.filter(r => r.name.toLowerCase().includes(q));
+  });
   let loading = $state(true);
   let refreshing = $state(false);
   let error: string | null = $state(null);
@@ -114,8 +122,9 @@
       <button type="button" onclick={loadPods}>Retry</button>
     </div>
   {:else}
-    <p class="count">{pods.length} pod{pods.length !== 1 ? 's' : ''}</p>
-    <PodTable {pods} {metrics} />
+    <FilterBar query={filterQuery} onfilter={(q) => filterQuery = q} />
+    <p class="count">{filterQuery ? `${filteredPods.length} of ${pods.length}` : pods.length} pod{(filterQuery ? filteredPods.length : pods.length) !== 1 ? 's' : ''}</p>
+    <PodTable pods={filteredPods} {metrics} />
   {/if}
 </div>
 

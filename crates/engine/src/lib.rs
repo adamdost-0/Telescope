@@ -3,6 +3,7 @@
 pub mod actions;
 pub mod audit;
 pub mod client;
+pub mod crd;
 pub mod error;
 pub mod exec;
 pub mod helm;
