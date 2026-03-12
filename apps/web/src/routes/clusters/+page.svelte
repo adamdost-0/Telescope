@@ -77,6 +77,13 @@
       <li>
         <button type="button" onclick={() => selectContext(ctx.name)} disabled={connectingTo !== null}>
           <strong>{ctx.name}</strong>
+          {#if ctx.auth_type === 'exec'}
+            <span style="font-size: 0.7rem; padding: 0.125rem 0.375rem; border-radius: 3px; background: #2d2040; color: #ce93d8; border: 1px solid #4a2d6e;">🔑 Exec</span>
+          {:else if ctx.auth_type === 'token'}
+            <span style="font-size: 0.7rem; padding: 0.125rem 0.375rem; border-radius: 3px; background: #1a2e3e; color: #81d4fa; border: 1px solid #2a4a5e;">🎫 Token</span>
+          {:else if ctx.auth_type === 'certificate'}
+            <span style="font-size: 0.7rem; padding: 0.125rem 0.375rem; border-radius: 3px; background: #1e3a2a; color: #a5d6a7; border: 1px solid #2e5a3a;">📜 Cert</span>
+          {/if}
           {#if ctx.cluster_server}
             <span style="color: #888; font-size: 0.85em"> — {ctx.cluster_server}</span>
           {/if}
