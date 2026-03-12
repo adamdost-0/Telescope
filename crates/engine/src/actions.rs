@@ -194,6 +194,7 @@ pub async fn rollout_status(
         message: if is_complete {
             "Rollout complete".into()
         } else {
+            format!("{}/{} ready", ready, spec_replicas)
         },
     })
 }
@@ -225,15 +226,9 @@ pub async fn apply_resource(
     let name = value["metadata"]["name"]
         .as_str()
         .ok_or_else(|| crate::EngineError::Other("Missing metadata.name".into()))?;
-    let namespace = value["metadata"]["namespace"]
-        .as_str()
-        .unwrap_or("default");
+    let namespace = value["metadata"]["namespace"].as_str().unwrap_or("default");
 
-    let gvk_str = if api_version.contains('/') {
-        format!("{}/{}", api_version, kind)
-    } else {
-        format!("{}/{}", api_version, kind)
-    };
+    let gvk_str = format!("{}/{}", api_version, kind);
 
     let mut patch_params = PatchParams::apply("telescope");
     if dry_run {
@@ -258,12 +253,16 @@ pub async fn apply_resource(
                 .await?;
             serde_json::to_string_pretty(&res).unwrap_or_default()
         }
-        "apps/v1/StatefulSet" | "apps/v1/DaemonSet" | "batch/v1/Job" | "batch/v1/CronJob"
-        | "v1/Service" | "v1/ConfigMap" | "v1/Secret" => {
+        "apps/v1/StatefulSet"
+        | "apps/v1/DaemonSet"
+        | "batch/v1/Job"
+        | "batch/v1/CronJob"
+        | "v1/Service"
+        | "v1/ConfigMap"
+        | "v1/Secret" => {
             // For brevity, use a generic typed apply for remaining known kinds.
             // Server-side apply works the same way for all of them.
-            apply_typed_resource(client, &gvk_str, namespace, name, &patch_params, &value)
-                .await?
+            apply_typed_resource(client, &gvk_str, namespace, name, &patch_params, &value).await?
         }
         _ => {
             return Ok(ApplyResult {
@@ -297,57 +296,43 @@ async fn apply_typed_resource(
         "apps/v1/StatefulSet" => {
             let api: Api<k8s_openapi::api::apps::v1::StatefulSet> =
                 Api::namespaced(client.clone(), namespace);
-            let res = api
-                .patch(name, patch_params, &Patch::Apply(value))
-                .await?;
+            let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
             Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
         }
         "apps/v1/DaemonSet" => {
             let api: Api<k8s_openapi::api::apps::v1::DaemonSet> =
                 Api::namespaced(client.clone(), namespace);
-            let res = api
-                .patch(name, patch_params, &Patch::Apply(value))
-                .await?;
+            let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
             Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
         }
         "batch/v1/Job" => {
             let api: Api<k8s_openapi::api::batch::v1::Job> =
                 Api::namespaced(client.clone(), namespace);
-            let res = api
-                .patch(name, patch_params, &Patch::Apply(value))
-                .await?;
+            let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
             Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
         }
         "batch/v1/CronJob" => {
             let api: Api<k8s_openapi::api::batch::v1::CronJob> =
                 Api::namespaced(client.clone(), namespace);
-            let res = api
-                .patch(name, patch_params, &Patch::Apply(value))
-                .await?;
+            let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
             Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
         }
         "v1/Service" => {
             let api: Api<k8s_openapi::api::core::v1::Service> =
                 Api::namespaced(client.clone(), namespace);
-            let res = api
-                .patch(name, patch_params, &Patch::Apply(value))
-                .await?;
+            let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
             Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
         }
         "v1/ConfigMap" => {
             let api: Api<k8s_openapi::api::core::v1::ConfigMap> =
                 Api::namespaced(client.clone(), namespace);
-            let res = api
-                .patch(name, patch_params, &Patch::Apply(value))
-                .await?;
+            let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
             Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
         }
         "v1/Secret" => {
             let api: Api<k8s_openapi::api::core::v1::Secret> =
                 Api::namespaced(client.clone(), namespace);
-            let res = api
-                .patch(name, patch_params, &Patch::Apply(value))
-                .await?;
+            let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
             Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
         }
         _ => unreachable!(),
