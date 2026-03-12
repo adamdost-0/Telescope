@@ -167,7 +167,7 @@ pub fn extract_values_from_release(data: &[u8]) -> Result<String, Box<dyn std::e
 
     let release: serde_json::Value = serde_json::from_str(&json_str)?;
     let config = &release["config"];
-    if config.is_null() || (config.is_object() && config.as_object().unwrap().is_empty()) {
+    if config.is_null() || config.as_object().is_some_and(|o| o.is_empty()) {
         return Ok("# No custom values configured\n".to_string());
     }
     Ok(serde_yaml::to_string(config)?)
@@ -220,6 +220,7 @@ pub async fn get_release_values(
 
 /// Validate that a string is a valid Kubernetes resource name (RFC 1123 DNS subdomain).
 fn validate_k8s_name(name: &str) -> crate::Result<()> {
+    // safe: literal regex is infallible
     let re = regex::Regex::new(r"^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$").unwrap();
     if name.is_empty() || name.len() > 253 || !re.is_match(name) {
         return Err(crate::EngineError::Other(format!("Invalid name: {}", name)));

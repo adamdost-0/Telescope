@@ -1014,6 +1014,7 @@ fn main() {
         .unwrap_or_else(|_| std::env::temp_dir().join("telescope"));
     let db_path = data_dir.join("resources.db");
     eprintln!("[telescope] DB path: {:?}", db_path);
+    // safe: path always has a parent after join()
     std::fs::create_dir_all(db_path.parent().unwrap()).expect("Failed to create data directory");
 
     let db_path_str = db_path.to_string_lossy().to_string();

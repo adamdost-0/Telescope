@@ -5,6 +5,7 @@
   import PodTable from '$lib/components/PodTable.svelte';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
+  import ErrorMessage from '$lib/components/ErrorMessage.svelte';
   import type { ResourceEntry, PodMetrics } from '$lib/tauri-commands';
 
   let pods: ResourceEntry[] = $state([]);
@@ -114,13 +115,7 @@
   {:else if loading}
     <LoadingSkeleton rows={5} columns={5} />
   {:else if error}
-    <div role="alert" aria-live="polite" class="error-container">
-      <p class="error">Failed to load pods. Check cluster connection and try again.</p>
-      {#if error !== 'Failed to load pods'}
-        <p class="error-detail">{error}</p>
-      {/if}
-      <button type="button" onclick={loadPods}>Retry</button>
-    </div>
+    <ErrorMessage message={error} onretry={loadPods} />
   {:else}
     <FilterBar query={filterQuery} onfilter={(q) => filterQuery = q} />
     <p class="count">{filterQuery ? `${filteredPods.length} of ${pods.length}` : pods.length} pod{(filterQuery ? filteredPods.length : pods.length) !== 1 ? 's' : ''}</p>
@@ -184,16 +179,6 @@
     color: #9e9e9e;
     margin-bottom: 0.5rem;
     font-size: 0.875rem;
-  }
-  .error-container {
-    padding: 1.5rem;
-    text-align: center;
-  }
-  .error { color: #ef5350; }
-  .error-detail {
-    color: #9e9e9e;
-    font-size: 0.875rem;
-    margin-top: 0.25rem;
   }
   .not-connected {
     text-align: center;

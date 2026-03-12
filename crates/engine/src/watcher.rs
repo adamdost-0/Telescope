@@ -86,6 +86,14 @@ impl ResourceWatcher {
         &self.list_semaphore
     }
 
+    /// Acquire the store lock, recovering from mutex poisoning.
+    fn lock_store(&self) -> std::sync::MutexGuard<'_, ResourceStore> {
+        self.store.lock().unwrap_or_else(|e| {
+            warn!("Store mutex was poisoned, recovering");
+            e.into_inner()
+        })
+    }
+
     /// Transition the connection state machine.
     fn transition(&self, event: &ConnectionEvent) {
         let current = self.state_rx.borrow().clone();
@@ -160,24 +168,24 @@ impl ResourceWatcher {
                 Ok(Some(event)) => match event {
                     Event::Apply(obj) => {
                         if let Some(entry) = resource_to_entry(&gvk_str, &ns, &obj) {
-                            if let Err(e) = self.store.lock().unwrap().upsert(&entry) {
+                            if let Err(e) = self.lock_store().upsert(&entry) {
                                 error!("Failed to upsert {}: {}", gvk_str, e);
                             }
                         }
                     }
                     Event::Delete(obj) => {
                         let name = obj.name_any();
-                        if let Err(e) = self.store.lock().unwrap().delete(&gvk_str, &ns, &name) {
+                        if let Err(e) = self.lock_store().delete(&gvk_str, &ns, &name) {
                             error!("Failed to delete {}: {}", gvk_str, e);
                         }
                     }
                     Event::Init => {
                         info!("Initial LIST started for {}/{}", gvk_str, ns);
-                        let _ = self.store.lock().unwrap().delete_all_by_gvk(&gvk_str);
+                        let _ = self.lock_store().delete_all_by_gvk(&gvk_str);
                     }
                     Event::InitApply(obj) => {
                         if let Some(entry) = resource_to_entry(&gvk_str, &ns, &obj) {
-                            if let Err(e) = self.store.lock().unwrap().upsert(&entry) {
+                            if let Err(e) = self.lock_store().upsert(&entry) {
                                 error!("Failed to upsert {} during init: {}", gvk_str, e);
                             }
                         }
@@ -239,7 +247,7 @@ impl ResourceWatcher {
                     Event::Apply(obj) => {
                         let ns = obj.namespace().unwrap_or_default();
                         if let Some(entry) = resource_to_entry(&gvk_str, &ns, &obj) {
-                            if let Err(e) = self.store.lock().unwrap().upsert(&entry) {
+                            if let Err(e) = self.lock_store().upsert(&entry) {
                                 error!("Failed to upsert {}: {}", gvk_str, e);
                             }
                         }
@@ -247,18 +255,18 @@ impl ResourceWatcher {
                     Event::Delete(obj) => {
                         let ns = obj.namespace().unwrap_or_default();
                         let name = obj.name_any();
-                        if let Err(e) = self.store.lock().unwrap().delete(&gvk_str, &ns, &name) {
+                        if let Err(e) = self.lock_store().delete(&gvk_str, &ns, &name) {
                             error!("Failed to delete {}: {}", gvk_str, e);
                         }
                     }
                     Event::Init => {
                         info!("Initial LIST started for {} (all namespaces)", gvk_str);
-                        let _ = self.store.lock().unwrap().delete_all_by_gvk(&gvk_str);
+                        let _ = self.lock_store().delete_all_by_gvk(&gvk_str);
                     }
                     Event::InitApply(obj) => {
                         let ns = obj.namespace().unwrap_or_default();
                         if let Some(entry) = resource_to_entry(&gvk_str, &ns, &obj) {
-                            if let Err(e) = self.store.lock().unwrap().upsert(&entry) {
+                            if let Err(e) = self.lock_store().upsert(&entry) {
                                 error!("Failed to upsert {} during init: {}", gvk_str, e);
                             }
                         }

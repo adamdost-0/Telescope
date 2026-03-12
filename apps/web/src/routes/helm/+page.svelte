@@ -4,6 +4,7 @@
   import { isConnected } from '$lib/stores';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
+  import ErrorMessage from '$lib/components/ErrorMessage.svelte';
   import type { HelmRelease } from '$lib/tauri-commands';
 
   let releases: HelmRelease[] = $state([]);
@@ -109,13 +110,7 @@
   {:else if loading}
     <LoadingSkeleton rows={5} columns={7} />
   {:else if error}
-    <div role="alert" aria-live="polite" class="error-container">
-      <p class="error">Failed to load Helm releases. Check cluster connection and try again.</p>
-      {#if error !== 'Failed to load Helm releases'}
-        <p class="error-detail">{error}</p>
-      {/if}
-      <button type="button" onclick={loadReleases}>Retry</button>
-    </div>
+    <ErrorMessage message={error} onretry={() => loadReleases(true)} />
   {:else}
     <FilterBar query={filterQuery} onfilter={(q) => filterQuery = q} />
     <p class="count">{filterQuery ? `${filtered.length} of ${releases.length}` : releases.length} release{(filterQuery ? filtered.length : releases.length) !== 1 ? 's' : ''}</p>
@@ -171,9 +166,6 @@
   .spinning .refresh-icon { animation: spin 1s linear infinite; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   .count { color: #9e9e9e; margin-bottom: 0.5rem; font-size: 0.875rem; }
-  .error-container { padding: 1.5rem; text-align: center; }
-  .error { color: #ef5350; }
-  .error-detail { color: #9e9e9e; font-size: 0.875rem; margin-top: 0.25rem; }
   .not-connected { text-align: center; padding: 3rem 1rem; color: #757575; }
   .not-connected p { margin: 0.25rem 0; font-size: 1.125rem; }
   .not-connected .hint { font-size: 0.875rem; color: #616161; }

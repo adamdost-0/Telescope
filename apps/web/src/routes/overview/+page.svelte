@@ -4,6 +4,7 @@
   import { selectedContext, selectedNamespace, isConnected, clusterServerUrl, isAks } from '$lib/stores';
   import { parseAksUrl, getAzurePortalUrl } from '$lib/azure-utils';
   import AksAddons from '$lib/components/AksAddons.svelte';
+  import ErrorMessage from '$lib/components/ErrorMessage.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
   import type { ClusterInfo } from '$lib/tauri-commands';
 
@@ -203,13 +204,16 @@
     <h1>Cluster Overview</h1>
 
     {#if refreshError && staleData}
-      <div class="stale-warning" role="alert">
-        ⚠ Data may be stale — last successful refresh was more than 30 seconds ago.
-      </div>
+      <ErrorMessage
+        message="Data may be stale — last successful refresh was more than 30 seconds ago."
+        suggestion="The cluster connection may be unstable. Check your network."
+        onretry={refresh}
+      />
     {:else if refreshError}
-      <div class="stale-warning" role="alert">
-        ⚠ Failed to refresh data. Retrying…
-      </div>
+      <ErrorMessage
+        message="Failed to refresh data. Retrying…"
+        onretry={refresh}
+      />
     {/if}
 
     <!-- Cluster info -->
@@ -406,17 +410,6 @@
   }
   .not-connected a {
     color: #58a6ff;
-  }
-
-  /* Stale data warning */
-  .stale-warning {
-    padding: 0.5rem 1rem;
-    margin-bottom: 0.75rem;
-    background: rgba(255, 167, 38, 0.12);
-    border: 1px solid rgba(255, 167, 38, 0.3);
-    border-radius: 6px;
-    color: #ffa726;
-    font-size: 0.85rem;
   }
 
   /* Cluster info bar */
