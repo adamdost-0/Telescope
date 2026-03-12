@@ -126,7 +126,7 @@
         <tbody>
           {#each releases as release (release.name + '/' + release.namespace)}
             <tr>
-              <td class="name">{release.name}</td>
+              <td class="name"><a href="/helm/{release.namespace}/{release.name}">{release.name}</a></td>
               <td>{release.namespace}</td>
               <td class="mono">{release.chart}</td>
               <td>{release.app_version || '\u2014'}</td>
@@ -186,6 +186,8 @@
   tbody tr:hover { background: #161b22; }
   tbody td { padding: 0.5rem 0.75rem; white-space: nowrap; }
   .name { color: #58a6ff; font-weight: 500; }
+  .name a { color: #58a6ff; text-decoration: none; }
+  .name a:hover { text-decoration: underline; }
   .mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.8rem; }
   .center { text-align: center; }
   .status-badge { font-weight: 500; }

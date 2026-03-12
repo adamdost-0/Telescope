@@ -84,7 +84,7 @@ async function webFallback<T>(command: string, _args?: Record<string, unknown>):
       return false as unknown as T;
     case 'list_helm_releases':
       return [] as unknown as T;
-    case 'list_helm_releases':
+    case 'get_helm_release_history':
       return [] as unknown as T;
     default:
       throw new Error(`Command "${command}" not available in web mode`);
@@ -322,6 +322,15 @@ export async function checkMetricsAvailable(): Promise<boolean> {
 export async function listHelmReleases(namespace?: string): Promise<HelmRelease[]> {
   try {
     return await invoke<HelmRelease[]>('list_helm_releases', { namespace: namespace ?? null });
+  } catch {
+    return [];
+  }
+}
+
+/** Get all revisions of a specific Helm release, sorted by revision number. */
+export async function getHelmReleaseHistory(namespace: string, name: string): Promise<HelmRelease[]> {
+  try {
+    return await invoke<HelmRelease[]>('get_helm_release_history', { namespace, name });
   } catch {
     return [];
   }

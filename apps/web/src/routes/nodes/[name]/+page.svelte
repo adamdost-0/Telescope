@@ -1,8 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { getResources, getNodeMetrics, checkMetricsAvailable } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
+  import Sparkline from '$lib/components/Sparkline.svelte';
   import type { ResourceEntry, NodeMetricsData } from '$lib/tauri-commands';
 
   let nodeName = $derived(page.params.name);
@@ -13,6 +14,27 @@
   let loading = $state(true);
   let activeTab = $state('summary');
   let error: string | null = $state(null);
+
+  // Sparkline metrics ring buffer (30 points, polled every 30s)
+  const MAX_SPARKLINE_POINTS = 30;
+  let cpuHistory: number[] = $state([]);
+  let memoryHistory: number[] = $state([]);
+  let metricsTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function pollNodeMetrics() {
+    try {
+      const available = await checkMetricsAvailable();
+      if (!available) return;
+      const allMetrics = await getNodeMetrics();
+      const nodeMetric = allMetrics.find((m) => m.name === nodeName);
+      if (nodeMetric) {
+        cpuHistory = [...cpuHistory, nodeMetric.cpu_millicores].slice(-MAX_SPARKLINE_POINTS);
+        memoryHistory = [...memoryHistory, nodeMetric.memory_bytes / (1024 * 1024)].slice(-MAX_SPARKLINE_POINTS);
+      }
+    } catch {
+      // Silently skip metrics poll failures
+    }
+  }
 
   const tabs = [
     { id: 'summary', label: 'Summary' },
@@ -76,6 +98,15 @@
   }
 
   onMount(loadNode);
+
+  onMount(() => {
+    pollNodeMetrics();
+    metricsTimer = setInterval(pollNodeMetrics, 30_000);
+  });
+
+  onDestroy(() => {
+    if (metricsTimer) clearInterval(metricsTimer);
+  });
 </script>
 
 <div class="detail-page">
@@ -207,6 +238,26 @@
           <p class="muted">No metrics data available for this node.</p>
         {:else}
           <h3>Resource Usage</h3>
+
+          {#if cpuHistory.length > 1 || memoryHistory.length > 1}
+            <div class="sparkline-row">
+              {#if cpuHistory.length > 1}
+                <div class="sparkline-card">
+                  <span class="sparkline-label">CPU Trend (m)</span>
+                  <Sparkline data={cpuHistory} color="#58a6ff" />
+                  <span class="sparkline-value">{cpuHistory[cpuHistory.length - 1]?.toFixed(0) ?? '—'}m</span>
+                </div>
+              {/if}
+              {#if memoryHistory.length > 1}
+                <div class="sparkline-card">
+                  <span class="sparkline-label">Memory Trend (MiB)</span>
+                  <Sparkline data={memoryHistory} color="#a371f7" />
+                  <span class="sparkline-value">{memoryHistory[memoryHistory.length - 1]?.toFixed(0) ?? '—'} MiB</span>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
           <div class="metrics-grid">
             <div class="metric-card">
               <div class="metric-label">CPU Usage</div>
@@ -435,5 +486,31 @@
   .metric-detail {
     font-size: 0.8rem;
     color: #8b949e;
+  }
+
+  .sparkline-row {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .sparkline-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+  }
+  .sparkline-label {
+    font-size: 0.75rem;
+    color: #8b949e;
+    white-space: nowrap;
+  }
+  .sparkline-value {
+    font-size: 0.8rem;
+    font-family: monospace;
+    color: #e0e0e0;
+    white-space: nowrap;
   }
 </style>

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
-  import { getPods, getEvents, deleteResource, listContainers, applyResource, startPortForward } from '$lib/api';
+  import { onMount, onDestroy } from 'svelte';
+  import { getPods, getEvents, deleteResource, listContainers, applyResource, startPortForward, getPodMetrics, checkMetricsAvailable } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import LogViewer from '$lib/components/LogViewer.svelte';
   import EventsTable from '$lib/components/EventsTable.svelte';
@@ -11,6 +11,7 @@
   import YamlEditor from '$lib/components/YamlEditor.svelte';
   import PortForwardDialog from '$lib/components/PortForwardDialog.svelte';
   import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
+  import Sparkline from '$lib/components/Sparkline.svelte';
   import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -27,6 +28,27 @@
   let deleting = $state(false);
   let deleteError: string | null = $state(null);
   let containerNames: string[] = $state([]);
+
+  // Sparkline metrics ring buffer (30 points, polled every 30s)
+  const MAX_SPARKLINE_POINTS = 30;
+  let cpuHistory: number[] = $state([]);
+  let memoryHistory: number[] = $state([]);
+  let metricsTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function pollMetrics() {
+    try {
+      const available = await checkMetricsAvailable();
+      if (!available) return;
+      const allMetrics = await getPodMetrics(namespace);
+      const podMetric = allMetrics.find((m) => m.name === podName);
+      if (podMetric) {
+        cpuHistory = [...cpuHistory, podMetric.cpu_millicores].slice(-MAX_SPARKLINE_POINTS);
+        memoryHistory = [...memoryHistory, podMetric.memory_bytes / (1024 * 1024)].slice(-MAX_SPARKLINE_POINTS);
+      }
+    } catch {
+      // Silently skip metrics poll failures
+    }
+  }
 
   // YAML editor state
   let editedYaml = $state('');
@@ -85,6 +107,12 @@
   }
 
   onMount(loadPod);
+
+  onMount(() => {
+    pollMetrics();
+    metricsTimer = setInterval(pollMetrics, 30_000);
+    return () => { if (metricsTimer) clearInterval(metricsTimer); };
+  });
 
   async function handleApply(dryRun: boolean) {
     applying = true;
@@ -180,6 +208,26 @@
         {/each}
 
         <AzureIdentitySection {pod} />
+
+        {#if cpuHistory.length > 1 || memoryHistory.length > 1}
+          <h3>Usage Trends</h3>
+          <div class="sparkline-row">
+            {#if cpuHistory.length > 1}
+              <div class="sparkline-card">
+                <span class="sparkline-label">CPU (m)</span>
+                <Sparkline data={cpuHistory} color="#58a6ff" />
+                <span class="sparkline-value">{cpuHistory[cpuHistory.length - 1]?.toFixed(0) ?? '—'}m</span>
+              </div>
+            {/if}
+            {#if memoryHistory.length > 1}
+              <div class="sparkline-card">
+                <span class="sparkline-label">Memory (MiB)</span>
+                <Sparkline data={memoryHistory} color="#a371f7" />
+                <span class="sparkline-value">{memoryHistory[memoryHistory.length - 1]?.toFixed(1) ?? '—'} MiB</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         {#if pod.status?.conditions}
           <h3>Conditions</h3>
@@ -416,5 +464,31 @@
     font-size: 0.8rem;
     line-height: 1.5;
     color: #c9d1d9;
+  }
+
+  .sparkline-row {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .sparkline-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+  }
+  .sparkline-label {
+    font-size: 0.75rem;
+    color: #8b949e;
+    white-space: nowrap;
+  }
+  .sparkline-value {
+    font-size: 0.8rem;
+    font-family: monospace;
+    color: #e0e0e0;
+    white-space: nowrap;
   }
 </style>

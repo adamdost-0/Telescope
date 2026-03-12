@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getResourceCounts, getPods, getEvents, activeContext, getClusterInfo } from '$lib/api';
+  import { getResourceCounts, getPods, getEvents, activeContext, getClusterInfo, getPodMetrics } from '$lib/api';
   import { selectedContext, selectedNamespace, isConnected, clusterServerUrl, isAks } from '$lib/stores';
   import { parseAksUrl, getAzurePortalUrl } from '$lib/azure-utils';
   import AksAddons from '$lib/components/AksAddons.svelte';
@@ -17,6 +17,16 @@
   let lastSuccessfulRefresh: number | null = $state(null);
   let timer: ReturnType<typeof setInterval> | null = $state(null);
   let clusterInfo: ClusterInfo | null = $state(null);
+
+  // Namespace resource usage (Feature: #74)
+  interface NamespaceUsage {
+    namespace: string;
+    pods: number;
+    cpuMillicores: number;
+    memoryBytes: number;
+  }
+
+  let namespaceUsage: NamespaceUsage[] = $state([]);
 
   let staleData = $derived(
     lastSuccessfulRefresh !== null && Date.now() - lastSuccessfulRefresh > 30_000
@@ -107,12 +117,36 @@
     refresh();
     // Fetch cluster info once (not on every poll cycle).
     getClusterInfo().then((info) => { clusterInfo = info; });
+    // Fetch namespace usage once and then every 30s
+    refreshNamespaceUsage();
+    const nsTimer = setInterval(refreshNamespaceUsage, 30_000);
     timer = setInterval(refresh, 5000);
+    return () => { clearInterval(nsTimer); };
   });
 
   onDestroy(() => {
     if (timer) clearInterval(timer);
   });
+
+  async function refreshNamespaceUsage() {
+    try {
+      const metrics = await getPodMetrics();
+      const nsMap = new Map<string, NamespaceUsage>();
+      for (const pod of metrics) {
+        const ns = pod.namespace || 'default';
+        const entry = nsMap.get(ns) ?? { namespace: ns, pods: 0, cpuMillicores: 0, memoryBytes: 0 };
+        entry.pods++;
+        entry.cpuMillicores += pod.cpu_millicores;
+        entry.memoryBytes += pod.memory_bytes;
+        nsMap.set(ns, entry);
+      }
+      namespaceUsage = [...nsMap.values()]
+        .sort((a, b) => b.cpuMillicores - a.cpuMillicores)
+        .slice(0, 5);
+    } catch {
+      // Metrics not available — skip
+    }
+  }
 
   function getCount(gvk: string): number {
     return counts.get(gvk) ?? 0;
@@ -289,6 +323,35 @@
     {/if}
 
     <!-- Recent warning events -->
+    {#if namespaceUsage.length > 0}
+      <section aria-label="Top namespaces by resource usage">
+        <h2>Top Namespaces by Usage</h2>
+        <div class="events-table-wrap">
+          <table class="events-table">
+            <thead>
+              <tr>
+                <th>Namespace</th>
+                <th>Pods</th>
+                <th>CPU (millicores)</th>
+                <th>Memory (MiB)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each namespaceUsage as ns}
+                <tr>
+                  <td class="cell-object">{ns.namespace}</td>
+                  <td>{ns.pods}</td>
+                  <td>{ns.cpuMillicores.toFixed(0)}</td>
+                  <td>{(ns.memoryBytes / (1024 * 1024)).toFixed(1)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {/if}
+
+    <!-- Recent warning events (original) -->
     {#if warningEvents.length > 0}
       <section aria-label="Recent warning events">
         <h2>Recent Warnings</h2>

@@ -209,6 +209,20 @@ async fn list_helm_releases(
         .map_err(|e| e.to_string())
 }
 
+/// Get all revisions of a specific Helm release, sorted by revision number.
+#[tauri::command]
+async fn get_helm_release_history(
+    namespace: String,
+    name: String,
+) -> Result<Vec<telescope_engine::helm::HelmRelease>, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::helm::get_release_history(&client, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// List available namespaces from the connected cluster.
 #[tauri::command]
 async fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<String>, String> {
@@ -743,6 +757,7 @@ fn main() {
             get_resource,
             list_namespaces,
             list_helm_releases,
+            get_helm_release_history,
             connect_to_context,
             disconnect,
             set_namespace,

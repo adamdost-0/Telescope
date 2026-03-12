@@ -46,11 +46,7 @@ pub async fn list_releases(
             continue;
         }
 
-        let ns = secret
-            .metadata
-            .namespace
-            .as_deref()
-            .unwrap_or("default");
+        let ns = secret.metadata.namespace.as_deref().unwrap_or("default");
 
         if let Some(data) = &secret.data {
             if let Some(release_data) = data.get("release") {
@@ -78,6 +74,49 @@ pub async fn list_releases(
     Ok(result)
 }
 
+/// Get all revisions of a specific Helm release, sorted by revision number.
+pub async fn get_release_history(
+    client: &Client,
+    namespace: &str,
+    name: &str,
+) -> crate::Result<Vec<HelmRelease>> {
+    let secrets_api: Api<Secret> = Api::namespaced(client.clone(), namespace);
+
+    let params = ListParams::default().labels("owner=helm");
+    let secrets = secrets_api.list(&params).await?;
+
+    let mut revisions: Vec<HelmRelease> = Vec::new();
+
+    for secret in &secrets.items {
+        if secret.type_.as_deref() != Some("helm.sh/release.v1") {
+            continue;
+        }
+
+        // Check secret name matches sh.helm.release.v1.<name>.v*
+        let secret_name = secret.metadata.name.as_deref().unwrap_or("");
+        let prefix = format!("sh.helm.release.v1.{}.", name);
+        if !secret_name.starts_with(&prefix) {
+            continue;
+        }
+
+        if let Some(data) = &secret.data {
+            if let Some(release_data) = data.get("release") {
+                if let Ok(release) = parse_helm_release(&release_data.0) {
+                    if release.name == name {
+                        revisions.push(HelmRelease {
+                            namespace: namespace.to_string(),
+                            ..release
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    revisions.sort_by_key(|r| r.revision);
+    Ok(revisions)
+}
+
 /// Parse a Helm release from the secret's `release` field.
 ///
 /// The data flow is: K8s Secret (base64-decoded by kube-rs into ByteString)
@@ -95,9 +134,7 @@ fn parse_helm_release(data: &[u8]) -> Result<HelmRelease, Box<dyn std::error::Er
         namespace: String::new(), // filled by caller
         chart: format!(
             "{}-{}",
-            release["chart"]["metadata"]["name"]
-                .as_str()
-                .unwrap_or(""),
+            release["chart"]["metadata"]["name"].as_str().unwrap_or(""),
             release["chart"]["metadata"]["version"]
                 .as_str()
                 .unwrap_or("")
