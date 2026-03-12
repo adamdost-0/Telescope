@@ -179,10 +179,10 @@
     return `Updated ${Math.floor(seconds / 60)}m ago`;
   }
 
-  async function loadResources() {
+  async function loadResources(userInitiated = false) {
     if (!$isConnected) { loading = false; resources = []; nodeMetrics = []; return; }
     const isInitial = resources.length === 0 && !lastUpdated;
-    if (isInitial) loading = true; else refreshing = true;
+    if (isInitial) loading = true; else if (userInitiated) refreshing = true;
     error = null;
     try {
       const [nodes, available] = await Promise.all([
@@ -210,7 +210,7 @@
   });
 
   onMount(() => {
-    refreshTimer = setInterval(loadResources, 3000);
+    refreshTimer = setInterval(loadResources, 10_000);
     timestampTimer = setInterval(() => { lastUpdatedText = formatTimestamp(); }, 1000);
   });
 
@@ -227,7 +227,7 @@
       {#if lastUpdatedText}
         <span class="last-updated">{lastUpdatedText}</span>
       {/if}
-      <button type="button" onclick={loadResources} disabled={refreshing} class:spinning={refreshing} aria-label="Refresh {PAGE_TITLE.toLowerCase()}">
+      <button type="button" onclick={() => loadResources(true)} disabled={refreshing} class:spinning={refreshing} aria-label="Refresh {PAGE_TITLE.toLowerCase()}">
         <span class="refresh-icon">↻</span> Refresh
       </button>
     </div>

@@ -46,10 +46,10 @@
     }
   }
 
-  async function loadReleases() {
+  async function loadReleases(userInitiated = false) {
     if (!$isConnected) { loading = false; releases = []; return; }
     const isInitial = releases.length === 0 && !lastUpdated;
-    if (isInitial) loading = true; else refreshing = true;
+    if (isInitial) loading = true; else if (userInitiated) refreshing = true;
     error = null;
     try {
       releases = await listHelmReleases();
@@ -82,12 +82,12 @@
 
 <div class="resource-page">
   <header>
-    <h1>\u2388 Helm Releases</h1>
+    <h1>⎈ Helm Releases</h1>
     <div class="controls">
       {#if lastUpdatedText}
         <span class="last-updated">{lastUpdatedText}</span>
       {/if}
-      <button type="button" onclick={loadReleases} disabled={refreshing} class:spinning={refreshing} aria-label="Refresh Helm releases">
+      <button type="button" onclick={() => loadReleases(true)} disabled={refreshing} class:spinning={refreshing} aria-label="Refresh Helm releases">
         <span class="refresh-icon">\u21bb</span> Refresh
       </button>
     </div>
@@ -95,7 +95,7 @@
 
   {#if !$isConnected && !loading}
     <div class="not-connected">
-      <p>\ud83d\udd0c Not connected to a cluster</p>
+      <p>🔌 Not connected to a cluster</p>
       <p class="hint">Select a context from the header to connect.</p>
     </div>
   {:else if loading}
@@ -129,11 +129,11 @@
               <td class="name"><a href="/helm/{release.namespace}/{release.name}">{release.name}</a></td>
               <td>{release.namespace}</td>
               <td class="mono">{release.chart}</td>
-              <td>{release.app_version || '\u2014'}</td>
+              <td>{release.app_version || '—'}</td>
               <td class="center">{release.revision}</td>
               <td>
                 <span class="status-badge" style="color: {statusColor(release.status)}">
-                  \u25cf {release.status}
+                  ● {release.status}
                 </span>
               </td>
               <td class="updated">{formatUpdated(release.updated)}</td>
