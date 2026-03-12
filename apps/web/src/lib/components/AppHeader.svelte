@@ -1,7 +1,12 @@
 <script lang="ts">
   import ContextSwitcher from './ContextSwitcher.svelte';
   import ConnectionStatus from './ConnectionStatus.svelte';
+  import { isProduction } from '$lib/stores';
 </script>
+
+{#if $isProduction}
+  <div class="prod-banner" role="status">⚠️ PRODUCTION</div>
+{/if}
 
 <header class="app-header">
   <div class="brand">
@@ -43,5 +48,15 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
+  }
+  .prod-banner {
+    background: #d32f2f;
+    color: #fff;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.8rem;
+    padding: 0.25rem 0;
+    letter-spacing: 0.05em;
+    width: 100%;
   }
 </style>

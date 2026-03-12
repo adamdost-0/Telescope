@@ -6,6 +6,7 @@
     confirmText = 'Delete',
     confirmValue = '',
     requireType = false,
+    productionContext = false,
     onconfirm,
     oncancel,
   }: {
@@ -15,12 +16,14 @@
     confirmText?: string;
     confirmValue?: string;
     requireType?: boolean;
+    productionContext?: boolean;
     onconfirm?: () => void;
     oncancel?: () => void;
   } = $props();
 
   let typed = $state('');
-  let canConfirm = $derived(!requireType || typed === confirmValue);
+  let effectiveRequireType = $derived(requireType || productionContext);
+  let canConfirm = $derived(!effectiveRequireType || typed === confirmValue);
 
   $effect(() => {
     if (open) typed = '';
@@ -36,8 +39,11 @@
       onclick={(e) => e.stopPropagation()}
     >
       <h3>{title}</h3>
+      {#if productionContext}
+        <p class="prod-warning">⚠️ You are operating in a PRODUCTION context</p>
+      {/if}
       <p class="message">{message}</p>
-      {#if requireType}
+      {#if effectiveRequireType}
         <p class="type-hint">
           Type <strong>{confirmValue}</strong> to confirm:
         </p>
@@ -83,6 +89,17 @@
     margin: 0 0 0.75rem;
     font-size: 1.1rem;
     color: #ef5350;
+  }
+
+  .prod-warning {
+    background: rgba(211, 47, 47, 0.15);
+    border: 1px solid #d32f2f;
+    color: #ef5350;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
   }
 
   .message {
