@@ -51,6 +51,30 @@ export interface ClusterInfo {
   auth_hint: string | null;
 }
 
+export interface ContainerMetrics {
+  name: string;
+  cpu_millicores: number;
+  memory_bytes: number;
+}
+
+export interface PodMetrics {
+  name: string;
+  namespace: string;
+  containers: ContainerMetrics[];
+  cpu_millicores: number;
+  memory_bytes: number;
+}
+
+export interface HelmRelease {
+  name: string;
+  namespace: string;
+  chart: string;
+  app_version: string;
+  revision: number;
+  status: string;
+  updated: string;
+}
+
 /**
  * Check if running inside Tauri (desktop) or browser (web).
  */

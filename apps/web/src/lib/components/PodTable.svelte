@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ResourceEntry } from '$lib/tauri-commands';
+  import type { ResourceEntry, PodMetrics } from '$lib/tauri-commands';
 
   interface PodInfo {
     name: string;
@@ -8,13 +8,20 @@
     restarts: number;
     age: string;
     ready: string;
+    cpuMillicores: number | null;
+    memoryBytes: number | null;
   }
 
-  let { pods = [] }: { pods: ResourceEntry[] } = $props();
+  let { pods = [], metrics = [] }: { pods: ResourceEntry[]; metrics: PodMetrics[] } = $props();
 
-  let parsedPods = $derived(pods.map(parsePod));
+  let metricsMap = $derived(
+    new Map(metrics.map((m) => [`${m.namespace}/${m.name}`, m]))
+  );
+
+  let parsedPods = $derived(pods.map((p) => parsePod(p)));
 
   function parsePod(entry: ResourceEntry): PodInfo {
+    const m = metricsMap.get(`${entry.namespace}/${entry.name}`);
     try {
       const obj = JSON.parse(entry.content);
       const status = obj?.status?.phase ?? 'Unknown';
@@ -32,6 +39,8 @@
         restarts,
         age,
         ready: `${readyCount}/${totalCount}`,
+        cpuMillicores: m?.cpu_millicores ?? null,
+        memoryBytes: m?.memory_bytes ?? null,
       };
     } catch {
       return {
@@ -41,6 +50,8 @@
         restarts: 0,
         age: 'Unknown',
         ready: '0/0',
+        cpuMillicores: m?.cpu_millicores ?? null,
+        memoryBytes: m?.memory_bytes ?? null,
       };
     }
   }
@@ -58,6 +69,19 @@
     if (diffHours < 24) return `${diffHours}h`;
     const diffDays = Math.floor(diffHours / 24);
     return `${diffDays}d`;
+  }
+
+  function formatCpu(millicores: number | null): string {
+    if (millicores === null) return '—';
+    if (millicores < 1000) return `${millicores}m`;
+    return `${(millicores / 1000).toFixed(1)}`;
+  }
+
+  function formatMemory(bytes: number | null): string {
+    if (bytes === null) return '—';
+    const mi = bytes / (1024 * 1024);
+    if (mi < 1024) return `${Math.round(mi)}Mi`;
+    return `${(mi / 1024).toFixed(1)}Gi`;
   }
 
   function statusClass(status: string): string {
@@ -81,6 +105,8 @@
           <th scope="col">Name</th>
           <th scope="col">Ready</th>
           <th scope="col">Status</th>
+          <th scope="col">CPU</th>
+          <th scope="col">Memory</th>
           <th scope="col">Restarts</th>
           <th scope="col">Age</th>
         </tr>
@@ -91,6 +117,8 @@
             <td class="pod-name"><a href="/pods/{pod.namespace}/{pod.name}">{pod.name}</a></td>
             <td>{pod.ready}</td>
             <td><span class={statusClass(pod.status)}>{pod.status}</span></td>
+            <td class="metric">{formatCpu(pod.cpuMillicores)}</td>
+            <td class="metric">{formatMemory(pod.memoryBytes)}</td>
             <td>{pod.restarts}</td>
             <td>{pod.age}</td>
           </tr>
@@ -143,5 +171,9 @@
     color: #9e9e9e;
     padding: 2rem;
     text-align: center;
+  }
+  .metric {
+    color: #b0bec5;
+    font-variant-numeric: tabular-nums;
   }
 </style>

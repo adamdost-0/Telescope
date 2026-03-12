@@ -196,6 +196,19 @@ fn get_resource(
         .map_err(|e| e.to_string())
 }
 
+/// List Helm releases by parsing Helm release Secrets from Kubernetes.
+#[tauri::command]
+async fn list_helm_releases(
+    namespace: Option<String>,
+) -> Result<Vec<telescope_engine::helm::HelmRelease>, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::helm::list_releases(&client, namespace.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// List available namespaces from the connected cluster.
 #[tauri::command]
 async fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<String>, String> {
@@ -650,6 +663,29 @@ async fn start_port_forward(
         .map_err(|e| e.to_string())
 }
 
+// Metrics commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn get_pod_metrics(
+    namespace: Option<String>,
+) -> Result<Vec<telescope_engine::metrics::PodMetrics>, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::metrics::get_pod_metrics(&client, namespace.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn check_metrics_available() -> Result<bool, String> {
+    let client = telescope_engine::client::create_client()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(telescope_engine::metrics::is_metrics_available(&client).await)
+}
+
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -696,6 +732,7 @@ fn main() {
             count_resources,
             get_resource,
             list_namespaces,
+            list_helm_releases,
             connect_to_context,
             disconnect,
             set_namespace,
@@ -710,6 +747,8 @@ fn main() {
             rollout_restart,
             rollout_status,
             exec_command,
+            get_pod_metrics,
+            check_metrics_available,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");

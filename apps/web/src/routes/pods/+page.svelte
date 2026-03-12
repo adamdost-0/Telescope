@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getPods } from '$lib/api';
+  import { getPods, getPodMetrics } from '$lib/api';
   import { selectedNamespace, isConnected } from '$lib/stores';
   import PodTable from '$lib/components/PodTable.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
-  import type { ResourceEntry } from '$lib/tauri-commands';
+  import type { ResourceEntry, PodMetrics } from '$lib/tauri-commands';
 
   let pods: ResourceEntry[] = $state([]);
+  let metrics: PodMetrics[] = $state([]);
   let loading = $state(true);
   let refreshing = $state(false);
   let error: string | null = $state(null);
@@ -28,6 +29,7 @@
     if (!$isConnected) {
       loading = false;
       pods = [];
+      metrics = [];
       return;
     }
 
@@ -39,12 +41,18 @@
     }
     error = null;
     try {
-      pods = await getPods($selectedNamespace);
+      const [podResult, metricsResult] = await Promise.all([
+        getPods($selectedNamespace),
+        getPodMetrics($selectedNamespace),
+      ]);
+      pods = podResult;
+      metrics = metricsResult;
       lastUpdated = new Date();
       lastUpdatedText = formatTimestamp();
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load pods';
       pods = [];
+      metrics = [];
     } finally {
       loading = false;
       refreshing = false;
@@ -107,7 +115,7 @@
     </div>
   {:else}
     <p class="count">{pods.length} pod{pods.length !== 1 ? 's' : ''}</p>
-    <PodTable {pods} />
+    <PodTable {pods} {metrics} />
   {/if}
 </div>
 
