@@ -3,6 +3,8 @@
   import ConnectionStatus from './ConnectionStatus.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
   import { isProduction } from '$lib/stores';
+
+  let { onhelp }: { onhelp?: () => void } = $props();
 </script>
 
 {#if $isProduction}
@@ -19,6 +21,7 @@
     <ConnectionStatus />
     <ContextSwitcher />
     <ThemeToggle />
+    <button class="help-btn" onclick={() => onhelp?.()} title="Keyboard shortcuts (?)">?</button>
   </div>
 </header>
 
@@ -60,5 +63,24 @@
     padding: 0.25rem 0;
     letter-spacing: 0.05em;
     width: 100%;
+  }
+  .help-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+  }
+  .help-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 </style>

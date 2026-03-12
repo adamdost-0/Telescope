@@ -1,27 +1,77 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import AppHeader from '$lib/components/AppHeader.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import SearchPalette from '$lib/components/SearchPalette.svelte';
+  import ShortcutHelp from '$lib/components/ShortcutHelp.svelte';
 
   let { children }: { children: Snippet } = $props();
   let searchOpen = $state(false);
+  let showHelp = $state(false);
+  let gPrefix = $state(false);
+  let gTimer: ReturnType<typeof setTimeout> | undefined;
 
-  onMount(() => {
-    function handleKeydown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    // Ctrl/Cmd+K: search palette
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      searchOpen = !searchOpen;
+      return;
+    }
+
+    // Skip remaining shortcuts when typing in form elements
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      showHelp = !showHelp;
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      if (showHelp) {
+        showHelp = false;
+      }
+      // search palette handles its own Escape
+      return;
+    }
+
+    // "g" prefix navigation
+    if (e.key === 'g' && !e.ctrlKey && !e.metaKey && !gPrefix) {
+      gPrefix = true;
+      clearTimeout(gTimer);
+      gTimer = setTimeout(() => { gPrefix = false; }, 1000);
+      return;
+    }
+
+    if (gPrefix) {
+      gPrefix = false;
+      clearTimeout(gTimer);
+      const routes: Record<string, string> = {
+        'o': '/overview',
+        'p': '/pods',
+        'd': '/resources/deployments',
+        's': '/resources/services',
+        'n': '/nodes',
+        'e': '/events',
+        'h': '/helm',
+        'c': '/crds',
+        't': '/settings',
+      };
+      if (routes[e.key]) {
         e.preventDefault();
-        searchOpen = !searchOpen;
+        goto(routes[e.key]);
       }
     }
-    window.addEventListener('keydown', handleKeydown);
-    return () => window.removeEventListener('keydown', handleKeydown);
-  });
+  }
 </script>
 
+<svelte:window onkeydown={handleGlobalKeydown} />
+
 <div class="app-shell">
-  <AppHeader />
+  <AppHeader onhelp={() => { showHelp = true; }} />
   <div class="app-body">
     <Sidebar />
     <main>
@@ -31,6 +81,7 @@
 </div>
 
 <SearchPalette bind:open={searchOpen} />
+<ShortcutHelp open={showHelp} onclose={() => { showHelp = false; }} />
 
 <style>
   :global(:root), :global([data-theme="dark"]) {
