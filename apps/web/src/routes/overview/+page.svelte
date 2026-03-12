@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getResourceCounts, getPods, getEvents, activeContext } from '$lib/api';
-  import { selectedContext, selectedNamespace, isConnected } from '$lib/stores';
+  import { selectedContext, selectedNamespace, isConnected, clusterServerUrl, isAks } from '$lib/stores';
+  import { parseAksUrl, getAzurePortalUrl } from '$lib/azure-utils';
+  import AksAddons from '$lib/components/AksAddons.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   // Resource counts keyed by GVK
@@ -10,7 +12,13 @@
   let warningEvents: WarningEvent[] = $state([]);
   let contextName: string | null = $state(null);
   let loading = $state(true);
+  let refreshError = $state(false);
+  let lastSuccessfulRefresh: number | null = $state(null);
   let timer: ReturnType<typeof setInterval> | null = $state(null);
+
+  let staleData = $derived(
+    lastSuccessfulRefresh !== null && Date.now() - lastSuccessfulRefresh > 30_000
+  );
 
   interface PodPhase {
     Running: number;
@@ -84,8 +92,10 @@
       pods = podList;
       warningEvents = parseWarningEvents(eventList);
       contextName = ctx ?? $selectedContext;
+      refreshError = false;
+      lastSuccessfulRefresh = Date.now();
     } catch {
-      // silently ignore refresh errors
+      refreshError = true;
     } finally {
       loading = false;
     }
@@ -121,7 +131,7 @@
     { label: 'Services', gvk: 'v1/Service', icon: '🌐', href: '/resources/services' },
     { label: 'ConfigMaps', gvk: 'v1/ConfigMap', icon: '📋', href: '/resources/configmaps' },
     { label: 'Secrets', gvk: 'v1/Secret', icon: '🔒', href: '/resources/secrets' },
-    { label: 'Nodes', gvk: 'v1/Node', icon: '🖥️', href: '#' },
+    { label: 'Nodes', gvk: 'v1/Node', icon: '🖥️', href: '/nodes' },
     { label: 'Events', gvk: 'v1/Event', icon: '⚡', href: '/events' },
   ];
 
@@ -132,6 +142,16 @@
     Succeeded: '#42a5f5',
     Unknown: '#757575',
   };
+
+  function openInPortal() {
+    if (!$clusterServerUrl) return;
+    const info = parseAksUrl($clusterServerUrl);
+    if (!info) return;
+    const url = getAzurePortalUrl(info);
+    if (url) {
+      window.open(url, '_blank', 'noopener');
+    }
+  }
 </script>
 
 <div class="overview">
@@ -143,16 +163,38 @@
   {:else}
     <h1>Cluster Overview</h1>
 
+    {#if refreshError && staleData}
+      <div class="stale-warning" role="alert">
+        ⚠ Data may be stale — last successful refresh was more than 30 seconds ago.
+      </div>
+    {:else if refreshError}
+      <div class="stale-warning" role="alert">
+        ⚠ Failed to refresh data. Retrying…
+      </div>
+    {/if}
+
     <!-- Cluster info -->
     <section class="cluster-info" aria-label="Cluster information">
       <div class="info-item">
         <span class="info-label">Context</span>
-        <span class="info-value">{contextName ?? '—'}</span>
+        <span class="info-value">
+          {contextName ?? '—'}
+          {#if $isAks}
+            <span class="aks-badge" title="Azure Kubernetes Service">AKS</span>
+          {/if}
+        </span>
       </div>
       <div class="info-item">
         <span class="info-label">Namespace</span>
         <span class="info-value">{$selectedNamespace}</span>
       </div>
+      {#if $isAks}
+        <div class="info-item portal-link">
+          <button class="portal-btn" onclick={openInPortal} title="Open cluster in Azure Portal">
+            🌐 Open in Azure Portal
+          </button>
+        </div>
+      {/if}
     </section>
 
     <!-- Resource counts grid -->
@@ -190,6 +232,11 @@
         </div>
       {/if}
     </section>
+
+    <!-- AKS Add-ons -->
+    {#if $isAks}
+      <AksAddons />
+    {/if}
 
     <!-- Pod phase breakdown -->
     {#if totalPods > 0}
@@ -276,6 +323,17 @@
     color: #58a6ff;
   }
 
+  /* Stale data warning */
+  .stale-warning {
+    padding: 0.5rem 1rem;
+    margin-bottom: 0.75rem;
+    background: rgba(255, 167, 38, 0.12);
+    border: 1px solid rgba(255, 167, 38, 0.3);
+    border-radius: 6px;
+    color: #ffa726;
+    font-size: 0.85rem;
+  }
+
   /* Cluster info bar */
   .cluster-info {
     display: flex;
@@ -301,6 +359,40 @@
     font-size: 0.9rem;
     color: #e0e0e0;
     font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .aks-badge {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(0, 120, 212, 0.2);
+    color: #0078d4;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .portal-link {
+    margin-left: auto;
+    justify-content: center;
+  }
+  .portal-btn {
+    background: rgba(0, 120, 212, 0.15);
+    color: #58a6ff;
+    border: 1px solid rgba(0, 120, 212, 0.3);
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .portal-btn:hover {
+    background: rgba(0, 120, 212, 0.3);
+    border-color: #0078d4;
   }
 
   /* Card grid */

@@ -6,7 +6,10 @@
     selectedNamespace,
     namespaces,
     connectionState,
+    clusterServerUrl,
   } from '$lib/stores';
+  import { isAksCluster } from '$lib/azure-utils';
+  import { isProductionContext } from '$lib/prod-detection';
   import type { ClusterContext } from '$lib/tauri-commands';
 
   let contexts: ClusterContext[] = $state([]);
@@ -14,6 +17,13 @@
   let connecting = $state(false);
   let error: string | null = $state(null);
   let namespacesLoading = $state(false);
+
+  function friendlyError(raw: string, authType?: string): string {
+    if (authType === 'exec' && (/exec/i.test(raw) || /kubelogin/i.test(raw))) {
+      return 'Exec auth failed. Ensure kubelogin is installed and accessible in your PATH.';
+    }
+    return raw;
+  }
 
   onMount(async () => {
     try {
@@ -23,6 +33,8 @@
 
       if (initial) {
         selectedContext.set(initial);
+        const initialCtx = contexts.find(c => c.name === initial);
+        clusterServerUrl.set(initialCtx?.cluster_server ?? null);
         connecting = true;
         try {
           await connectToContext(initial);
@@ -34,7 +46,9 @@
           selectedNamespace.set(ns);
           await setNamespace(ns);
         } catch (err) {
-          error = err instanceof Error ? err.message : 'Auto-connect failed';
+          const raw = err instanceof Error ? err.message : 'Auto-connect failed';
+          const activeAuth = contexts.find(c => c.name === initial)?.auth_type;
+          error = friendlyError(raw, activeAuth);
           connectionState.set({ state: 'Error', detail: { message: error ?? 'Auto-connect failed' } });
         } finally {
           connecting = false;
@@ -52,6 +66,8 @@
     const target = e.target as HTMLSelectElement;
     const name = target.value;
     selectedContext.set(name);
+    const ctx = contexts.find(c => c.name === name);
+    clusterServerUrl.set(ctx?.cluster_server ?? null);
     connecting = true;
     error = null;
     connectionState.set({ state: 'Connecting' });
@@ -66,7 +82,9 @@
       selectedNamespace.set(ns);
       await setNamespace(ns);
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Connection failed. Verify the cluster is reachable and kubeconfig is valid.';
+      const raw = err instanceof Error ? err.message : 'Connection failed. Verify the cluster is reachable and kubeconfig is valid.';
+      const ctxAuth = contexts.find(c => c.name === name)?.auth_type;
+      error = friendlyError(raw, ctxAuth);
       connectionState.set({ state: 'Error', detail: { message: error ?? 'Connection failed' } });
     } finally {
       connecting = false;
@@ -105,6 +123,7 @@
         <option value={ctx.name}>
           {ctx.name}
           {#if ctx.namespace}({ctx.namespace}){/if}
+          {#if isProductionContext(ctx.name)} 🔴 PROD{/if}
         </option>
       {/each}
     </select>
@@ -132,10 +151,20 @@
 
     {#if $selectedContext && !connecting}
       {@const ctx = contexts.find(c => c.name === $selectedContext)}
+      {#if ctx?.auth_type === 'exec'}
+        <span class="auth-badge exec" title="Exec-based auth (e.g. kubelogin)">🔑 Exec</span>
+      {:else if ctx?.auth_type === 'token'}
+        <span class="auth-badge token" title="Token-based auth">🎫 Token</span>
+      {:else if ctx?.auth_type === 'certificate'}
+        <span class="auth-badge cert" title="Certificate-based auth">📜 Cert</span>
+      {/if}
       {#if ctx?.cluster_server}
         <span class="server" title={ctx.cluster_server}>
           {ctx.cluster_server}
         </span>
+        {#if isAksCluster(ctx.cluster_server)}
+          <span class="aks-badge" title="Azure Kubernetes Service">AKS</span>
+        {/if}
       {/if}
     {/if}
 
@@ -173,6 +202,27 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+  .auth-badge {
+    font-size: 0.7rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .auth-badge.exec {
+    background: #2d2040;
+    color: #ce93d8;
+    border: 1px solid #4a2d6e;
+  }
+  .auth-badge.token {
+    background: #1a2e3e;
+    color: #81d4fa;
+    border: 1px solid #2a4a5e;
+  }
+  .auth-badge.cert {
+    background: #1e3a2a;
+    color: #a5d6a7;
+    border: 1px solid #2e5a3a;
+  }
   .server {
     color: #757575;
     font-size: 0.75rem;
@@ -197,6 +247,18 @@
   .loading, .empty {
     color: #757575;
     font-style: italic;
+  }
+  .aks-badge {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(0, 120, 212, 0.2);
+    color: #0078d4;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
   }
   @keyframes pulse {
     0%, 100% { opacity: 1; }
