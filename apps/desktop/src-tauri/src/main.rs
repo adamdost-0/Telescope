@@ -243,13 +243,22 @@ async fn scale_aks_node_pool(
     let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
     let outcome = telescope_azure::scale_node_pool(&client, &resource_id, &pool_name, count).await;
 
-    let result_str = if outcome.is_ok() { "success" } else { "failure" };
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
     telescope_engine::audit::log_audit(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
             actor: "desktop-user@local".into(),
-            context: state.active_context.read().await.clone().unwrap_or_default(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
             namespace: String::new(),
             action: "scale_aks_node_pool".into(),
             resource_type: "AksNodePool".into(),
@@ -279,22 +288,28 @@ async fn update_aks_autoscaler(
         telescope_azure::update_autoscaler(&client, &resource_id, &pool_name, enabled, min, max)
             .await;
 
-    let result_str = if outcome.is_ok() { "success" } else { "failure" };
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
     telescope_engine::audit::log_audit(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
             actor: "desktop-user@local".into(),
-            context: state.active_context.read().await.clone().unwrap_or_default(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
             namespace: String::new(),
             action: "update_aks_autoscaler".into(),
             resource_type: "AksNodePool".into(),
             resource_name: pool_name.clone(),
             result: result_str.into(),
-            detail: Some(format!(
-                "enabled={} min={:?} max={:?}",
-                enabled, min, max
-            )),
+            detail: Some(format!("enabled={} min={:?} max={:?}", enabled, min, max)),
         },
     );
     outcome.map_err(|e| e.to_string())
@@ -328,13 +343,22 @@ async fn create_aks_node_pool(
     };
     let outcome = telescope_azure::create_node_pool(&client, &resource_id, &request).await;
 
-    let result_str = if outcome.is_ok() { "success" } else { "failure" };
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
     telescope_engine::audit::log_audit(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
             actor: "desktop-user@local".into(),
-            context: state.active_context.read().await.clone().unwrap_or_default(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
             namespace: String::new(),
             action: "create_aks_node_pool".into(),
             resource_type: "AksNodePool".into(),
@@ -351,25 +375,30 @@ async fn create_aks_node_pool(
 
 /// Delete an AKS node pool via the Azure ARM API.
 #[tauri::command]
-async fn delete_aks_node_pool(
-    state: State<'_, AppState>,
-    pool_name: String,
-) -> Result<(), String> {
+async fn delete_aks_node_pool(state: State<'_, AppState>, pool_name: String) -> Result<(), String> {
     let resource_id = resolve_active_aks_resource_id(&state)
         .await?
         .ok_or_else(|| "Deleting node pools requires an AKS cluster".to_string())?;
     let cloud = configured_azure_cloud(&state).await?;
     let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
-    let outcome =
-        telescope_azure::delete_node_pool(&client, &resource_id, &pool_name).await;
+    let outcome = telescope_azure::delete_node_pool(&client, &resource_id, &pool_name).await;
 
-    let result_str = if outcome.is_ok() { "success" } else { "failure" };
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
     telescope_engine::audit::log_audit(
         &state.audit_log_path,
         &AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
             actor: "desktop-user@local".into(),
-            context: state.active_context.read().await.clone().unwrap_or_default(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
             namespace: String::new(),
             action: "delete_aks_node_pool".into(),
             resource_type: "AksNodePool".into(),

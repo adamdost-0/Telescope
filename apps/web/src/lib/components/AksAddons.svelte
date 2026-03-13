@@ -3,6 +3,17 @@
   import { getPods } from '$lib/api';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
+  // ARM addon key → friendly display name
+  const ARM_ADDON_NAMES: Record<string, { name: string; icon: string }> = {
+    omsagent: { name: 'Container Insights', icon: '📊' },
+    azurepolicy: { name: 'Azure Policy', icon: '🛡️' },
+    azureKeyvaultSecretsProvider: { name: 'Key Vault CSI', icon: '🔑' },
+    httpApplicationRouting: { name: 'HTTP Routing', icon: '🚪' },
+    ingressApplicationGateway: { name: 'AGIC', icon: '🌐' },
+    aciConnectorLinux: { name: 'Virtual Nodes', icon: '📦' },
+    gitops: { name: 'Flux', icon: '🔄' },
+  };
+
   interface AddonPattern {
     name: string;
     patterns: string[];
@@ -19,7 +30,7 @@
     { name: 'Ingress NGINX', patterns: ['ingress-nginx'], namespace: 'ingress-nginx', icon: '🚪' },
   ];
 
-  type AddonStatus = 'Healthy' | 'Degraded' | 'Not Installed';
+  type AddonStatus = 'Enabled' | 'Healthy' | 'Degraded' | 'Not Enabled' | 'Not Installed';
 
   interface AddonResult {
     name: string;
@@ -27,7 +38,16 @@
     status: AddonStatus;
     total: number;
     running: number;
+    config?: Record<string, string>;
+    identityClientId?: string;
+    armSource: boolean;
   }
+
+  let {
+    armAddonProfiles = null,
+  }: {
+    armAddonProfiles?: Record<string, unknown> | null;
+  } = $props();
 
   let addons: AddonResult[] = $state([]);
   let loading = $state(true);
@@ -45,8 +65,38 @@
     return patterns.some((p) => podName.includes(p));
   }
 
-  async function detectAddons() {
-    // Collect unique namespaces to query
+  function parseArmAddons(): AddonResult[] {
+    if (!armAddonProfiles) return [];
+    const results: AddonResult[] = [];
+    for (const [key, value] of Object.entries(armAddonProfiles)) {
+      const profile = value as Record<string, unknown>;
+      const meta = ARM_ADDON_NAMES[key] ?? { name: key, icon: '🔌' };
+      const enabled = profile?.enabled === true;
+      const config: Record<string, string> = {};
+      const rawConfig = profile?.config as Record<string, string> | undefined;
+      if (rawConfig) {
+        for (const [k, v] of Object.entries(rawConfig)) {
+          config[k] = String(v);
+        }
+      }
+      const identity = profile?.identity as Record<string, unknown> | undefined;
+      const identityClientId = identity?.clientId as string | undefined;
+
+      results.push({
+        name: meta.name,
+        icon: meta.icon,
+        status: enabled ? 'Enabled' : 'Not Enabled',
+        total: 0,
+        running: 0,
+        config: Object.keys(config).length > 0 ? config : undefined,
+        identityClientId: identityClientId ?? undefined,
+        armSource: true,
+      });
+    }
+    return results;
+  }
+
+  async function detectAddonsFromPods(): Promise<AddonResult[]> {
     const namespacesToQuery = [...new Set(ADDON_PATTERNS.map((a) => a.namespace))];
     const podsByNamespace = new Map<string, ResourceEntry[]>();
 
@@ -57,19 +107,26 @@
       }),
     );
 
-    addons = ADDON_PATTERNS.map((addon) => {
+    return ADDON_PATTERNS.map((addon) => {
       const nsPods = podsByNamespace.get(addon.namespace) ?? [];
       const matched = nsPods.filter((p) => matchesAddon(p.name, addon.patterns));
 
       if (matched.length === 0) {
-        return { name: addon.name, icon: addon.icon, status: 'Not Installed' as const, total: 0, running: 0 };
+        return { name: addon.name, icon: addon.icon, status: 'Not Installed' as const, total: 0, running: 0, armSource: false };
       }
 
       const running = matched.filter((p) => getPodPhase(p) === 'Running').length;
       const status: AddonStatus = running === matched.length ? 'Healthy' : 'Degraded';
-      return { name: addon.name, icon: addon.icon, status, total: matched.length, running };
+      return { name: addon.name, icon: addon.icon, status, total: matched.length, running, armSource: false };
     });
+  }
 
+  async function detectAddons() {
+    if (armAddonProfiles && Object.keys(armAddonProfiles).length > 0) {
+      addons = parseArmAddons();
+    } else {
+      addons = await detectAddonsFromPods();
+    }
     loading = false;
   }
 
@@ -78,18 +135,22 @@
   });
 
   const statusColor: Record<AddonStatus, string> = {
+    Enabled: '#66bb6a',
     Healthy: '#66bb6a',
     Degraded: '#ffa726',
+    'Not Enabled': '#484f58',
     'Not Installed': '#484f58',
   };
 
   const statusBg: Record<AddonStatus, string> = {
+    Enabled: 'rgba(102, 187, 106, 0.15)',
     Healthy: 'rgba(102, 187, 106, 0.15)',
     Degraded: 'rgba(255, 167, 38, 0.15)',
+    'Not Enabled': 'rgba(72, 79, 88, 0.15)',
     'Not Installed': 'rgba(72, 79, 88, 0.15)',
   };
 
-  let installedCount = $derived(addons.filter((a) => a.status !== 'Not Installed').length);
+  let enabledCount = $derived(addons.filter((a) => a.status === 'Enabled' || a.status === 'Healthy').length);
 </script>
 
 <section class="aks-addons" aria-label="AKS Add-ons" data-testid="aks-addons">
@@ -97,7 +158,7 @@
   {#if loading}
     <p role="status">Detecting add-ons…</p>
   {:else}
-    <p class="addon-summary">{installedCount} of {addons.length} add-ons detected</p>
+    <p class="addon-summary">{enabledCount} of {addons.length} add-ons {armAddonProfiles ? 'enabled' : 'detected'}</p>
     <div class="addon-grid">
       {#each addons as addon}
         <div
@@ -112,8 +173,16 @@
               class="addon-status"
               style="color: {statusColor[addon.status]}; background: {statusBg[addon.status]};"
             >
-              {#if addon.status === 'Healthy'}✓ Healthy{:else if addon.status === 'Degraded'}⚠ Degraded ({addon.running}/{addon.total}){:else}— Not Installed{/if}
+              {#if addon.status === 'Enabled'}✓ Enabled{:else if addon.status === 'Healthy'}✓ Healthy{:else if addon.status === 'Degraded'}⚠ Degraded ({addon.running}/{addon.total}){:else if addon.status === 'Not Enabled'}— Not Enabled{:else}— Not Installed{/if}
             </span>
+            {#if addon.identityClientId}
+              <span class="addon-detail" title={addon.identityClientId}>🔑 {addon.identityClientId.slice(0, 8)}…</span>
+            {/if}
+            {#if addon.config}
+              {#each Object.entries(addon.config).slice(0, 2) as [key, value]}
+                <span class="addon-detail" title="{key}: {value}">{key.replace(/.*\//, '').slice(0, 20)}</span>
+              {/each}
+            {/if}
           </div>
         </div>
       {/each}
@@ -166,5 +235,14 @@
     border-radius: 4px;
     display: inline-block;
     width: fit-content;
+  }
+  .addon-detail {
+    font-size: 0.65rem;
+    color: #6e7681;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
   }
 </style>

@@ -1,18 +1,21 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import {
+    getPoolUpgradeProfile,
     listAksNodePools,
     scaleAksNodePool,
     updateAksAutoscaler,
     createAksNodePool,
     deleteAksNodePool,
+    upgradePoolNodeImage,
+    upgradePoolVersion,
     type CreateNodePoolConfig,
   } from '$lib/api';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import { getAutoRefreshIntervalMs } from '$lib/preferences';
   import { isAks, isConnected } from '$lib/stores';
-  import type { AksNodePool } from '$lib/tauri-commands';
+  import type { AksNodePool, AvailableUpgrade, PoolUpgradeProfile } from '$lib/tauri-commands';
 
   const PAGE_TITLE = 'Node Pools';
 
@@ -26,6 +29,16 @@
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let timestampTimer: ReturnType<typeof setInterval> | null = null;
   let expandedPools: Record<string, boolean> = $state({});
+  let upgradeProfiles: Record<string, PoolUpgradeProfile | null> = $state({});
+  let profileLoading: Record<string, boolean> = $state({});
+  let upgradeErrors: Record<string, string> = $state({});
+  let upgradeMessages: Record<string, string> = $state({});
+  let poolUpgradeBusy: Record<string, boolean> = $state({});
+  let pendingUpgrade:
+    | { poolName: string; type: 'version'; upgrade: AvailableUpgrade }
+    | { poolName: string; type: 'node-image' }
+    | null = $state(null);
+  let previewAcknowledged = $state(false);
   let destroyed = false;
 
   // ── Operation state ──────────────────────────────────────────────────
@@ -111,7 +124,11 @@
   }
 
   function togglePool(name: string) {
-    expandedPools = { ...expandedPools, [name]: !expandedPools[name] };
+    const nextExpanded = !expandedPools[name];
+    expandedPools = { ...expandedPools, [name]: nextExpanded };
+    if (nextExpanded) {
+      void loadUpgradeProfile(name);
+    }
   }
 
   function poolAnchorId(name: string): string {
@@ -119,18 +136,18 @@
   }
 
   function formatAutoscaler(pool: AksNodePool): string {
-    if (!pool.enable_auto_scaling) return 'Off';
-    const min = pool.min_count ?? '—';
-    const max = pool.max_count ?? '—';
+    if (!pool.enableAutoScaling) return 'Off';
+    const min = pool.minCount ?? '—';
+    const max = pool.maxCount ?? '—';
     return `${min}-${max}`;
   }
 
   function formatZones(pool: AksNodePool): string {
-    return pool.availability_zones?.length ? pool.availability_zones.join(', ') : '—';
+    return pool.availabilityZones?.length ? pool.availabilityZones.join(', ') : '—';
   }
 
   function formatStatus(pool: AksNodePool): string {
-    return pool.provisioning_state ?? pool.power_state?.code ?? 'Unknown';
+    return pool.provisioningState ?? pool.powerState?.code ?? 'Unknown';
   }
 
   function statusVariant(status: string): string {
@@ -155,15 +172,77 @@
       [
         pool.name,
         pool.mode ?? '',
-        pool.vm_size ?? '',
-        pool.os_type ?? '',
-        pool.orchestrator_version ?? '',
-        pool.node_image_version ?? '',
-        pool.provisioning_state ?? '',
-        pool.power_state?.code ?? '',
+        pool.vmSize ?? '',
+        pool.osType ?? '',
+        pool.orchestratorVersion ?? '',
+        pool.nodeImageVersion ?? '',
+        pool.provisioningState ?? '',
+        pool.powerState?.code ?? '',
       ].some((value) => value.toLowerCase().includes(query))
     );
   });
+
+  async function loadUpgradeProfile(poolName: string, force = false) {
+    if (profileLoading[poolName]) return;
+    if (!force && upgradeProfiles[poolName]) return;
+
+    profileLoading = { ...profileLoading, [poolName]: true };
+    try {
+      const profile = await getPoolUpgradeProfile(poolName);
+      upgradeProfiles = { ...upgradeProfiles, [poolName]: profile };
+      upgradeErrors = { ...upgradeErrors, [poolName]: '' };
+    } catch (e) {
+      upgradeErrors = {
+        ...upgradeErrors,
+        [poolName]: e instanceof Error ? e.message : 'Failed to load upgrade profile',
+      };
+    } finally {
+      profileLoading = { ...profileLoading, [poolName]: false };
+    }
+  }
+
+  function openVersionUpgrade(poolName: string, upgrade: AvailableUpgrade) {
+    pendingUpgrade = { poolName, type: 'version', upgrade };
+    previewAcknowledged = false;
+  }
+
+  function openNodeImageUpgrade(poolName: string) {
+    pendingUpgrade = { poolName, type: 'node-image' };
+    previewAcknowledged = false;
+  }
+
+  async function confirmUpgrade() {
+    if (!pendingUpgrade) return;
+    const { poolName } = pendingUpgrade;
+    poolUpgradeBusy = { ...poolUpgradeBusy, [poolName]: true };
+    upgradeErrors = { ...upgradeErrors, [poolName]: '' };
+
+    try {
+      if (pendingUpgrade.type === 'version') {
+        await upgradePoolVersion(poolName, pendingUpgrade.upgrade.kubernetesVersion);
+        upgradeMessages = {
+          ...upgradeMessages,
+          [poolName]: `Pool upgraded to Kubernetes ${pendingUpgrade.upgrade.kubernetesVersion}.`,
+        };
+      } else {
+        await upgradePoolNodeImage(poolName);
+        upgradeMessages = {
+          ...upgradeMessages,
+          [poolName]: 'Pool node image upgrade completed.',
+        };
+      }
+      await Promise.all([loadPools(true), loadUpgradeProfile(poolName, true)]);
+    } catch (e) {
+      upgradeErrors = {
+        ...upgradeErrors,
+        [poolName]: e instanceof Error ? e.message : 'Pool upgrade failed',
+      };
+    } finally {
+      poolUpgradeBusy = { ...poolUpgradeBusy, [poolName]: false };
+      pendingUpgrade = null;
+      previewAcknowledged = false;
+    }
+  }
 
   async function loadPools(userInitiated = false) {
     if (!$isConnected || !$isAks) {
@@ -228,9 +307,9 @@
 
   function openAutoscalerDialog(pool: AksNodePool) {
     autoscalerPoolName = pool.name;
-    autoscalerEnabled = pool.enable_auto_scaling ?? false;
-    autoscalerMin = pool.min_count ?? 1;
-    autoscalerMax = pool.max_count ?? 5;
+    autoscalerEnabled = pool.enableAutoScaling ?? false;
+    autoscalerMin = pool.minCount ?? 1;
+    autoscalerMax = pool.maxCount ?? 5;
     showAutoscalerDialog = true;
   }
 
@@ -490,12 +569,12 @@
                   </a>
                 </td>
                 <td>{pool.mode ?? '—'}</td>
-                <td>{pool.vm_size ?? '—'}</td>
+                <td>{pool.vmSize ?? '—'}</td>
                 <td>{pool.count ?? '—'}</td>
                 <td>{formatAutoscaler(pool)}</td>
-                <td>{pool.orchestrator_version ?? '—'}</td>
-                <td>{pool.node_image_version ?? '—'}</td>
-                <td>{pool.os_type ?? '—'}</td>
+                <td>{pool.orchestratorVersion ?? '—'}</td>
+                <td>{pool.nodeImageVersion ?? '—'}</td>
+                <td>{pool.osType ?? '—'}</td>
                 <td>{formatZones(pool)}</td>
                 <td>
                   <span class={`status-badge ${statusVariant(formatStatus(pool))}`}>
@@ -524,12 +603,79 @@
                 <tr class="details-row">
                   <td colspan="11">
                     <div class="details-grid">
-                      <div><span class="details-label">OS Disk</span><span>{pool.os_disk_size_gb ?? '—'} GiB</span></div>
-                      <div><span class="details-label">Max Pods</span><span>{pool.max_pods ?? '—'}</span></div>
-                      <div><span class="details-label">Power State</span><span>{pool.power_state?.code ?? '—'}</span></div>
-                      <div><span class="details-label">Subnet</span><span class="break">{pool.vnet_subnet_id ?? '—'}</span></div>
-                      <div><span class="details-label">Taints</span><span>{pool.node_taints?.join(', ') ?? '—'}</span></div>
-                      <div><span class="details-label">Labels</span><span class="break">{pool.node_labels ? JSON.stringify(pool.node_labels) : '—'}</span></div>
+                      <div><span class="details-label">OS Disk</span><span>{pool.osDiskSizeGb ?? '—'} GiB</span></div>
+                      <div><span class="details-label">Max Pods</span><span>{pool.maxPods ?? '—'}</span></div>
+                      <div><span class="details-label">Power State</span><span>{pool.powerState?.code ?? '—'}</span></div>
+                      <div><span class="details-label">Subnet</span><span class="break">{pool.vnetSubnetId ?? '—'}</span></div>
+                      <div><span class="details-label">Taints</span><span>{pool.nodeTaints?.join(', ') ?? '—'}</span></div>
+                      <div><span class="details-label">Labels</span><span class="break">{pool.nodeLabels ? JSON.stringify(pool.nodeLabels) : '—'}</span></div>
+                    </div>
+
+                    <div class="upgrade-panel">
+                      <div class="upgrade-panel-header">
+                        <div>
+                          <h3>Upgrade Options</h3>
+                          <p>
+                            Current K8s {upgradeProfiles[pool.name]?.currentVersion ?? pool.orchestratorVersion ?? '—'}
+                            · Node image {pool.nodeImageVersion ?? '—'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          class="btn-sm"
+                          onclick={() => loadUpgradeProfile(pool.name, true)}
+                          disabled={profileLoading[pool.name] || poolUpgradeBusy[pool.name]}
+                        >
+                          {profileLoading[pool.name] ? 'Loading…' : 'Refresh Upgrade Data'}
+                        </button>
+                      </div>
+
+                      {#if upgradeMessages[pool.name]}
+                        <div class="inline-message success" role="status">{upgradeMessages[pool.name]}</div>
+                      {/if}
+                      {#if upgradeErrors[pool.name]}
+                        <div class="inline-message error" role="alert">{upgradeErrors[pool.name]}</div>
+                      {/if}
+
+                      {#if profileLoading[pool.name]}
+                        <p class="hint">Loading Azure upgrade options…</p>
+                      {:else if upgradeProfiles[pool.name]}
+                        <div class="upgrade-actions">
+                          <button
+                            type="button"
+                            class="btn-sm btn-primary"
+                            onclick={() => openNodeImageUpgrade(pool.name)}
+                            disabled={poolUpgradeBusy[pool.name]}
+                          >
+                            {poolUpgradeBusy[pool.name] ? 'Upgrading…' : 'Upgrade Node Image'}
+                          </button>
+                          <span class="hint">
+                            Latest node image: {upgradeProfiles[pool.name]?.latestNodeImageVersion ?? 'Unavailable'}
+                          </span>
+                        </div>
+
+                        <div class="upgrade-targets">
+                          {#if upgradeProfiles[pool.name]?.upgrades.length}
+                            {#each upgradeProfiles[pool.name]?.upgrades ?? [] as upgrade}
+                              <button
+                                type="button"
+                                class="upgrade-target"
+                                onclick={() => openVersionUpgrade(pool.name, upgrade)}
+                                disabled={poolUpgradeBusy[pool.name]}
+                              >
+                                <span>{upgrade.kubernetesVersion}</span>
+                                {#if upgrade.isPreview}
+                                  <span class="preview-pill">Preview</span>
+                                {/if}
+                              </button>
+                            {/each}
+                          {:else}
+                            <p class="hint">No newer Kubernetes versions available for this pool.</p>
+                          {/if}
+                        </div>
+                      {:else}
+                        <p class="hint">Expand the pool to load Azure upgrade targets.</p>
+                      {/if}
                     </div>
                   </td>
                 </tr>
@@ -696,6 +842,45 @@
         <button type="button" onclick={() => (showDeleteDialog = false)}>Cancel</button>
         <button type="button" class="btn-danger" onclick={submitDelete} disabled={operationInProgress || deleteConfirmText !== deletePoolName}>
           {operationInProgress ? 'Deleting…' : 'Delete Pool'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if pendingUpgrade}
+  <div class="dialog-backdrop" onclick={() => (pendingUpgrade = null)} role="presentation">
+    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Upgrade Node Pool">
+      <h2>
+        {#if pendingUpgrade.type === 'version'}
+          Upgrade {pendingUpgrade.poolName} to Kubernetes {pendingUpgrade.upgrade.kubernetesVersion}
+        {:else}
+          Upgrade node image for {pendingUpgrade.poolName}
+        {/if}
+      </h2>
+      <p class="dialog-subtitle">
+        Azure performs a rolling node replacement for this operation. Pool status will show updating until completion.
+      </p>
+      {#if pendingUpgrade.type === 'version' && pendingUpgrade.upgrade.isPreview}
+        <label class="dialog-field toggle-field">
+          <span>I understand this targets a preview Kubernetes version.</span>
+          <input type="checkbox" bind:checked={previewAcknowledged} />
+        </label>
+      {/if}
+      {#if pendingUpgrade.type === 'node-image'}
+        <p class="hint">
+          Latest available node image: {upgradeProfiles[pendingUpgrade.poolName]?.latestNodeImageVersion ?? 'Unavailable'}
+        </p>
+      {/if}
+      <div class="dialog-actions">
+        <button type="button" onclick={() => (pendingUpgrade = null)}>Cancel</button>
+        <button
+          type="button"
+          class="btn-primary"
+          onclick={confirmUpgrade}
+          disabled={pendingUpgrade.type === 'version' && pendingUpgrade.upgrade.isPreview && !previewAcknowledged}
+        >
+          Confirm Upgrade
         </button>
       </div>
     </div>
@@ -907,6 +1092,77 @@
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
+  }
+  .upgrade-panel {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #21262d;
+  }
+  .upgrade-panel-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+  }
+  .upgrade-panel-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+  .upgrade-panel-header p {
+    margin: 0.25rem 0 0;
+    color: #9e9e9e;
+    font-size: 0.8rem;
+  }
+  .upgrade-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .upgrade-targets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .upgrade-target {
+    background: #0f1724;
+    border: 1px solid #2d3a4d;
+    color: #e0e0e0;
+    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+  }
+  .upgrade-target:hover {
+    border-color: #58a6ff;
+  }
+  .preview-pill {
+    background: rgba(255, 167, 38, 0.2);
+    color: #ffa726;
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+  .inline-message {
+    border-radius: 6px;
+    padding: 0.65rem 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.82rem;
+  }
+  .inline-message.success {
+    background: rgba(102, 187, 106, 0.12);
+    border: 1px solid rgba(102, 187, 106, 0.35);
+    color: #66bb6a;
+  }
+  .inline-message.error {
+    background: rgba(239, 83, 80, 0.12);
+    border: 1px solid rgba(239, 83, 80, 0.35);
+    color: #ef5350;
   }
 
   .details-label {

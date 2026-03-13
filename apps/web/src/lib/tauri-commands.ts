@@ -67,23 +67,39 @@ export interface PowerState {
 
 export interface AksNodePool {
   name: string;
-  vm_size: string | null;
+  vmSize: string | null;
   count: number | null;
-  os_type: string | null;
-  os_disk_size_gb: number | null;
+  osType: string | null;
+  osDiskSizeGb: number | null;
   mode: string | null;
-  orchestrator_version: string | null;
-  enable_auto_scaling: boolean | null;
-  min_count: number | null;
-  max_count: number | null;
-  availability_zones: string[] | null;
-  node_labels: unknown;
-  node_taints: string[] | null;
-  provisioning_state: string | null;
-  power_state: PowerState | null;
-  max_pods: number | null;
-  node_image_version: string | null;
-  vnet_subnet_id: string | null;
+  orchestratorVersion: string | null;
+  enableAutoScaling: boolean | null;
+  minCount: number | null;
+  maxCount: number | null;
+  availabilityZones: string[] | null;
+  nodeLabels: unknown;
+  nodeTaints: string[] | null;
+  provisioningState: string | null;
+  powerState: PowerState | null;
+  maxPods: number | null;
+  nodeImageVersion: string | null;
+  vnetSubnetId: string | null;
+}
+
+export interface AvailableUpgrade {
+  kubernetesVersion: string;
+  isPreview: boolean;
+}
+
+export interface AksUpgradeProfile {
+  currentVersion: string;
+  upgrades: AvailableUpgrade[];
+}
+
+export interface PoolUpgradeProfile {
+  currentVersion: string;
+  upgrades: AvailableUpgrade[];
+  latestNodeImageVersion: string | null;
 }
 
 export interface ContainerMetrics {
@@ -174,6 +190,29 @@ export interface AksClusterDetail {
   securityProfile: {
     workloadIdentity: { enabled: boolean | null } | null;
   } | null;
+  identityProfile: {
+    kubeletidentity: {
+      clientId: string | null;
+      objectId: string | null;
+      resourceId: string | null;
+    } | null;
+  } | null;
+}
+
+export interface AksMaintenanceTimeSpan {
+  start: string | null;
+  end: string | null;
+}
+
+export interface AksMaintenanceTimeInWeek {
+  day: string | null;
+  hourSlots: number[] | null;
+}
+
+export interface AksMaintenanceConfig {
+  name: string;
+  notAllowedTime: AksMaintenanceTimeSpan[];
+  timeInWeek: AksMaintenanceTimeInWeek[];
 }
 
 /**
