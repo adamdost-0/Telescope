@@ -12,6 +12,8 @@ import {
   type PodMetrics,
   type NodeMetricsData,
   type AksIdentityInfo,
+  type AksNodePool,
+  type AksClusterDetail,
 } from './tauri-commands';
 
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -466,6 +468,24 @@ export async function setPreference(key: string, value: string): Promise<void> {
 export async function resolveAksIdentity(): Promise<AksIdentityInfo | null> {
   try {
     return await invoke<AksIdentityInfo | null>('resolve_aks_identity');
+  } catch {
+    return null;
+  }
+}
+
+/** List authoritative AKS node pools from the Azure ARM API. */
+export async function listAksNodePools(): Promise<AksNodePool[]> {
+  try {
+    return await invoke<AksNodePool[]>('list_aks_node_pools');
+  } catch {
+    return [];
+  }
+}
+
+/** Fetch comprehensive AKS cluster details from the Azure ARM API. */
+export async function getAksClusterDetail(): Promise<AksClusterDetail | null> {
+  try {
+    return await invoke<AksClusterDetail | null>('get_aks_cluster_detail');
   } catch {
     return null;
   }

@@ -82,6 +82,12 @@
       ]
     },
     {
+      title: 'Azure',
+      items: [
+        { label: 'Node Pools', href: '/azure/node-pools', icon: '☁️' },
+      ]
+    },
+    {
       title: 'Custom Resources',
       items: [
         { label: 'CRDs', href: '/crds', icon: '🧩' },

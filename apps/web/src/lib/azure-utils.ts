@@ -1,3 +1,5 @@
+import type { AksIdentityInfo } from './tauri-commands';
+
 export interface AksClusterInfo {
   subscriptionId: string;
   resourceGroup: string;
@@ -16,6 +18,15 @@ export function parseAksUrl(serverUrl: string): AksClusterInfo | null {
   return { subscriptionId: '', resourceGroup: '', clusterName: match[1], region: match[2] };
 }
 
+export const PORTAL_BLADES = {
+  overview: 'overview',
+  nodePools: 'nodePool',
+  upgrade: 'upgradeVersion',
+  networking: 'networkingConfiguration',
+  monitoring: 'insightsOverview',
+  activityLog: 'activityLog',
+} as const;
+
 /** Returns true when the server URL matches an AKS managed cluster endpoint. */
 export function isAksCluster(serverUrl: string): boolean {
   return (
@@ -26,10 +37,12 @@ export function isAksCluster(serverUrl: string): boolean {
 
 /** Build an Azure Portal deep-link for the given AKS cluster. */
 export function getAzurePortalUrl(
-  info: AksClusterInfo,
+  identity: AksIdentityInfo,
   cloud: AzureCloud | string = 'Commercial',
+  blade?: string,
 ): string | null {
-  if (!info.subscriptionId || !info.resourceGroup || !info.clusterName) return null;
+  if (!identity?.subscription_id || !identity?.resource_group || !identity?.cluster_name) return null;
+
   const portalBase =
     cloud === 'UsGovernment'
       ? 'https://portal.azure.us'
@@ -39,11 +52,13 @@ export function getAzurePortalUrl(
           ? 'https://portal.azure.microsoft.eaglex.ic.gov'
           : 'https://portal.azure.com';
 
-  return (
-    `${portalBase}/#resource/subscriptions/${info.subscriptionId}` +
-    `/resourceGroups/${info.resourceGroup}` +
-    `/providers/Microsoft.ContainerService/managedClusters/${info.clusterName}/overview`
-  );
+  const resourcePath =
+    `/subscriptions/${identity.subscription_id}` +
+    `/resourceGroups/${identity.resource_group}` +
+    `/providers/Microsoft.ContainerService/managedClusters/${identity.cluster_name}`;
+
+  const bladeSuffix = blade ? `/${blade}` : '';
+  return `${portalBase}/#resource${resourcePath}${bladeSuffix}`;
 }
 
 /** Merge resolved AKS identity data into a parsed AKS cluster info object. */

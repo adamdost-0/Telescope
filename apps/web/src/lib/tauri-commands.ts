@@ -61,6 +61,31 @@ export interface AksIdentityInfo {
   arm_resource_id: string;
 }
 
+export interface PowerState {
+  code: string | null;
+}
+
+export interface AksNodePool {
+  name: string;
+  vm_size: string | null;
+  count: number | null;
+  os_type: string | null;
+  os_disk_size_gb: number | null;
+  mode: string | null;
+  orchestrator_version: string | null;
+  enable_auto_scaling: boolean | null;
+  min_count: number | null;
+  max_count: number | null;
+  availability_zones: string[] | null;
+  node_labels: unknown;
+  node_taints: string[] | null;
+  provisioning_state: string | null;
+  power_state: PowerState | null;
+  max_pods: number | null;
+  node_image_version: string | null;
+  vnet_subnet_id: string | null;
+}
+
 export interface ContainerMetrics {
   name: string;
   cpu_millicores: number;
@@ -110,6 +135,45 @@ export interface HelmRelease {
   revision: number;
   status: string;
   updated: string;
+}
+
+export interface AksClusterDetail {
+  kubernetesVersion: string | null;
+  provisioningState: string | null;
+  powerState: { code: string | null } | null;
+  fqdn: string | null;
+  dnsPrefix: string | null;
+  sku: { name: string | null; tier: string | null } | null;
+  networkProfile: {
+    networkPlugin: string | null;
+    networkPolicy: string | null;
+    serviceCidr: string | null;
+    podCidr: string | null;
+    dnsServiceIp: string | null;
+    outboundType: string | null;
+    loadBalancerSku: string | null;
+  } | null;
+  apiServerAccessProfile: {
+    authorizedIpRanges: string[] | null;
+    enablePrivateCluster: boolean | null;
+  } | null;
+  identity: {
+    type_: string | null;
+    principalId: string | null;
+    tenantId: string | null;
+  } | null;
+  addonProfiles: Record<string, unknown> | null;
+  autoUpgradeProfile: {
+    upgradeChannel: string | null;
+    nodeOsUpgradeChannel: string | null;
+  } | null;
+  oidcIssuerProfile: {
+    enabled: boolean | null;
+    issuerUrl: string | null;
+  } | null;
+  securityProfile: {
+    workloadIdentity: { enabled: boolean | null } | null;
+  } | null;
 }
 
 /**

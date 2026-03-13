@@ -1,14 +1,22 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getResourceCounts, getPods, getEvents, activeContext, getClusterInfo, getPodMetrics } from '$lib/api';
+  import {
+    activeContext,
+    getAksClusterDetail,
+    getAzureCloud,
+    getClusterInfo,
+    getEvents,
+    getPodMetrics,
+    getPods,
+    getResourceCounts,
+    resolveAksIdentity,
+  } from '$lib/api';
   import { getAutoRefreshIntervalMs } from '$lib/preferences';
-  import { selectedContext, selectedNamespace, isConnected, clusterServerUrl, isAks } from '$lib/stores';
-  import { getAzureCloud } from '$lib/api';
-  import { parseAksUrl, getAzurePortalUrl } from '$lib/azure-utils';
+  import { selectedContext, selectedNamespace, isConnected, isAks } from '$lib/stores';
+  import { PORTAL_BLADES, getAzurePortalUrl } from '$lib/azure-utils';
   import AksAddons from '$lib/components/AksAddons.svelte';
   import ErrorMessage from '$lib/components/ErrorMessage.svelte';
-  import type { ResourceEntry } from '$lib/tauri-commands';
-  import type { ClusterInfo } from '$lib/tauri-commands';
+  import type { AksClusterDetail, AksIdentityInfo, ClusterInfo, ResourceEntry } from '$lib/tauri-commands';
 
   // Resource counts keyed by GVK
   let counts: Map<string, number> = $state(new Map());
@@ -31,9 +39,18 @@
   }
 
   let namespaceUsage: NamespaceUsage[] = $state([]);
+  let aksIdentity: AksIdentityInfo | null = $state(null);
+  let aksDetail: AksClusterDetail | null = $state(null);
+  let azureCloud = $state('Commercial');
 
   let staleData = $derived(
     lastSuccessfulRefresh !== null && Date.now() - lastSuccessfulRefresh > 30_000
+  );
+  let hasAksPortalIdentity = $derived(
+    (clusterInfo?.is_aks || $isAks) &&
+      !!aksIdentity?.subscription_id &&
+      !!aksIdentity?.resource_group &&
+      !!aksIdentity?.cluster_name
   );
 
   interface PodPhase {
@@ -122,7 +139,17 @@
   onMount(() => {
     refresh();
     // Fetch cluster info once (not on every poll cycle).
-    getClusterInfo().then((info) => { clusterInfo = info; });
+    void Promise.all([getClusterInfo(), resolveAksIdentity(), getAzureCloud()]).then(
+      ([info, identity, cloud]) => {
+        clusterInfo = info;
+        aksIdentity = identity;
+        azureCloud = cloud;
+        // Fetch ARM cluster detail after identity is resolved.
+        if (identity && (info?.is_aks)) {
+          getAksClusterDetail().then((detail) => { aksDetail = detail; });
+        }
+      },
+    );
     // Fetch namespace usage once and then every 30s
     refreshNamespaceUsage();
     namespaceTimer = setInterval(refreshNamespaceUsage, 30_000);
@@ -193,12 +220,21 @@
     Unknown: '#757575',
   };
 
-  async function openInPortal() {
-    const url = clusterInfo?.server_url || $clusterServerUrl;
-    if (!url) return;
-    const info = parseAksUrl(url);
-    if (!info) return;
-    const portalUrl = getAzurePortalUrl(info, await getAzureCloud());
+  function getPortalUrl(blade?: string): string | null {
+    return aksIdentity ? getAzurePortalUrl(aksIdentity, azureCloud, blade) : null;
+  }
+
+  const azurePortalSections = [
+    { label: 'Overview', description: 'Cluster summary and health', blade: PORTAL_BLADES.overview },
+    { label: 'Node Pools', description: 'Scaling and pool configuration', blade: PORTAL_BLADES.nodePools },
+    { label: 'Upgrades', description: 'Available Kubernetes version upgrades', blade: PORTAL_BLADES.upgrade },
+    { label: 'Networking', description: 'Load balancers, IPs, and CNI settings', blade: PORTAL_BLADES.networking },
+    { label: 'Monitoring', description: 'Container insights and observability', blade: PORTAL_BLADES.monitoring },
+    { label: 'Activity Log', description: 'Recent Azure management operations', blade: PORTAL_BLADES.activityLog },
+  ] as const;
+
+  function openInPortal(blade = PORTAL_BLADES.overview) {
+    const portalUrl = getPortalUrl(blade);
     if (portalUrl) {
       window.open(portalUrl, '_blank', 'noopener');
     }
@@ -259,14 +295,203 @@
           </span>
         </div>
       {/if}
-      {#if clusterInfo?.is_aks || $isAks}
+      {#if hasAksPortalIdentity}
         <div class="info-item portal-link">
-          <button class="portal-btn" onclick={openInPortal} title="Open cluster in Azure Portal">
+          <button class="portal-btn" onclick={() => openInPortal()} title="Open cluster in Azure Portal">
             🌐 Open in Azure Portal
           </button>
         </div>
       {/if}
     </section>
+
+    {#if hasAksPortalIdentity}
+      <section aria-label="Azure management">
+        <div class="section-heading">
+          <h2>Azure</h2>
+          <span class="section-subtitle">Portal deep links for this AKS cluster</span>
+        </div>
+        <div class="azure-grid">
+          {#each azurePortalSections as section}
+            {@const href = getPortalUrl(section.blade)}
+            {#if href}
+              <a class="azure-card" href={href} target="_blank" rel="noopener">
+                <div class="azure-card-header">
+                  <span>{section.label}</span>
+                  <span class="azure-card-action">View in Portal ↗</span>
+                </div>
+                <p>{section.description}</p>
+              </a>
+            {/if}
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if aksDetail}
+      <section aria-label="AKS cluster details" data-testid="aks-cluster-detail">
+        <div class="section-heading">
+          <h2>AKS Cluster Details</h2>
+          <span class="section-subtitle">Live data from Azure Resource Manager</span>
+        </div>
+        <div class="detail-grid">
+          <!-- Azure Info -->
+          <div class="detail-card">
+            <h3>Azure Info</h3>
+            <dl class="detail-list">
+              {#if aksIdentity?.subscription_id}
+                <dt>Subscription</dt>
+                <dd class="mono">{aksIdentity.subscription_id}</dd>
+              {/if}
+              {#if aksIdentity?.resource_group}
+                <dt>Resource Group</dt>
+                <dd>{aksIdentity.resource_group}</dd>
+              {/if}
+              {#if aksDetail.sku?.tier}
+                <dt>SKU Tier</dt>
+                <dd>
+                  <span class="tier-badge tier-{aksDetail.sku.tier.toLowerCase()}">{aksDetail.sku.tier}</span>
+                </dd>
+              {/if}
+              {#if aksDetail.provisioningState}
+                <dt>Provisioning</dt>
+                <dd>
+                  <span class="state-badge state-{aksDetail.provisioningState.toLowerCase()}">{aksDetail.provisioningState}</span>
+                </dd>
+              {/if}
+              {#if aksDetail.powerState?.code}
+                <dt>Power State</dt>
+                <dd>
+                  <span class="power-badge power-{aksDetail.powerState.code.toLowerCase()}">{aksDetail.powerState.code}</span>
+                </dd>
+              {/if}
+            </dl>
+          </div>
+
+          <!-- Network -->
+          {#if aksDetail.networkProfile}
+            <div class="detail-card">
+              <h3>Network</h3>
+              <dl class="detail-list">
+                {#if aksDetail.networkProfile.networkPlugin}
+                  <dt>Plugin</dt>
+                  <dd>{aksDetail.networkProfile.networkPlugin}</dd>
+                {/if}
+                {#if aksDetail.networkProfile.networkPolicy}
+                  <dt>Policy</dt>
+                  <dd>{aksDetail.networkProfile.networkPolicy}</dd>
+                {/if}
+                {#if aksDetail.networkProfile.serviceCidr}
+                  <dt>Service CIDR</dt>
+                  <dd class="mono">{aksDetail.networkProfile.serviceCidr}</dd>
+                {/if}
+                {#if aksDetail.networkProfile.podCidr}
+                  <dt>Pod CIDR</dt>
+                  <dd class="mono">{aksDetail.networkProfile.podCidr}</dd>
+                {/if}
+                {#if aksDetail.networkProfile.dnsServiceIp}
+                  <dt>DNS Service IP</dt>
+                  <dd class="mono">{aksDetail.networkProfile.dnsServiceIp}</dd>
+                {/if}
+                {#if aksDetail.networkProfile.outboundType}
+                  <dt>Outbound</dt>
+                  <dd>{aksDetail.networkProfile.outboundType}</dd>
+                {/if}
+                {#if aksDetail.networkProfile.loadBalancerSku}
+                  <dt>LB SKU</dt>
+                  <dd>{aksDetail.networkProfile.loadBalancerSku}</dd>
+                {/if}
+              </dl>
+            </div>
+          {/if}
+
+          <!-- API Server -->
+          {#if aksDetail.apiServerAccessProfile}
+            <div class="detail-card">
+              <h3>API Server</h3>
+              <dl class="detail-list">
+                <dt>Access</dt>
+                <dd>
+                  {#if aksDetail.apiServerAccessProfile.enablePrivateCluster}
+                    <span class="access-badge private">🔒 Private</span>
+                  {:else}
+                    <span class="access-badge public">🌐 Public</span>
+                  {/if}
+                </dd>
+                {#if aksDetail.apiServerAccessProfile.authorizedIpRanges?.length}
+                  <dt>Authorized IPs</dt>
+                  <dd class="mono ip-list">
+                    {#each aksDetail.apiServerAccessProfile.authorizedIpRanges as range}
+                      <span class="ip-range">{range}</span>
+                    {/each}
+                  </dd>
+                {/if}
+              </dl>
+            </div>
+          {/if}
+
+          <!-- Identity -->
+          {#if aksDetail.identity}
+            <div class="detail-card">
+              <h3>Identity</h3>
+              <dl class="detail-list">
+                {#if aksDetail.identity.type_}
+                  <dt>Type</dt>
+                  <dd>{aksDetail.identity.type_}</dd>
+                {/if}
+                {#if aksDetail.identity.principalId}
+                  <dt>Principal ID</dt>
+                  <dd class="mono truncate" title={aksDetail.identity.principalId}>{aksDetail.identity.principalId}</dd>
+                {/if}
+                {#if aksDetail.identity.tenantId}
+                  <dt>Tenant ID</dt>
+                  <dd class="mono truncate" title={aksDetail.identity.tenantId}>{aksDetail.identity.tenantId}</dd>
+                {/if}
+              </dl>
+            </div>
+          {/if}
+
+          <!-- Upgrade -->
+          <div class="detail-card">
+            <h3>Upgrades</h3>
+            <dl class="detail-list">
+              {#if aksDetail.kubernetesVersion}
+                <dt>K8s Version</dt>
+                <dd>{aksDetail.kubernetesVersion}</dd>
+              {/if}
+              {#if aksDetail.autoUpgradeProfile?.upgradeChannel}
+                <dt>Auto-Upgrade</dt>
+                <dd>{aksDetail.autoUpgradeProfile.upgradeChannel}</dd>
+              {/if}
+              {#if aksDetail.autoUpgradeProfile?.nodeOsUpgradeChannel}
+                <dt>Node OS Channel</dt>
+                <dd>{aksDetail.autoUpgradeProfile.nodeOsUpgradeChannel}</dd>
+              {/if}
+            </dl>
+          </div>
+
+          <!-- Security / OIDC -->
+          {#if aksDetail.oidcIssuerProfile?.enabled || aksDetail.securityProfile?.workloadIdentity?.enabled}
+            <div class="detail-card">
+              <h3>Security</h3>
+              <dl class="detail-list">
+                {#if aksDetail.oidcIssuerProfile?.enabled}
+                  <dt>OIDC Issuer</dt>
+                  <dd>
+                    <span class="enabled-badge">✓ Enabled</span>
+                  </dd>
+                {/if}
+                {#if aksDetail.securityProfile?.workloadIdentity?.enabled}
+                  <dt>Workload Identity</dt>
+                  <dd>
+                    <span class="enabled-badge">✓ Enabled</span>
+                  </dd>
+                {/if}
+              </dl>
+            </div>
+          {/if}
+        </div>
+      </section>
+    {/if}
 
     <!-- Resource counts grid -->
     <section aria-label="Resource counts">
@@ -489,6 +714,154 @@
   .portal-btn:hover {
     background: rgba(0, 120, 212, 0.3);
     border-color: #0078d4;
+  }
+  .section-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .section-subtitle {
+    color: #8b949e;
+    font-size: 0.8rem;
+  }
+  .azure-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.75rem;
+  }
+  .azure-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.9rem 1rem;
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #e0e0e0;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .azure-card:hover {
+    border-color: #58a6ff;
+    background: #1a2332;
+  }
+  .azure-card-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-weight: 600;
+  }
+  .azure-card-action {
+    color: #58a6ff;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+  .azure-card p {
+    margin: 0;
+    color: #8b949e;
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+
+  /* AKS detail grid */
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+  }
+  .detail-card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+  }
+  .detail-card h3 {
+    margin: 0 0 0.6rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .detail-list {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.3rem 0.75rem;
+    margin: 0;
+  }
+  .detail-list dt {
+    font-size: 0.78rem;
+    color: #484f58;
+    white-space: nowrap;
+  }
+  .detail-list dd {
+    font-size: 0.82rem;
+    color: #e0e0e0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .detail-list dd.mono {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+    font-size: 0.78rem;
+  }
+  .detail-list dd.truncate {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tier-badge {
+    display: inline-block;
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+  .tier-badge.tier-free { background: rgba(139, 148, 158, 0.2); color: #8b949e; }
+  .tier-badge.tier-standard { background: rgba(0, 120, 212, 0.2); color: #58a6ff; }
+  .tier-badge.tier-premium { background: rgba(130, 80, 223, 0.2); color: #a371f7; }
+  .state-badge {
+    display: inline-block;
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 500;
+  }
+  .state-badge.state-succeeded { background: rgba(102, 187, 106, 0.2); color: #66bb6a; }
+  .state-badge.state-failed { background: rgba(239, 83, 80, 0.2); color: #ef5350; }
+  .state-badge.state-creating,
+  .state-badge.state-updating { background: rgba(255, 167, 38, 0.2); color: #ffa726; }
+  .power-badge {
+    display: inline-block;
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 500;
+  }
+  .power-badge.power-running { background: rgba(102, 187, 106, 0.2); color: #66bb6a; }
+  .power-badge.power-stopped { background: rgba(139, 148, 158, 0.2); color: #8b949e; }
+  .access-badge {
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+  .access-badge.private { color: #ffa726; }
+  .access-badge.public { color: #58a6ff; }
+  .ip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .ip-range {
+    background: #21262d;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+  }
+  .enabled-badge {
+    color: #66bb6a;
+    font-size: 0.78rem;
   }
 
   /* Card grid */

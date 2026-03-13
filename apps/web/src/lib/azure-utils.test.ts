@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAksUrl, isAksCluster, getAzurePortalUrl } from './azure-utils';
+import { PORTAL_BLADES, parseAksUrl, isAksCluster, getAzurePortalUrl } from './azure-utils';
 
 describe('isAksCluster', () => {
   it('returns true for standard AKS URL', () => {
@@ -61,12 +61,17 @@ describe('parseAksUrl', () => {
 
 describe('getAzurePortalUrl', () => {
   it('returns portal URL when subscription and resource group are set', () => {
-    const url = getAzurePortalUrl({
-      subscriptionId: 'sub-123',
-      resourceGroup: 'rg-prod',
-      clusterName: 'my-cluster',
-      region: 'eastus2',
-    });
+    const url = getAzurePortalUrl(
+      {
+        subscription_id: 'sub-123',
+        resource_group: 'rg-prod',
+        cluster_name: 'my-cluster',
+        arm_resource_id:
+          '/subscriptions/sub-123/resourceGroups/rg-prod/providers/Microsoft.ContainerService/managedClusters/my-cluster',
+      },
+      'Commercial',
+      PORTAL_BLADES.overview,
+    );
     expect(url).toBe(
       'https://portal.azure.com/#resource/subscriptions/sub-123/resourceGroups/rg-prod/providers/Microsoft.ContainerService/managedClusters/my-cluster/overview',
     );
@@ -75,27 +80,67 @@ describe('getAzurePortalUrl', () => {
   it('returns Azure Government portal URL when requested', () => {
     const url = getAzurePortalUrl(
       {
-        subscriptionId: 'sub-123',
-        resourceGroup: 'rg-prod',
-        clusterName: 'my-cluster',
-        region: 'usgovvirginia',
+        subscription_id: 'sub-123',
+        resource_group: 'rg-prod',
+        cluster_name: 'my-cluster',
+        arm_resource_id:
+          '/subscriptions/sub-123/resourceGroups/rg-prod/providers/Microsoft.ContainerService/managedClusters/my-cluster',
       },
       'UsGovernment',
     );
     expect(url).toBe(
-      'https://portal.azure.us/#resource/subscriptions/sub-123/resourceGroups/rg-prod/providers/Microsoft.ContainerService/managedClusters/my-cluster/overview',
+      'https://portal.azure.us/#resource/subscriptions/sub-123/resourceGroups/rg-prod/providers/Microsoft.ContainerService/managedClusters/my-cluster',
     );
   });
 
-  it('returns null when subscriptionId is empty', () => {
+  it('returns blade-specific portal URLs', () => {
     expect(
-      getAzurePortalUrl({ subscriptionId: '', resourceGroup: 'rg', clusterName: 'c', region: 'r' }),
+      getAzurePortalUrl(
+        {
+          subscription_id: 'sub',
+          resource_group: 'rg',
+          cluster_name: 'c',
+          arm_resource_id:
+            '/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/c',
+        },
+        'Commercial',
+        PORTAL_BLADES.nodePools,
+      ),
+    ).toBe(
+      'https://portal.azure.com/#resource/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/c/nodePool',
+    );
+  });
+
+  it('returns null when subscription_id is empty', () => {
+    expect(
+      getAzurePortalUrl({
+        subscription_id: '',
+        resource_group: 'rg',
+        cluster_name: 'c',
+        arm_resource_id: '',
+      }),
     ).toBeNull();
   });
 
-  it('returns null when resourceGroup is empty', () => {
+  it('returns null when resource_group is empty', () => {
     expect(
-      getAzurePortalUrl({ subscriptionId: 'sub', resourceGroup: '', clusterName: 'c', region: 'r' }),
+      getAzurePortalUrl({
+        subscription_id: 'sub',
+        resource_group: '',
+        cluster_name: 'c',
+        arm_resource_id: '',
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when cluster_name is empty', () => {
+    expect(
+      getAzurePortalUrl({
+        subscription_id: 'sub',
+        resource_group: 'rg',
+        cluster_name: '',
+        arm_resource_id: '',
+      }),
     ).toBeNull();
   });
 });

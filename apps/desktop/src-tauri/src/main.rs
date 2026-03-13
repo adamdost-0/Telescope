@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use futures::{AsyncBufReadExt, TryStreamExt};
 use tauri::{AppHandle, Emitter, State};
-use telescope_azure::AzureCloud;
+use telescope_azure::{AksNodePool, ArmClient, AzureCloud};
 use tokio::sync::{Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -121,25 +121,7 @@ struct AksIdentityInfo {
 async fn resolve_aks_identity(
     state: State<'_, AppState>,
 ) -> Result<Option<AksIdentityInfo>, String> {
-    let ctx = state.active_context.read().await.clone();
-    let context_name = ctx.ok_or_else(|| "Not connected".to_string())?;
-    let client = telescope_engine::client::create_client_for_context(&context_name)
-        .await
-        .map_err(|e| e.to_string())?;
-    let info = telescope_engine::client::get_cluster_info(&client, &context_name)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if !info.is_aks {
-        return Ok(None);
-    }
-
-    let preferred_id = {
-        let store_guard = state.store.lock().map_err(|e| e.to_string())?;
-        telescope_azure::resolve_aks_identity_from_preferences(Some(&store_guard))
-    };
-
-    match telescope_azure::resolve_aks_identity(&info.server_url, preferred_id).await {
+    match resolve_active_aks_resource_id(&state).await? {
         Some(id) => Ok(Some(AksIdentityInfo {
             arm_resource_id: id.arm_path(),
             subscription_id: id.subscription_id,
@@ -148,6 +130,19 @@ async fn resolve_aks_identity(
         })),
         None => Ok(None),
     }
+}
+
+/// List AKS node pools from the Azure ARM API for the active cluster.
+#[tauri::command]
+async fn list_aks_node_pools(state: State<'_, AppState>) -> Result<Vec<AksNodePool>, String> {
+    let resource_id = resolve_active_aks_resource_id(&state)
+        .await?
+        .ok_or_else(|| "Azure node pool data requires an AKS cluster".to_string())?;
+    let cloud = configured_azure_cloud(&state).await?;
+    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    telescope_azure::list_node_pools(&client, &resource_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// List available Kubernetes contexts from kubeconfig.
@@ -1086,6 +1081,49 @@ async fn detect_active_azure_cloud(state: &State<'_, AppState>) -> Result<AzureC
         .unwrap_or_default())
 }
 
+async fn resolve_active_aks_resource_id(
+    state: &State<'_, AppState>,
+) -> Result<Option<telescope_azure::AksResourceId>, String> {
+    let ctx = state.active_context.read().await.clone();
+    let context_name = ctx.ok_or_else(|| "Not connected".to_string())?;
+    let client = telescope_engine::client::create_client_for_context(&context_name)
+        .await
+        .map_err(|e| e.to_string())?;
+    let info = telescope_engine::client::get_cluster_info(&client, &context_name)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !info.is_aks {
+        return Ok(None);
+    }
+
+    let preferred_id = {
+        let store_guard = state.store.lock().map_err(|e| e.to_string())?;
+        telescope_azure::resolve_aks_identity_from_preferences(Some(&store_guard))
+    };
+
+    Ok(telescope_azure::resolve_aks_identity(&info.server_url, preferred_id).await)
+}
+
+async fn configured_azure_cloud(state: &State<'_, AppState>) -> Result<AzureCloud, String> {
+    let preference = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        store
+            .get_preference("azure_cloud")
+            .map_err(|e| e.to_string())?
+    };
+
+    if let Some(value) = preference {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("auto") {
+            return parse_azure_cloud(trimmed)
+                .ok_or_else(|| format!("Invalid azure_cloud preference: {}", trimmed));
+        }
+    }
+
+    detect_active_azure_cloud(state).await
+}
+
 async fn active_client(state: &State<'_, AppState>) -> Result<kube::Client, String> {
     let context_name = state
         .active_context
@@ -1656,25 +1694,52 @@ fn set_preference(state: State<'_, AppState>, key: String, value: String) -> Res
         .map_err(|e| e.to_string())
 }
 
+/// Fetch comprehensive AKS cluster details from the Azure ARM API.
 #[tauri::command]
-async fn get_azure_cloud(state: State<'_, AppState>) -> Result<String, String> {
-    let preference = {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
-        store
-            .get_preference("azure_cloud")
-            .map_err(|e| e.to_string())?
-    };
+async fn get_aks_cluster_detail(
+    state: State<'_, AppState>,
+) -> Result<Option<telescope_azure::aks::AksClusterDetail>, String> {
+    let ctx = state.active_context.read().await.clone();
+    let context_name = ctx.ok_or_else(|| "Not connected".to_string())?;
+    let client = telescope_engine::client::create_client_for_context(&context_name)
+        .await
+        .map_err(|e| e.to_string())?;
+    let info = telescope_engine::client::get_cluster_info(&client, &context_name)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    if let Some(value) = preference {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("auto") {
-            let cloud = parse_azure_cloud(trimmed)
-                .ok_or_else(|| format!("Invalid azure_cloud preference: {}", trimmed))?;
-            return Ok(azure_cloud_name(cloud).to_string());
-        }
+    if !info.is_aks {
+        return Ok(None);
     }
 
-    Ok(azure_cloud_name(detect_active_azure_cloud(&state).await?).to_string())
+    // Resolve AKS identity (subscription, RG, cluster name).
+    let preferred_id = {
+        let store_guard = state.store.lock().map_err(|e| e.to_string())?;
+        telescope_azure::resolve_aks_identity_from_preferences(Some(&store_guard))
+    };
+
+    let resource_id =
+        match telescope_azure::resolve_aks_identity(&info.server_url, preferred_id).await {
+            Some(id) => id,
+            None => return Ok(None),
+        };
+
+    // Determine Azure cloud and create ARM client.
+    let cloud = detect_active_azure_cloud(&state).await?;
+    let arm_client = telescope_azure::ArmClient::new(cloud).map_err(|e| e.to_string())?;
+
+    match telescope_azure::aks::get_cluster(&arm_client, &resource_id).await {
+        Ok(detail) => Ok(Some(detail)),
+        Err(e) => {
+            tracing::warn!("Failed to fetch AKS cluster detail: {e}");
+            Err(e.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+async fn get_azure_cloud(state: State<'_, AppState>) -> Result<String, String> {
+    Ok(azure_cloud_name(configured_azure_cloud(&state).await?).to_string())
 }
 
 #[tauri::command]
@@ -1751,6 +1816,7 @@ fn main() {
             get_connection_state,
             get_cluster_info,
             resolve_aks_identity,
+            list_aks_node_pools,
             get_pods,
             get_resources,
             get_events,
@@ -1798,6 +1864,7 @@ fn main() {
             set_preference,
             get_azure_cloud,
             set_azure_cloud,
+            get_aks_cluster_detail,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");
