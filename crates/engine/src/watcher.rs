@@ -8,10 +8,20 @@ use std::sync::{Arc, Mutex};
 
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::{
+    admissionregistration::v1::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
     apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet},
+    autoscaling::v2::HorizontalPodAutoscaler,
     batch::v1::{CronJob, Job},
-    core::v1::{ConfigMap, Event as K8sEvent, Node, PersistentVolumeClaim, Pod, Secret, Service},
-    networking::v1::Ingress,
+    core::v1::{
+        ConfigMap, Event as K8sEvent, LimitRange, Node, PersistentVolume, PersistentVolumeClaim,
+        Pod, ResourceQuota, Secret, Service, ServiceAccount,
+    },
+    discovery::v1::EndpointSlice,
+    networking::v1::{Ingress, NetworkPolicy},
+    policy::v1::PodDisruptionBudget,
+    rbac::v1::{ClusterRole, ClusterRoleBinding, Role, RoleBinding},
+    scheduling::v1::PriorityClass,
+    storage::v1::StorageClass,
 };
 use k8s_openapi::{ClusterResourceScope, NamespaceResourceScope};
 use kube::{
@@ -387,9 +397,114 @@ impl ResourceWatcher {
             .await
     }
 
+    /// Watch NetworkPolicies in a namespace.
+    pub async fn watch_network_policies(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<NetworkPolicy>("networking.k8s.io/v1/NetworkPolicy", namespace)
+            .await
+    }
+
+    /// Watch EndpointSlices in a namespace.
+    pub async fn watch_endpoint_slices(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<EndpointSlice>("discovery.k8s.io/v1/EndpointSlice", namespace)
+            .await
+    }
+
     /// Watch PersistentVolumeClaims in a namespace.
     pub async fn watch_pvcs(&self, namespace: &str) -> crate::Result<()> {
         self.watch_resource::<PersistentVolumeClaim>("v1/PersistentVolumeClaim", namespace)
+            .await
+    }
+
+    /// Watch ResourceQuotas in a namespace.
+    pub async fn watch_resource_quotas(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<ResourceQuota>("v1/ResourceQuota", namespace)
+            .await
+    }
+
+    /// Watch LimitRanges in a namespace.
+    pub async fn watch_limit_ranges(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<LimitRange>("v1/LimitRange", namespace)
+            .await
+    }
+
+    /// Watch Roles in a namespace.
+    pub async fn watch_roles(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<Role>("rbac.authorization.k8s.io/v1/Role", namespace)
+            .await
+    }
+
+    /// Watch ClusterRoles (cluster-scoped).
+    pub async fn watch_cluster_roles(&self) -> crate::Result<()> {
+        self.watch_cluster_resource::<ClusterRole>("rbac.authorization.k8s.io/v1/ClusterRole")
+            .await
+    }
+
+    /// Watch RoleBindings in a namespace.
+    pub async fn watch_role_bindings(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<RoleBinding>("rbac.authorization.k8s.io/v1/RoleBinding", namespace)
+            .await
+    }
+
+    /// Watch ClusterRoleBindings (cluster-scoped).
+    pub async fn watch_cluster_role_bindings(&self) -> crate::Result<()> {
+        self.watch_cluster_resource::<ClusterRoleBinding>(
+            "rbac.authorization.k8s.io/v1/ClusterRoleBinding",
+        )
+        .await
+    }
+
+    /// Watch ServiceAccounts in a namespace.
+    pub async fn watch_service_accounts(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<ServiceAccount>("v1/ServiceAccount", namespace)
+            .await
+    }
+
+    /// Watch HorizontalPodAutoscalers in a namespace.
+    pub async fn watch_hpas(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<HorizontalPodAutoscaler>(
+            "autoscaling/v2/HorizontalPodAutoscaler",
+            namespace,
+        )
+        .await
+    }
+
+    /// Watch PodDisruptionBudgets in a namespace.
+    pub async fn watch_pod_disruption_budgets(&self, namespace: &str) -> crate::Result<()> {
+        self.watch_resource::<PodDisruptionBudget>("policy/v1/PodDisruptionBudget", namespace)
+            .await
+    }
+
+    /// Watch PriorityClasses (cluster-scoped).
+    pub async fn watch_priority_classes(&self) -> crate::Result<()> {
+        self.watch_cluster_resource::<PriorityClass>("scheduling.k8s.io/v1/PriorityClass")
+            .await
+    }
+
+    /// Watch ValidatingWebhookConfigurations (cluster-scoped).
+    pub async fn watch_validating_webhooks(&self) -> crate::Result<()> {
+        self.watch_cluster_resource::<ValidatingWebhookConfiguration>(
+            "admissionregistration.k8s.io/v1/ValidatingWebhookConfiguration",
+        )
+        .await
+    }
+
+    /// Watch MutatingWebhookConfigurations (cluster-scoped).
+    pub async fn watch_mutating_webhooks(&self) -> crate::Result<()> {
+        self.watch_cluster_resource::<MutatingWebhookConfiguration>(
+            "admissionregistration.k8s.io/v1/MutatingWebhookConfiguration",
+        )
+        .await
+    }
+
+    /// Watch StorageClasses (cluster-scoped).
+    pub async fn watch_storage_classes(&self) -> crate::Result<()> {
+        self.watch_cluster_resource::<StorageClass>("storage.k8s.io/v1/StorageClass")
+            .await
+    }
+
+    /// Watch PersistentVolumes (cluster-scoped).
+    pub async fn watch_persistent_volumes(&self) -> crate::Result<()> {
+        self.watch_cluster_resource::<PersistentVolume>("v1/PersistentVolume")
             .await
     }
 }

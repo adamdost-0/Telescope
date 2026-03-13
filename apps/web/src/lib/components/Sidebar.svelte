@@ -22,6 +22,7 @@
         { label: 'Overview', href: '/overview', icon: '📊' },
         { label: 'Create', href: '/create', icon: '➕' },
         { label: 'Nodes', href: '/nodes', icon: '🖥️' },
+        { label: 'Priority Classes', href: '/resources/priorityclasses', icon: '🏷️' },
         { label: 'Events', href: '/events', icon: '⚡' },
       ]
     },
@@ -34,6 +35,8 @@
         { label: 'DaemonSets', href: '/resources/daemonsets', icon: '🔄' },
         { label: 'Jobs', href: '/resources/jobs', icon: '⚙️' },
         { label: 'CronJobs', href: '/resources/cronjobs', icon: '🕐' },
+        { label: 'HPAs', href: '/resources/hpas', icon: '📈' },
+        { label: 'PDBs', href: '/resources/poddisruptionbudgets', icon: '🛡️' },
       ]
     },
     {
@@ -41,6 +44,8 @@
       items: [
         { label: 'Services', href: '/resources/services', icon: '🌐' },
         { label: 'Ingresses', href: '/resources/ingresses', icon: '🚪' },
+        { label: 'NetworkPolicies', href: '/resources/networkpolicies', icon: '🔰' },
+        { label: 'EndpointSlices', href: '/resources/endpointslices', icon: '🧭' },
       ]
     },
     {
@@ -48,12 +53,25 @@
       items: [
         { label: 'ConfigMaps', href: '/resources/configmaps', icon: '📋' },
         { label: 'Secrets', href: '/resources/secrets', icon: '🔒' },
+        { label: 'ResourceQuotas', href: '/resources/resourcequotas', icon: '📏' },
+        { label: 'LimitRanges', href: '/resources/limitranges', icon: '📐' },
       ]
     },
     {
       title: 'Storage',
       items: [
         { label: 'PVCs', href: '/resources/pvcs', icon: '💾' },
+        { label: 'Persistent Volumes', href: '/resources/persistentvolumes', icon: '🗃️' },
+        { label: 'Storage Classes', href: '/resources/storageclasses', icon: '🏷️' },
+      ]
+    },
+    {
+      title: 'Security',
+      items: [
+        { label: 'Roles', href: '/resources/roles', icon: '🛡️' },
+        { label: 'Bindings', href: '/resources/rolebindings', icon: '🔗' },
+        { label: 'Service Accounts', href: '/resources/serviceaccounts', icon: '👤' },
+        { label: 'Webhooks', href: '/resources/webhooks', icon: '🪝' },
       ]
     },
     {

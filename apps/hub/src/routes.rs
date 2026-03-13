@@ -1261,6 +1261,55 @@ async fn spawn_watch_task(state: &HubState, client: kube::Client, namespace: &st
         }
     }));
 
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_cluster_roles().await {
+            error!("ClusterRole watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_cluster_role_bindings().await {
+            error!("ClusterRoleBinding watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_priority_classes().await {
+            error!("PriorityClass watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_validating_webhooks().await {
+            error!("ValidatingWebhookConfiguration watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_mutating_webhooks().await {
+            error!("MutatingWebhookConfiguration watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_storage_classes().await {
+            error!("StorageClass watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_persistent_volumes().await {
+            error!("PersistentVolume watch error: {}", e);
+        }
+    }));
+
     // Namespaced resource watchers
     macro_rules! spawn_ns_watch {
         ($watcher:expr, $ns:expr, $tasks:ident, $method:ident, $label:expr) => {{
@@ -1283,7 +1332,40 @@ async fn spawn_watch_task(state: &HubState, client: kube::Client, namespace: &st
     spawn_ns_watch!(watcher, ns, aux_tasks, watch_jobs, "Job");
     spawn_ns_watch!(watcher, ns, aux_tasks, watch_cronjobs, "CronJob");
     spawn_ns_watch!(watcher, ns, aux_tasks, watch_ingresses, "Ingress");
+    spawn_ns_watch!(
+        watcher,
+        ns,
+        aux_tasks,
+        watch_network_policies,
+        "NetworkPolicy"
+    );
+    spawn_ns_watch!(
+        watcher,
+        ns,
+        aux_tasks,
+        watch_endpoint_slices,
+        "EndpointSlice"
+    );
     spawn_ns_watch!(watcher, ns, aux_tasks, watch_pvcs, "PVC");
+    spawn_ns_watch!(
+        watcher,
+        ns,
+        aux_tasks,
+        watch_resource_quotas,
+        "ResourceQuota"
+    );
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_limit_ranges, "LimitRange");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_roles, "Role");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_role_bindings, "RoleBinding");
+    spawn_ns_watch!(
+        watcher,
+        ns,
+        aux_tasks,
+        watch_service_accounts,
+        "ServiceAccount"
+    );
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_hpas, "HPA");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_pod_disruption_budgets, "PDB");
 
     // Main watch task (pods + lifecycle coordinator).
     let task = tokio::spawn(async move {

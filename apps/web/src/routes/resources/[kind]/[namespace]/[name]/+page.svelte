@@ -34,13 +34,34 @@
     configmaps: { gvk: 'v1/ConfigMap', label: 'ConfigMap' },
     secrets: { gvk: 'v1/Secret', label: 'Secret' },
     ingresses: { gvk: 'networking.k8s.io/v1/Ingress', label: 'Ingress' },
+    networkpolicies: { gvk: 'networking.k8s.io/v1/NetworkPolicy', label: 'NetworkPolicy' },
+    endpointslices: { gvk: 'discovery.k8s.io/v1/EndpointSlice', label: 'EndpointSlice' },
     pvcs: { gvk: 'v1/PersistentVolumeClaim', label: 'PVC' },
+    resourcequotas: { gvk: 'v1/ResourceQuota', label: 'ResourceQuota' },
+    limitranges: { gvk: 'v1/LimitRange', label: 'LimitRange' },
+    roles: { gvk: 'rbac.authorization.k8s.io/v1/Role', label: 'Role' },
+    clusterroles: { gvk: 'rbac.authorization.k8s.io/v1/ClusterRole', label: 'ClusterRole' },
+    rolebindings: { gvk: 'rbac.authorization.k8s.io/v1/RoleBinding', label: 'RoleBinding' },
+    clusterrolebindings: { gvk: 'rbac.authorization.k8s.io/v1/ClusterRoleBinding', label: 'ClusterRoleBinding' },
+    serviceaccounts: { gvk: 'v1/ServiceAccount', label: 'ServiceAccount' },
+    validatingwebhookconfigurations: {
+      gvk: 'admissionregistration.k8s.io/v1/ValidatingWebhookConfiguration',
+      label: 'ValidatingWebhookConfiguration'
+    },
+    mutatingwebhookconfigurations: {
+      gvk: 'admissionregistration.k8s.io/v1/MutatingWebhookConfiguration',
+      label: 'MutatingWebhookConfiguration'
+    },
+    hpas: { gvk: 'autoscaling/v2/HorizontalPodAutoscaler', label: 'HPA' },
+    poddisruptionbudgets: { gvk: 'policy/v1/PodDisruptionBudget', label: 'PodDisruptionBudget' },
+    priorityclasses: { gvk: 'scheduling.k8s.io/v1/PriorityClass', label: 'PriorityClass' },
   };
 
   const WORKLOAD_KINDS = new Set(['deployments', 'statefulsets', 'daemonsets']);
   const SCALABLE_KINDS = new Set(['deployments', 'statefulsets']);
   const RESTARTABLE_KINDS = new Set(['deployments', 'statefulsets', 'daemonsets']);
   const ROLLOUT_STATUS_KINDS = new Set(['deployments', 'statefulsets']);
+  const READONLY_KINDS = new Set(['validatingwebhookconfigurations', 'mutatingwebhookconfigurations']);
 
   let kind = $derived(page.params.kind);
   let namespaceParam = $derived(page.params.namespace);
@@ -59,6 +80,7 @@
   let isScalable = $derived(SCALABLE_KINDS.has(kind));
   let isRestartable = $derived(RESTARTABLE_KINDS.has(kind));
   let hasRolloutStatus = $derived(ROLLOUT_STATUS_KINDS.has(kind));
+  let isReadOnly = $derived(READONLY_KINDS.has(kind));
   let showScale = $state(false);
   let currentReplicas = $derived(resource?.spec?.replicas ?? 1);
 
@@ -243,6 +265,165 @@
 
   function truncate(str: string, max: number): string {
     return str.length > max ? str.slice(0, max) + '…' : str;
+  }
+
+  function resourceQuantity(value: unknown): string {
+    if (value === null || value === undefined || value === '') return '—';
+    return String(value);
+  }
+
+  function formatQuotaRows() {
+    const hard = resource?.status?.hard ?? resource?.spec?.hard ?? {};
+    const used = resource?.status?.used ?? {};
+    const resourceNames = Array.from(new Set([...Object.keys(hard), ...Object.keys(used)])).sort();
+    return resourceNames.map((name) => ({
+      name,
+      hard: resourceQuantity(hard[name]),
+      used: resourceQuantity(used[name]),
+    }));
+  }
+
+  function formatLimitValue(limit: Record<string, unknown> | undefined, key: string): string {
+    if (!limit) return '—';
+    const value = limit[key];
+    if (!value || typeof value !== 'object') return '—';
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return '—';
+    return entries.map(([name, amount]) => `${name}: ${resourceQuantity(amount)}`).join(', ');
+  }
+
+  function formatLimitRangeSections() {
+    const limits = Array.isArray(resource?.spec?.limits) ? resource.spec.limits : [];
+    const grouped = new Map<string, Array<{
+      defaultValue: string;
+      defaultRequest: string;
+      min: string;
+      max: string;
+    }>>();
+
+    for (const limit of limits) {
+      const type = String(limit?.type ?? 'Unknown');
+      const rows = grouped.get(type) ?? [];
+      rows.push({
+        defaultValue: formatLimitValue(limit, 'default'),
+        defaultRequest: formatLimitValue(limit, 'defaultRequest'),
+        min: formatLimitValue(limit, 'min'),
+        max: formatLimitValue(limit, 'max'),
+      });
+      grouped.set(type, rows);
+    }
+
+    return Array.from(grouped.entries());
+  }
+
+  function formatList(values: unknown[] | undefined, fallback = 'All'): string {
+    if (!Array.isArray(values) || values.length === 0) return fallback;
+    return values.join(', ');
+  }
+
+  function formatClientConfig(clientConfig: any): string {
+    if (clientConfig?.service?.name) {
+      const serviceNamespace = clientConfig.service.namespace ?? 'default';
+      const path = clientConfig.service.path ? ` (${clientConfig.service.path})` : '';
+      const port = clientConfig.service.port ? `:${clientConfig.service.port}` : '';
+      return `${serviceNamespace}/${clientConfig.service.name}${port}${path}`;
+    }
+    if (clientConfig?.url) return clientConfig.url;
+    return 'None';
+  }
+
+  function selectorParts(selector: any): string[] {
+    if (!selector) return [];
+
+    const labels = Object.entries(selector.matchLabels ?? {}).map(([key, value]) => `${key}=${value}`);
+    const expressions = (selector.matchExpressions ?? []).map((expression: any) => {
+      const operator = expression.operator ?? 'Exists';
+      const values = Array.isArray(expression.values) && expression.values.length > 0
+        ? ` (${expression.values.join(', ')})`
+        : '';
+      return `${expression.key ?? 'unknown'} ${operator}${values}`;
+    });
+
+    return [...labels, ...expressions];
+  }
+
+  function formatSelector(matchLabels?: Record<string, string>): string {
+    const entries = Object.entries(matchLabels ?? {});
+    if (entries.length === 0) return 'All';
+    return entries.map(([key, value]) => `${key}=${value}`).join(', ');
+  }
+
+  function formatNetworkPolicyPeers(peers: any[] | undefined, direction: 'from' | 'to'): string {
+    if (!peers || peers.length === 0) {
+      return 'All';
+    }
+
+    return peers.map((peer: any) => {
+      const parts: string[] = [];
+
+      if (peer?.podSelector) {
+        parts.push(`Pods: ${formatSelector(peer.podSelector.matchLabels)}`);
+      }
+
+      if (peer?.namespaceSelector) {
+        parts.push(`Namespaces: ${formatSelector(peer.namespaceSelector.matchLabels)}`);
+      }
+
+      if (peer?.ipBlock?.cidr) {
+        const except = peer.ipBlock.except?.length ? ` except ${peer.ipBlock.except.join(', ')}` : '';
+        parts.push(`CIDR: ${peer.ipBlock.cidr}${except}`);
+      }
+
+      if (parts.length === 0) {
+        return direction === 'from' ? 'All sources' : 'All destinations';
+      }
+
+      return parts.join(' · ');
+    }).join('; ');
+  }
+
+  function formatPortValue(value: unknown): string {
+    if (value === undefined || value === null || value === '') return 'any';
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+    return JSON.stringify(value);
+  }
+
+  function formatNetworkPolicyPorts(ports: any[] | undefined): string {
+    if (!ports || ports.length === 0) {
+      return 'All';
+    }
+
+    return ports.map((port: any) => {
+      const protocol = port?.protocol ?? 'TCP';
+      const start = formatPortValue(port?.port);
+      const end = port?.endPort ? `-${port.endPort}` : '';
+      return `${protocol} ${start}${end}`;
+    }).join(', ');
+  }
+
+  function formatEndpointConditions(conditions: any): string {
+    if (!conditions) return 'Unknown';
+
+    const entries = [
+      ['ready', conditions.ready],
+      ['serving', conditions.serving],
+      ['terminating', conditions.terminating],
+    ].filter(([, value]) => value !== undefined);
+
+    if (entries.length === 0) return 'Unknown';
+    return entries.map(([key, value]) => `${key}=${value ? 'true' : 'false'}`).join(', ');
+  }
+
+  function formatTargetRef(targetRef: any): string {
+    if (!targetRef?.kind || !targetRef?.name) return 'N/A';
+    const ns = targetRef.namespace ? `${targetRef.namespace}/` : '';
+    return `${targetRef.kind} ${ns}${targetRef.name}`;
+  }
+
+  function formatEndpointZone(endpoint: any): string {
+    if (endpoint?.zone) return endpoint.zone;
+    const hintedZones = endpoint?.hints?.forZones?.map((zone: any) => zone?.name).filter(Boolean) ?? [];
+    return hintedZones.join(', ') || 'N/A';
   }
 
   async function handleScale(replicas: number) {
@@ -686,6 +867,123 @@
             {/each}
           {/if}
 
+        <!-- NetworkPolicy Summary -->
+        {:else if kind === 'networkpolicies'}
+          <h3>Info</h3>
+          <dl>
+            <dt>Pod Selector</dt><dd>{formatSelector(resource.spec?.podSelector?.matchLabels)}</dd>
+            <dt>Policy Types</dt><dd>{(resource.spec?.policyTypes ?? []).join(', ') || 'None'}</dd>
+          </dl>
+
+          <h3>Ingress Rules</h3>
+          {#if resource.spec?.ingress?.length}
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Rule</th>
+                  <th scope="col">From</th>
+                  <th scope="col">Ports</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each resource.spec.ingress as rule, index}
+                  <tr>
+                    <td>#{index + 1}</td>
+                    <td class="muted">{formatNetworkPolicyPeers(rule.from, 'from')}</td>
+                    <td>{formatNetworkPolicyPorts(rule.ports)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="muted">No ingress rules</p>
+          {/if}
+
+          <h3>Egress Rules</h3>
+          {#if resource.spec?.egress?.length}
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Rule</th>
+                  <th scope="col">To</th>
+                  <th scope="col">Ports</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each resource.spec.egress as rule, index}
+                  <tr>
+                    <td>#{index + 1}</td>
+                    <td class="muted">{formatNetworkPolicyPeers(rule.to, 'to')}</td>
+                    <td>{formatNetworkPolicyPorts(rule.ports)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="muted">No egress rules</p>
+          {/if}
+
+        <!-- EndpointSlice Summary -->
+        {:else if kind === 'endpointslices'}
+          <h3>Info</h3>
+          <dl>
+            <dt>Address Type</dt><dd>{resource.addressType ?? 'N/A'}</dd>
+          </dl>
+
+          <h3>Ports</h3>
+          {#if resource.ports?.length}
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Protocol</th>
+                  <th scope="col">Port</th>
+                  <th scope="col">App Protocol</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each resource.ports as port}
+                  <tr>
+                    <td>{port.name ?? 'N/A'}</td>
+                    <td>{port.protocol ?? 'TCP'}</td>
+                    <td>{port.port ?? 'N/A'}</td>
+                    <td>{port.appProtocol ?? 'N/A'}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="muted">No ports</p>
+          {/if}
+
+          <h3>Endpoints</h3>
+          {#if resource.endpoints?.length}
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Addresses</th>
+                  <th scope="col">Conditions</th>
+                  <th scope="col">Target Ref</th>
+                  <th scope="col">Node</th>
+                  <th scope="col">Zone</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each resource.endpoints as endpoint}
+                  <tr>
+                    <td>{(endpoint.addresses ?? []).join(', ') || 'N/A'}</td>
+                    <td>{formatEndpointConditions(endpoint.conditions)}</td>
+                    <td>{formatTargetRef(endpoint.targetRef)}</td>
+                    <td>{endpoint.nodeName ?? 'N/A'}</td>
+                    <td>{formatEndpointZone(endpoint)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="muted">No endpoints</p>
+          {/if}
+
         <!-- PVC Summary -->
         {:else if kind === 'pvcs'}
           <h3>Info</h3>
@@ -696,6 +994,376 @@
             <dt>Access Modes</dt><dd>{(resource.spec?.accessModes ?? []).join(', ') || 'N/A'}</dd>
             <dt>Capacity</dt><dd>{resource.status?.capacity?.storage ?? 'N/A'}</dd>
             <dt>Requested</dt><dd>{resource.spec?.resources?.requests?.storage ?? 'N/A'}</dd>
+          </dl>
+
+        <!-- ResourceQuota Summary -->
+        {:else if kind === 'resourcequotas'}
+          <h3>Quota Usage</h3>
+          {#if formatQuotaRows().length > 0}
+            <table>
+              <thead><tr><th scope="col">Resource</th><th scope="col">Hard</th><th scope="col">Used</th></tr></thead>
+              <tbody>
+                {#each formatQuotaRows() as row}
+                  <tr>
+                    <td class="resource-name">{row.name}</td>
+                    <td>{row.hard}</td>
+                    <td>{row.used}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="muted">No quota values reported</p>
+          {/if}
+
+        <!-- LimitRange Summary -->
+        {:else if kind === 'limitranges'}
+          <h3>Limits</h3>
+          {#if formatLimitRangeSections().length > 0}
+            {#each formatLimitRangeSections() as [type, rows]}
+              <h4>{type}</h4>
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Default</th>
+                    <th scope="col">DefaultRequest</th>
+                    <th scope="col">Min</th>
+                    <th scope="col">Max</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each rows as row}
+                    <tr>
+                      <td>{row.defaultValue}</td>
+                      <td>{row.defaultRequest}</td>
+                      <td>{row.min}</td>
+                      <td>{row.max}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/each}
+          {:else}
+            <p class="muted">No limit range values reported</p>
+          {/if}
+
+        <!-- Role / ClusterRole Summary -->
+        {:else if kind === 'roles' || kind === 'clusterroles'}
+          <h3>Policy Rules ({(resource.rules ?? []).length})</h3>
+          {#if resource.rules?.length}
+            <table>
+              <thead><tr><th scope="col">API Groups</th><th scope="col">Resources</th><th scope="col">Verbs</th></tr></thead>
+              <tbody>
+                {#each resource.rules as rule}
+                  <tr>
+                    <td>{(rule.apiGroups ?? []).map((g: string) => g || '*').join(', ')}</td>
+                    <td>{(rule.resources ?? []).join(', ')}</td>
+                    <td>{(rule.verbs ?? []).join(', ')}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="muted">No policy rules</p>
+          {/if}
+
+        <!-- RoleBinding / ClusterRoleBinding Summary -->
+        {:else if kind === 'rolebindings' || kind === 'clusterrolebindings'}
+          <h3>Role Reference</h3>
+          <dl>
+            <dt>Kind</dt><dd>{resource.roleRef?.kind ?? 'N/A'}</dd>
+            <dt>Name</dt>
+            <dd>
+              {#if resource.roleRef?.kind === 'ClusterRole'}
+                <a href={`/resources/clusterroles/_cluster/${encodeURIComponent(resource.roleRef?.name ?? '')}`}>{resource.roleRef?.name ?? 'N/A'}</a>
+              {:else if resource.roleRef?.kind === 'Role' && namespace}
+                <a href={`/resources/roles/${encodeURIComponent(namespace)}/${encodeURIComponent(resource.roleRef?.name ?? '')}`}>{resource.roleRef?.name ?? 'N/A'}</a>
+              {:else}
+                {resource.roleRef?.name ?? 'N/A'}
+              {/if}
+            </dd>
+            <dt>API Group</dt><dd>{resource.roleRef?.apiGroup ?? 'N/A'}</dd>
+          </dl>
+
+          <h3>Subjects ({(resource.subjects ?? []).length})</h3>
+          {#if resource.subjects?.length}
+            <table>
+              <thead><tr><th scope="col">Kind</th><th scope="col">Name</th><th scope="col">Namespace</th></tr></thead>
+              <tbody>
+                {#each resource.subjects as subject}
+                  <tr>
+                    <td>{subject.kind ?? 'N/A'}</td>
+                    <td>
+                      {#if subject.kind === 'ServiceAccount' && subject.namespace}
+                        <a href={`/resources/serviceaccounts/${encodeURIComponent(subject.namespace)}/${encodeURIComponent(subject.name ?? '')}`}>{subject.name ?? 'N/A'}</a>
+                      {:else}
+                        {subject.name ?? 'N/A'}
+                      {/if}
+                    </td>
+                    <td>{subject.namespace ?? '—'}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="muted">No subjects</p>
+          {/if}
+
+        <!-- ServiceAccount Summary -->
+        {:else if kind === 'serviceaccounts'}
+          <h3>Info</h3>
+          <dl>
+            <dt>Automount Token</dt><dd>{resource.automountServiceAccountToken !== false ? 'Yes' : 'No'}</dd>
+          </dl>
+
+          {#if resource.secrets?.length}
+            <h3>Secrets</h3>
+            {#each resource.secrets as sec}
+              <div class="container-card">
+                <strong>{sec.name ?? 'unnamed'}</strong>
+              </div>
+            {/each}
+          {/if}
+
+          {#if resource.imagePullSecrets?.length}
+            <h3>Image Pull Secrets</h3>
+            {#each resource.imagePullSecrets as ips}
+              <div class="container-card">
+                <strong>{ips.name ?? 'unnamed'}</strong>
+              </div>
+            {/each}
+          {/if}
+
+          {#if resource.metadata?.annotations?.['azure.workload.identity/client-id'] || resource.metadata?.labels?.['azure.workload.identity/use']}
+            <h3>Azure Workload Identity</h3>
+            <dl>
+              {#if resource.metadata?.annotations?.['azure.workload.identity/client-id']}
+                <dt>Client ID</dt><dd>{resource.metadata.annotations['azure.workload.identity/client-id']}</dd>
+              {/if}
+              {#if resource.metadata?.annotations?.['azure.workload.identity/tenant-id']}
+                <dt>Tenant ID</dt><dd>{resource.metadata.annotations['azure.workload.identity/tenant-id']}</dd>
+              {/if}
+              {#if resource.metadata?.labels?.['azure.workload.identity/use']}
+                <dt>WI Enabled</dt><dd>{resource.metadata.labels['azure.workload.identity/use']}</dd>
+              {/if}
+            </dl>
+          {/if}
+
+        <!-- Admission Webhook Configuration Summary -->
+        {:else if kind === 'validatingwebhookconfigurations' || kind === 'mutatingwebhookconfigurations'}
+          <h3>Configuration</h3>
+          <dl>
+            <dt>Type</dt><dd>{kind === 'validatingwebhookconfigurations' ? 'Validating' : 'Mutating'}</dd>
+            <dt>Webhooks</dt><dd>{resource.webhooks?.length ?? 0}</dd>
+          </dl>
+
+          <h3>Webhook Definitions</h3>
+          {#if resource.webhooks?.length}
+            {#each resource.webhooks as webhook}
+              <div class="container-card webhook-card">
+                <strong>{webhook.name ?? 'unnamed'}</strong>
+                <dl class="webhook-meta">
+                  <dt>Client</dt><dd>{formatClientConfig(webhook.clientConfig)}</dd>
+                  <dt>Failure Policy</dt><dd>{webhook.failurePolicy ?? 'Not set'}</dd>
+                  <dt>Match Policy</dt><dd>{webhook.matchPolicy ?? 'Exact'}</dd>
+                  <dt>Side Effects</dt><dd>{webhook.sideEffects ?? 'Unknown'}</dd>
+                  <dt>Timeout</dt><dd>{webhook.timeoutSeconds ? `${webhook.timeoutSeconds}s` : 'Default'}</dd>
+                  <dt>Admission Review Versions</dt><dd>{formatList(webhook.admissionReviewVersions, 'None')}</dd>
+                </dl>
+
+                <div class="webhook-section">
+                  <h4>Rules</h4>
+                  {#if webhook.rules?.length}
+                    <table aria-label="Webhook rules">
+                      <thead>
+                        <tr>
+                          <th scope="col">Operations</th>
+                          <th scope="col">API Groups</th>
+                          <th scope="col">Versions</th>
+                          <th scope="col">Resources</th>
+                          <th scope="col">Scope</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {#each webhook.rules as rule}
+                          <tr>
+                            <td>{formatList(rule.operations, 'All')}</td>
+                            <td>{formatList(rule.apiGroups, 'All')}</td>
+                            <td>{formatList(rule.apiVersions, 'All')}</td>
+                            <td>{formatList(rule.resources, 'All')}</td>
+                            <td>{rule.scope ?? 'All'}</td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  {:else}
+                    <p class="muted">No rules defined</p>
+                  {/if}
+                </div>
+
+                <div class="webhook-selector-grid">
+                  <div class="selector-block">
+                    <h4>Namespace Selector</h4>
+                    {#if selectorParts(webhook.namespaceSelector).length}
+                      <div class="labels">
+                        {#each selectorParts(webhook.namespaceSelector) as selector}
+                          <span class="label-badge">{selector}</span>
+                        {/each}
+                      </div>
+                    {:else}
+                      <p class="muted">All namespaces</p>
+                    {/if}
+                  </div>
+
+                  <div class="selector-block">
+                    <h4>Object Selector</h4>
+                    {#if selectorParts(webhook.objectSelector).length}
+                      <div class="labels">
+                        {#each selectorParts(webhook.objectSelector) as selector}
+                          <span class="label-badge">{selector}</span>
+                        {/each}
+                      </div>
+                    {:else}
+                      <p class="muted">All objects</p>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            {/each}
+          {:else}
+            <p class="muted">No webhooks defined</p>
+          {/if}
+
+        <!-- HPA Summary -->
+        {:else if kind === 'hpas'}
+          <h3>Scale Target</h3>
+          <dl>
+            {#if resource.spec?.scaleTargetRef}
+              <dt>Kind</dt><dd>{resource.spec.scaleTargetRef.kind ?? 'N/A'}</dd>
+              <dt>Name</dt>
+              <dd>
+                {#if resource.spec.scaleTargetRef.kind === 'Deployment'}
+                  <a href="/resources/deployments/{resourceNamespace}/{resource.spec.scaleTargetRef.name}">{resource.spec.scaleTargetRef.name}</a>
+                {:else if resource.spec.scaleTargetRef.kind === 'StatefulSet'}
+                  <a href="/resources/statefulsets/{resourceNamespace}/{resource.spec.scaleTargetRef.name}">{resource.spec.scaleTargetRef.name}</a>
+                {:else}
+                  {resource.spec.scaleTargetRef.name ?? 'N/A'}
+                {/if}
+              </dd>
+              <dt>API Version</dt><dd>{resource.spec.scaleTargetRef.apiVersion ?? 'N/A'}</dd>
+            {:else}
+              <dt>Target</dt><dd>N/A</dd>
+            {/if}
+          </dl>
+
+          <h3>Replicas</h3>
+          <dl>
+            <dt>Min Replicas</dt><dd>{resource.spec?.minReplicas ?? 1}</dd>
+            <dt>Max Replicas</dt><dd>{resource.spec?.maxReplicas ?? 'N/A'}</dd>
+            <dt>Current Replicas</dt><dd>{resource.status?.currentReplicas ?? 0}</dd>
+            <dt>Desired Replicas</dt><dd>{resource.status?.desiredReplicas ?? 0}</dd>
+          </dl>
+
+          {#if resource.spec?.metrics?.length}
+            <h3>Metrics</h3>
+            <table>
+              <thead><tr><th scope="col">Type</th><th scope="col">Name</th><th scope="col">Target</th><th scope="col">Current</th></tr></thead>
+              <tbody>
+                {#each resource.spec.metrics as metric, idx}
+                  {@const currentMetric = resource.status?.currentMetrics?.[idx]}
+                  <tr>
+                    <td>{metric.type ?? 'N/A'}</td>
+                    <td>
+                      {#if metric.type === 'Resource'}
+                        {metric.resource?.name ?? 'N/A'}
+                      {:else if metric.type === 'Pods'}
+                        {metric.pods?.metric?.name ?? 'N/A'}
+                      {:else if metric.type === 'Object'}
+                        {metric.object?.metric?.name ?? 'N/A'}
+                      {:else if metric.type === 'External'}
+                        {metric.external?.metric?.name ?? 'N/A'}
+                      {:else}
+                        N/A
+                      {/if}
+                    </td>
+                    <td>
+                      {#if metric.type === 'Resource'}
+                        {metric.resource?.target?.averageUtilization != null ? `${metric.resource.target.averageUtilization}%` : metric.resource?.target?.averageValue ?? 'N/A'}
+                      {:else}
+                        N/A
+                      {/if}
+                    </td>
+                    <td>
+                      {#if currentMetric?.type === 'Resource'}
+                        {currentMetric.resource?.current?.averageUtilization != null ? `${currentMetric.resource.current.averageUtilization}%` : currentMetric.resource?.current?.averageValue ?? 'N/A'}
+                      {:else}
+                        N/A
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+
+          {#if resource.spec?.behavior}
+            <h3>Behavior</h3>
+            {#if resource.spec.behavior.scaleUp}
+              <h4>Scale Up</h4>
+              <dl>
+                <dt>Stabilization Window</dt><dd>{resource.spec.behavior.scaleUp.stabilizationWindowSeconds ?? 0}s</dd>
+                <dt>Select Policy</dt><dd>{resource.spec.behavior.scaleUp.selectPolicy ?? 'Max'}</dd>
+              </dl>
+            {/if}
+            {#if resource.spec.behavior.scaleDown}
+              <h4>Scale Down</h4>
+              <dl>
+                <dt>Stabilization Window</dt><dd>{resource.spec.behavior.scaleDown.stabilizationWindowSeconds ?? 300}s</dd>
+                <dt>Select Policy</dt><dd>{resource.spec.behavior.scaleDown.selectPolicy ?? 'Max'}</dd>
+              </dl>
+            {/if}
+          {/if}
+
+        <!-- PodDisruptionBudget Summary -->
+        {:else if kind === 'poddisruptionbudgets'}
+          <h3>Budget</h3>
+          <dl>
+            {#if resource.spec?.minAvailable != null}
+              <dt>Min Available</dt><dd>{resource.spec.minAvailable}</dd>
+            {/if}
+            {#if resource.spec?.maxUnavailable != null}
+              <dt>Max Unavailable</dt><dd>{resource.spec.maxUnavailable}</dd>
+            {/if}
+          </dl>
+
+          {#if resource.spec?.selector?.matchLabels}
+            <h3>Selector</h3>
+            <div class="labels">
+              {#each Object.entries(resource.spec.selector.matchLabels) as [key, value]}
+                <span class="label-badge">{key}={value}</span>
+              {/each}
+            </div>
+          {/if}
+
+          <h3>Status</h3>
+          <dl>
+            <dt>Current Healthy</dt><dd>{resource.status?.currentHealthy ?? 0}</dd>
+            <dt>Desired Healthy</dt><dd>{resource.status?.desiredHealthy ?? 0}</dd>
+            <dt>Disruptions Allowed</dt><dd>{resource.status?.disruptionsAllowed ?? 0}</dd>
+            <dt>Expected Pods</dt><dd>{resource.status?.expectedPods ?? 0}</dd>
+            <dt>Observed Generation</dt><dd>{resource.status?.observedGeneration ?? 'N/A'}</dd>
+          </dl>
+
+        <!-- PriorityClass Summary -->
+        {:else if kind === 'priorityclasses'}
+          <h3>Info</h3>
+          <dl>
+            <dt>Priority Value</dt><dd>{resource.value ?? 0}</dd>
+            <dt>Global Default</dt><dd>{resource.globalDefault ? 'Yes' : 'No'}</dd>
+            <dt>Preemption Policy</dt><dd>{resource.preemptionPolicy ?? 'PreemptLowerPriority'}</dd>
+            {#if resource.description}
+              <dt>Description</dt><dd>{resource.description}</dd>
+            {/if}
           </dl>
 
         <!-- Fallback for unknown kinds -->
@@ -798,6 +1466,9 @@
       <div class="yaml-tab">
         {#if isSecret}
           <p class="muted">Secret values are redacted by default. Editing is disabled to avoid applying masked data.</p>
+          <YamlEditor content={yamlContent} readonly={true} />
+        {:else if isReadOnly}
+          <p class="muted">{resourceLabel} resources are read-only in Telescope. YAML is available for inspection only.</p>
           <YamlEditor content={yamlContent} readonly={true} />
         {:else}
           <div class="yaml-actions">
@@ -942,6 +1613,35 @@
   .container-card strong {
     color: #4fc3f7;
     font-size: 0.875rem;
+  }
+
+  .webhook-card {
+    gap: 1rem;
+  }
+
+  .webhook-meta {
+    grid-template-columns: 12rem 1fr;
+  }
+
+  .webhook-section h4,
+  .selector-block h4 {
+    margin: 0 0 0.5rem;
+    color: #8b949e;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .webhook-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+  }
+
+  .selector-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
   }
 
   .muted { color: #6e7681; font-size: 0.875rem; }

@@ -18,6 +18,8 @@ const ALL_WATCHED_GVKS: &[&str] = &[
     "v1/Pod",
     "v1/Event",
     "v1/Node",
+    "admissionregistration.k8s.io/v1/ValidatingWebhookConfiguration",
+    "admissionregistration.k8s.io/v1/MutatingWebhookConfiguration",
     "apps/v1/Deployment",
     "apps/v1/StatefulSet",
     "apps/v1/DaemonSet",
@@ -27,7 +29,21 @@ const ALL_WATCHED_GVKS: &[&str] = &[
     "batch/v1/Job",
     "batch/v1/CronJob",
     "networking.k8s.io/v1/Ingress",
+    "networking.k8s.io/v1/NetworkPolicy",
+    "discovery.k8s.io/v1/EndpointSlice",
     "v1/PersistentVolumeClaim",
+    "v1/ResourceQuota",
+    "v1/LimitRange",
+    "rbac.authorization.k8s.io/v1/Role",
+    "rbac.authorization.k8s.io/v1/ClusterRole",
+    "rbac.authorization.k8s.io/v1/RoleBinding",
+    "rbac.authorization.k8s.io/v1/ClusterRoleBinding",
+    "v1/ServiceAccount",
+    "autoscaling/v2/HorizontalPodAutoscaler",
+    "policy/v1/PodDisruptionBudget",
+    "scheduling.k8s.io/v1/PriorityClass",
+    "storage.k8s.io/v1/StorageClass",
+    "v1/PersistentVolume",
 ];
 
 /// Clear all watched resource data from the store.
@@ -825,6 +841,55 @@ async fn spawn_watch_task(
         }
     }));
 
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_cluster_roles().await {
+            error!("ClusterRole watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_cluster_role_bindings().await {
+            error!("ClusterRoleBinding watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_priority_classes().await {
+            error!("PriorityClass watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_validating_webhooks().await {
+            error!("ValidatingWebhookConfiguration watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_mutating_webhooks().await {
+            error!("MutatingWebhookConfiguration watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_storage_classes().await {
+            error!("StorageClass watch error: {}", e);
+        }
+    }));
+
+    let w = watcher.clone();
+    aux_tasks.push(tokio::spawn(async move {
+        if let Err(e) = w.watch_persistent_volumes().await {
+            error!("PersistentVolume watch error: {}", e);
+        }
+    }));
+
     // -- Namespaced resource watchers --
     // Uses a macro to reduce boilerplate for each resource type.
     macro_rules! spawn_ns_watch {
@@ -848,7 +913,40 @@ async fn spawn_watch_task(
     spawn_ns_watch!(watcher, ns, aux_tasks, watch_jobs, "Job");
     spawn_ns_watch!(watcher, ns, aux_tasks, watch_cronjobs, "CronJob");
     spawn_ns_watch!(watcher, ns, aux_tasks, watch_ingresses, "Ingress");
+    spawn_ns_watch!(
+        watcher,
+        ns,
+        aux_tasks,
+        watch_network_policies,
+        "NetworkPolicy"
+    );
+    spawn_ns_watch!(
+        watcher,
+        ns,
+        aux_tasks,
+        watch_endpoint_slices,
+        "EndpointSlice"
+    );
     spawn_ns_watch!(watcher, ns, aux_tasks, watch_pvcs, "PVC");
+    spawn_ns_watch!(
+        watcher,
+        ns,
+        aux_tasks,
+        watch_resource_quotas,
+        "ResourceQuota"
+    );
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_limit_ranges, "LimitRange");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_roles, "Role");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_role_bindings, "RoleBinding");
+    spawn_ns_watch!(
+        watcher,
+        ns,
+        aux_tasks,
+        watch_service_accounts,
+        "ServiceAccount"
+    );
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_hpas, "HPA");
+    spawn_ns_watch!(watcher, ns, aux_tasks, watch_pod_disruption_budgets, "PDB");
 
     // Spawn the main watch task (pods + lifecycle coordinator).
     let task = tokio::spawn(async move {
