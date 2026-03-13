@@ -22,6 +22,12 @@ function namespaceSegment(namespace: string | null | undefined): string {
 
 const RESOURCE_ROUTES: ResourceRoute[] = [
   {
+    label: 'Namespace',
+    gvk: 'v1/Namespace',
+    listHref: '/namespaces',
+    detailHref: (_namespace, _name) => '/namespaces',
+  },
+  {
     label: 'Pod',
     gvk: 'v1/Pod',
     listHref: '/pods',
@@ -219,6 +225,20 @@ const RESOURCE_ROUTES: ResourceRoute[] = [
     listHref: '/resources/priorityclasses',
     detailHref: (_namespace, name) => `/resources/priorityclasses/${CLUSTER_SCOPED_NAMESPACE}/${encodeSegment(name)}`,
   },
+  {
+    label: 'StorageClass',
+    gvk: 'storage.k8s.io/v1/StorageClass',
+    slug: 'storageclasses',
+    listHref: '/resources/storageclasses',
+    detailHref: (_namespace, name) => `/resources/storageclasses/${CLUSTER_SCOPED_NAMESPACE}/${encodeSegment(name)}`,
+  },
+  {
+    label: 'PersistentVolume',
+    gvk: 'v1/PersistentVolume',
+    slug: 'persistentvolumes',
+    listHref: '/resources/persistentvolumes',
+    detailHref: (_namespace, name) => `/resources/persistentvolumes/${CLUSTER_SCOPED_NAMESPACE}/${encodeSegment(name)}`,
+  },
 ];
 
 function normalizeKind(kind: string): string {
@@ -304,8 +324,9 @@ export function resourceDetailHref(options: {
   namespace?: string | null;
   name: string;
   label?: string;
+  extraParams?: Record<string, string | null | undefined>;
 }): string {
-  const { gvk, namespace, name, label } = options;
+  const { gvk, namespace, name, label, extraParams } = options;
   const kind = kindFromGvk(gvk);
   const normalizedKind = normalizeKind(kind);
 
@@ -319,6 +340,11 @@ export function resourceDetailHref(options: {
   }
 
   const params = new URLSearchParams({ gvk, label: label ?? kind });
+  for (const [key, value] of Object.entries(extraParams ?? {})) {
+    if (value !== null && value !== undefined && value !== '') {
+      params.set(key, value);
+    }
+  }
   return `/resources/${encodeSegment(normalizedKind)}/${namespaceSegment(namespace)}/${encodeSegment(name)}?${params.toString()}`;
 }
 

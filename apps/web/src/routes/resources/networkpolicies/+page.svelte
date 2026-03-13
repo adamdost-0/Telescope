@@ -23,21 +23,39 @@
     return `${Math.floor(diffHours / 24)}d`;
   }
 
-  function formatSelector(matchLabels?: Record<string, string>): string {
-    const entries = Object.entries(matchLabels ?? {});
+  function formatSelector(selector: any): string {
+    const labels = Object.entries(selector?.matchLabels ?? {}).map(([key, value]) => `${key}=${value}`);
+    const expressions = (selector?.matchExpressions ?? []).map((expression: any) => {
+      const operator = expression.operator ?? 'Exists';
+      const values = Array.isArray(expression.values) && expression.values.length > 0
+        ? ` (${expression.values.join(', ')})`
+        : '';
+      return `${expression.key ?? 'unknown'} ${operator}${values}`;
+    });
+
+    const entries = [...labels, ...expressions];
     if (entries.length === 0) return 'All';
-    return entries.map(([key, value]) => `${key}=${value}`).join(', ');
+    return entries.join(', ');
   }
 
-  function formatPolicyTypes(policyTypes: string[] | undefined): string {
-    return policyTypes?.join(', ') || 'None';
+  function formatPolicyTypes(spec: any): string {
+    if (Array.isArray(spec?.policyTypes) && spec.policyTypes.length > 0) {
+      return spec.policyTypes.join(', ');
+    }
+
+    const inferredTypes = ['Ingress'];
+    if (spec?.egress !== undefined) {
+      inferredTypes.push('Egress');
+    }
+
+    return inferredTypes.join(', ');
   }
 
   const columns = [
     { key: 'name', label: 'Name', extract: (c: any) => c?.metadata?.name ?? '', width: '24%' },
     { key: 'namespace', label: 'Namespace', extract: (c: any) => c?.metadata?.namespace ?? 'default' },
-    { key: 'pod-selector', label: 'Pod Selector', extract: (c: any) => formatSelector(c?.spec?.podSelector?.matchLabels) },
-    { key: 'policy-types', label: 'Policy Types', extract: (c: any) => formatPolicyTypes(c?.spec?.policyTypes) },
+    { key: 'pod-selector', label: 'Pod Selector', extract: (c: any) => formatSelector(c?.spec?.podSelector) },
+    { key: 'policy-types', label: 'Policy Types', extract: (c: any) => formatPolicyTypes(c?.spec) },
     { key: 'age', label: 'Age', extract: (c: any) => {
       const ts = c?.metadata?.creationTimestamp;
       return ts ? formatAge(ts) : 'Unknown';

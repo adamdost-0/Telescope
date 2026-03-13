@@ -1,15 +1,20 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import {
+    applyDynamicResource,
+    applyResource,
+    deleteDynamicResource,
+    getDynamicResource,
     getEvents,
     getPods,
-    getResources,
     getResource,
+    getResources,
     getSecret,
+    listCrds,
     rolloutRestart,
     rolloutStatus,
-    applyResource,
     scaleResource
   } from '$lib/api';
   import type { RolloutStatus } from '$lib/api';
@@ -20,7 +25,7 @@
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
   import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
-  import { decodeNamespaceParam, labelForGvk, resourceCollectionHref } from '$lib/resource-routing';
+  import { decodeNamespaceParam, labelForGvk, parseGvk, resourceCollectionHref } from '$lib/resource-routing';
   import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -55,6 +60,8 @@
     hpas: { gvk: 'autoscaling/v2/HorizontalPodAutoscaler', label: 'HPA' },
     poddisruptionbudgets: { gvk: 'policy/v1/PodDisruptionBudget', label: 'PodDisruptionBudget' },
     priorityclasses: { gvk: 'scheduling.k8s.io/v1/PriorityClass', label: 'PriorityClass' },
+    storageclasses: { gvk: 'storage.k8s.io/v1/StorageClass', label: 'StorageClass' },
+    persistentvolumes: { gvk: 'v1/PersistentVolume', label: 'PersistentVolume' },
   };
 
   const WORKLOAD_KINDS = new Set(['deployments', 'statefulsets', 'daemonsets']);
@@ -73,7 +80,21 @@
   let fallbackGvk = $derived(page.url.searchParams.get('gvk') ?? '');
   let effectiveGvk = $derived(kindInfo?.gvk ?? fallbackGvk);
   let resourceLabel = $derived(kindInfo?.label ?? page.url.searchParams.get('label') ?? (effectiveGvk ? labelForGvk(effectiveGvk) : kind));
-  let collectionHref = $derived(effectiveGvk ? resourceCollectionHref(effectiveGvk) : null);
+  let parsedFallbackGvk = $derived(parseGvk(effectiveGvk));
+  let dynamicGroup = $derived(parsedFallbackGvk.group ?? '');
+  let dynamicVersion = $derived(parsedFallbackGvk.version ?? '');
+  let dynamicKind = $derived(parsedFallbackGvk.kind);
+  let dynamicPlural = $state(page.url.searchParams.get('plural') ?? '');
+  let isDynamicResource = $derived(!kindInfo && !!effectiveGvk);
+  let collectionHref = $derived.by(() => {
+    if (!effectiveGvk) return null;
+    if (isDynamicResource && dynamicGroup && dynamicVersion) {
+      const params = new URLSearchParams({ version: dynamicVersion });
+      if (dynamicPlural) params.set('plural', dynamicPlural);
+      return `/crds/${encodeURIComponent(dynamicGroup)}/${encodeURIComponent(dynamicKind)}?${params.toString()}`;
+    }
+    return resourceCollectionHref(effectiveGvk);
+  });
   let namespaceHref = $derived(kindInfo && namespace ? `/resources/${kind}?namespace=${encodeURIComponent(namespace)}` : null);
   let isSecret = $derived(kind === 'secrets');
   let isWorkload = $derived(WORKLOAD_KINDS.has(kind));
@@ -81,6 +102,8 @@
   let isRestartable = $derived(RESTARTABLE_KINDS.has(kind));
   let hasRolloutStatus = $derived(ROLLOUT_STATUS_KINDS.has(kind));
   let isReadOnly = $derived(READONLY_KINDS.has(kind));
+  let showDeleteConfirm = $state(false);
+  let deleting = $state(false);
   let showScale = $state(false);
   let currentReplicas = $derived(resource?.spec?.replicas ?? 1);
 
@@ -109,6 +132,24 @@
 
   let tabs = $derived(buildTabs());
 
+  async function resolveDynamicPlural(): Promise<string | null> {
+    if (!isDynamicResource || !dynamicGroup || !dynamicVersion) return null;
+    if (dynamicPlural) return dynamicPlural;
+    try {
+      const crds = await listCrds();
+      const match = crds.find(
+        (crd) => crd.group === dynamicGroup && crd.version === dynamicVersion && crd.kind === dynamicKind,
+      );
+      if (match) {
+        dynamicPlural = match.plural;
+        return match.plural;
+      }
+    } catch {
+      // Ignore CRD lookup failures and let the caller surface a better error.
+    }
+    return null;
+  }
+
   function buildTabs() {
     const t = [
       { id: 'summary', label: 'Summary' },
@@ -134,12 +175,22 @@
         return;
       }
 
-      const entry = isSecret && namespace
-        ? await getSecret(resourceNamespace, resourceName)
-        : namespace
+      let entry: ResourceEntry | null = null;
+      if (isSecret && namespace) {
+        entry = await getSecret(resourceNamespace, resourceName);
+      } else if (isDynamicResource) {
+        const plural = await resolveDynamicPlural();
+        if (!plural) {
+          error = `Unknown resource kind: "${kind}"`;
+          return;
+        }
+        entry = await getDynamicResource(dynamicGroup, dynamicVersion, plural, namespace, resourceName);
+      } else {
+        entry = namespace
           ? (await getResource(effectiveGvk, resourceNamespace, resourceName))
             ?? (await getResources(effectiveGvk, resourceNamespace)).find((r: ResourceEntry) => r.name === resourceName)
           : (await getResources(effectiveGvk)).find((r: ResourceEntry) => r.name === resourceName);
+      }
 
       if (entry) {
         resource = JSON.parse(entry.content);
@@ -157,9 +208,7 @@
           try {
             const pod = JSON.parse(p.content);
             const podLabels = pod.metadata?.labels ?? {};
-            return Object.entries(selectorLabels).every(
-              ([k, v]) => podLabels[k] === v
-            );
+            return Object.entries(selectorLabels).every(([k, v]) => podLabels[k] === v);
           } catch {
             return false;
           }
@@ -180,10 +229,29 @@
     applyMessage = null;
     applyError = false;
     try {
-      const result = await applyResource(editedYaml, dryRun);
+      let result;
+      if (isDynamicResource) {
+        const plural = await resolveDynamicPlural();
+        if (!plural) {
+          throw new Error(`Unable to resolve plural for ${dynamicKind}`);
+        }
+        result = await applyDynamicResource(
+          dynamicGroup,
+          dynamicVersion,
+          dynamicKind,
+          plural,
+          namespace,
+          editedYaml,
+          dryRun,
+        );
+      } else {
+        result = await applyResource(editedYaml, dryRun);
+      }
       if (result.success) {
         applyMessage = result.message;
-        if (!dryRun) { await loadResource(); }
+        if (!dryRun) {
+          await loadResource();
+        }
       } else {
         applyMessage = result.message;
         applyError = true;
@@ -200,6 +268,27 @@
     editedYaml = yamlContent;
     applyMessage = null;
     applyError = false;
+  }
+
+  async function handleDelete() {
+    if (!isDynamicResource) return;
+    deleting = true;
+    applyMessage = null;
+    applyError = false;
+    try {
+      const plural = await resolveDynamicPlural();
+      if (!plural) {
+        throw new Error(`Unable to resolve plural for ${dynamicKind}`);
+      }
+      await deleteDynamicResource(dynamicGroup, dynamicVersion, dynamicKind, plural, namespace, resourceName);
+      showDeleteConfirm = false;
+      await goto(collectionHref ?? '/crds');
+    } catch (e) {
+      applyMessage = e instanceof Error ? e.message : String(e);
+      applyError = true;
+    } finally {
+      deleting = false;
+    }
   }
 
   async function loadRolloutStatus() {
@@ -347,10 +436,23 @@
     return [...labels, ...expressions];
   }
 
-  function formatSelector(matchLabels?: Record<string, string>): string {
-    const entries = Object.entries(matchLabels ?? {});
-    if (entries.length === 0) return 'All';
-    return entries.map(([key, value]) => `${key}=${value}`).join(', ');
+  function formatSelector(selector: any): string {
+    const parts = selectorParts(selector);
+    return parts.length > 0 ? parts.join(', ') : 'All';
+  }
+
+  function effectiveNetworkPolicyTypes(spec: any): string[] {
+    const explicitTypes = spec?.policyTypes;
+    if (Array.isArray(explicitTypes) && explicitTypes.length > 0) {
+      return explicitTypes;
+    }
+
+    const inferredTypes = ['Ingress'];
+    if (spec?.egress !== undefined) {
+      inferredTypes.push('Egress');
+    }
+
+    return inferredTypes;
   }
 
   function formatNetworkPolicyPeers(peers: any[] | undefined, direction: 'from' | 'to'): string {
@@ -362,11 +464,11 @@
       const parts: string[] = [];
 
       if (peer?.podSelector) {
-        parts.push(`Pods: ${formatSelector(peer.podSelector.matchLabels)}`);
+        parts.push(`Pods: ${formatSelector(peer.podSelector)}`);
       }
 
       if (peer?.namespaceSelector) {
-        parts.push(`Namespaces: ${formatSelector(peer.namespaceSelector.matchLabels)}`);
+        parts.push(`Namespaces: ${formatSelector(peer.namespaceSelector)}`);
       }
 
       if (peer?.ipBlock?.cidr) {
@@ -468,6 +570,9 @@
     <span class="namespace-badge">{namespaceLabel}</span>
     {#if isScalable && resource}
       <button class="action-btn" onclick={() => showScale = true}>⚖ Scale</button>
+    {/if}
+    {#if isDynamicResource && resource}
+      <button class="action-btn danger" onclick={() => (showDeleteConfirm = true)}>🗑 Delete</button>
     {/if}
   </header>
 
@@ -871,8 +976,8 @@
         {:else if kind === 'networkpolicies'}
           <h3>Info</h3>
           <dl>
-            <dt>Pod Selector</dt><dd>{formatSelector(resource.spec?.podSelector?.matchLabels)}</dd>
-            <dt>Policy Types</dt><dd>{(resource.spec?.policyTypes ?? []).join(', ') || 'None'}</dd>
+            <dt>Pod Selector</dt><dd>{formatSelector(resource.spec?.podSelector)}</dd>
+            <dt>Policy Types</dt><dd>{effectiveNetworkPolicyTypes(resource.spec).join(', ')}</dd>
           </dl>
 
           <h3>Ingress Rules</h3>
@@ -1366,6 +1471,92 @@
             {/if}
           </dl>
 
+        <!-- StorageClass Summary -->
+        {:else if kind === 'storageclasses'}
+          <h3>Info</h3>
+          <dl>
+            <dt>Provisioner</dt><dd>{resource.provisioner ?? 'N/A'}</dd>
+            <dt>Reclaim Policy</dt><dd>{resource.reclaimPolicy ?? 'Delete'}</dd>
+            <dt>Volume Binding Mode</dt><dd>{resource.volumeBindingMode ?? 'Immediate'}</dd>
+            <dt>Allow Volume Expansion</dt><dd>{resource.allowVolumeExpansion ? 'Yes' : 'No'}</dd>
+          </dl>
+
+          {#if resource.parameters && Object.keys(resource.parameters).length > 0}
+            <h3>Parameters</h3>
+            <table>
+              <thead><tr><th scope="col">Key</th><th scope="col">Value</th></tr></thead>
+              <tbody>
+                {#each Object.entries(resource.parameters) as [key, value]}
+                  <tr>
+                    <td class="resource-name">{key}</td>
+                    <td class="muted">{String(value)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+
+          {#if resource.mountOptions?.length}
+            <h3>Mount Options</h3>
+            <div class="labels">
+              {#each resource.mountOptions as opt}
+                <span class="label-badge">{opt}</span>
+              {/each}
+            </div>
+          {/if}
+
+        <!-- PersistentVolume Summary -->
+        {:else if kind === 'persistentvolumes'}
+          <h3>Info</h3>
+          <dl>
+            <dt>Capacity</dt><dd>{resource.spec?.capacity?.storage ?? 'N/A'}</dd>
+            <dt>Access Modes</dt><dd>{(resource.spec?.accessModes ?? []).join(', ') || 'N/A'}</dd>
+            <dt>Reclaim Policy</dt><dd>{resource.spec?.persistentVolumeReclaimPolicy ?? 'N/A'}</dd>
+            <dt>Status</dt><dd>{resource.status?.phase ?? 'Unknown'}</dd>
+            <dt>Storage Class</dt><dd>{resource.spec?.storageClassName ?? 'N/A'}</dd>
+            <dt>Volume Mode</dt><dd>{resource.spec?.volumeMode ?? 'Filesystem'}</dd>
+          </dl>
+
+          {#if resource.spec?.claimRef}
+            <h3>Claim Reference</h3>
+            <dl>
+              <dt>Namespace</dt><dd>{resource.spec.claimRef.namespace ?? 'N/A'}</dd>
+              <dt>Name</dt>
+              <dd>
+                {#if resource.spec.claimRef.namespace && resource.spec.claimRef.name}
+                  <a href={`/resources/pvcs/${encodeURIComponent(resource.spec.claimRef.namespace)}/${encodeURIComponent(resource.spec.claimRef.name)}`}>{resource.spec.claimRef.name}</a>
+                {:else}
+                  {resource.spec.claimRef.name ?? 'N/A'}
+                {/if}
+              </dd>
+            </dl>
+          {/if}
+
+          {#if resource.spec?.csi}
+            <h3>CSI Driver</h3>
+            <dl>
+              <dt>Driver</dt><dd>{resource.spec.csi.driver ?? 'N/A'}</dd>
+              {#if resource.spec.csi.volumeHandle}
+                <dt>Volume Handle</dt><dd>{resource.spec.csi.volumeHandle}</dd>
+              {/if}
+              {#if resource.spec.csi.fsType}
+                <dt>FS Type</dt><dd>{resource.spec.csi.fsType}</dd>
+              {/if}
+              {#if resource.spec.csi.readOnly !== undefined}
+                <dt>Read Only</dt><dd>{resource.spec.csi.readOnly ? 'Yes' : 'No'}</dd>
+              {/if}
+            </dl>
+          {/if}
+
+          {#if resource.spec?.mountOptions?.length}
+            <h3>Mount Options</h3>
+            <div class="labels">
+              {#each resource.spec.mountOptions as opt}
+                <span class="label-badge">{opt}</span>
+              {/each}
+            </div>
+          {/if}
+
         <!-- Fallback for unknown kinds -->
         {:else}
           <h3>Metadata</h3>
@@ -1475,6 +1666,9 @@
             <button onclick={() => handleApply(true)} disabled={!yamlDirty || applying} class="action-btn">🧪 Dry Run</button>
             <button onclick={() => handleApply(false)} disabled={!yamlDirty || applying} class="action-btn primary">✅ Apply</button>
             <button onclick={resetYaml} disabled={!yamlDirty} class="action-btn">↩ Reset</button>
+            {#if isDynamicResource}
+              <button onclick={() => (showDeleteConfirm = true)} disabled={deleting} class="action-btn danger">🗑 Delete</button>
+            {/if}
             {#if applyMessage}<span class={applyError ? 'apply-error' : 'apply-success'}>{applyMessage}</span>{/if}
           </div>
           <YamlEditor content={yamlContent} onchange={(v) => editedYaml = v} />
@@ -1516,6 +1710,17 @@
   oncancel={() => showProdRestartConfirm = false}
 />
 
+<ConfirmDialog
+  open={showDeleteConfirm}
+  title={`Delete ${resourceLabel}`}
+  message={`Delete "${resourceName}"${namespace ? ` from namespace "${namespace}"` : ''}?`}
+  confirmText={deleting ? 'Deleting…' : 'Delete'}
+  confirmValue={resourceName}
+  requireType={true}
+  onconfirm={handleDelete}
+  oncancel={() => { if (!deleting) showDeleteConfirm = false; }}
+/>
+
 <style>
   .detail-page {
     padding: 1.5rem;
@@ -1545,6 +1750,14 @@
     border-radius: 4px;
     font-size: 0.75rem;
     border: 1px solid #21262d;
+  }
+
+  .action-btn.danger {
+    background: #da3633;
+  }
+
+  .action-btn.danger:hover {
+    background: #f85149;
   }
 
   .error {
