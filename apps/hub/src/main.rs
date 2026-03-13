@@ -1,6 +1,6 @@
 use axum::extract::ws::WebSocketUpgrade;
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -78,12 +78,30 @@ async fn main() {
             get(routes::get_namespace).post(routes::set_namespace),
         )
         .route("/resources", get(routes::get_resources))
+        .route(
+            "/dynamic/{group}/{version}/{plural}",
+            get(routes::list_dynamic_resources),
+        )
+        .route(
+            "/dynamic/{group}/{version}/{plural}/{namespace}/{name}",
+            get(routes::get_dynamic_resource),
+        )
         .route("/resources/delete", post(routes::delete_resource))
         .route("/resources/apply", post(routes::apply_resource))
+        .route("/dynamic/apply", post(routes::apply_dynamic_resource))
+        .route("/dynamic/delete", post(routes::delete_dynamic_resource))
         .route("/resources/scale", post(routes::scale_resource))
         .route("/resource-counts", get(routes::get_resource_counts))
         .route("/rollout/restart", post(routes::rollout_restart))
         .route("/rollout/status", get(routes::rollout_status))
+        .route("/nodes/{name}/cordon", post(routes::cordon_node))
+        .route("/nodes/{name}/uncordon", post(routes::uncordon_node))
+        .route("/nodes/{name}/drain", post(routes::drain_node))
+        .route("/nodes/{name}/taints", post(routes::add_node_taint))
+        .route(
+            "/nodes/{name}/taints/{key}",
+            delete(routes::remove_node_taint),
+        )
         .route("/exec", post(routes::exec_command))
         .route("/port-forward", post(routes::start_port_forward))
         .route(
@@ -95,6 +113,8 @@ async fn main() {
         .route("/pods", get(routes::get_pods))
         .route("/events", get(routes::get_events))
         .route("/namespaces", get(routes::list_namespaces))
+        .route("/namespaces/create", post(routes::create_namespace))
+        .route("/namespaces/{name}", delete(routes::delete_namespace))
         .route("/pods/{namespace}/{name}/logs", get(routes::get_pod_logs))
         .route(
             "/pods/{namespace}/{pod}/logs/stream",

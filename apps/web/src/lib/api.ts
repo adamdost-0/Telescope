@@ -43,6 +43,7 @@ const HUB_URL =
     : (publicEnv.PUBLIC_ENGINE_HTTP_BASE ?? 'http://localhost:3001');
 
 type HubErrorResponse = { error?: string };
+const CLUSTER_SCOPED_NAMESPACE = '_cluster';
 
 async function readHubError(res: Response): Promise<Error> {
   let message = `Request failed (${res.status})`;
@@ -118,6 +119,23 @@ async function webFallback<T>(command: string, args?: Record<string, unknown>): 
       const resources = (await res.json()) as ResourceEntry[];
       return resources.length as T;
     }
+    case 'list_dynamic_resources': {
+      const params = new URLSearchParams();
+      if (args?.namespace) params.set('namespace', args.namespace as string);
+      const res = await fetch(
+        `${base}/dynamic/${encodeURIComponent(args?.group as string)}/${encodeURIComponent(args?.version as string)}/${encodeURIComponent(args?.plural as string)}?${params}`
+      );
+      return await expectJson<T>(res);
+    }
+    case 'get_dynamic_resource': {
+      const namespace = typeof args?.namespace === 'string' && args.namespace.length > 0
+        ? encodeURIComponent(args.namespace as string)
+        : CLUSTER_SCOPED_NAMESPACE;
+      const res = await fetch(
+        `${base}/dynamic/${encodeURIComponent(args?.group as string)}/${encodeURIComponent(args?.version as string)}/${encodeURIComponent(args?.plural as string)}/${namespace}/${encodeURIComponent(args?.name as string)}`
+      );
+      return await expectJson<T>(res);
+    }
     case 'get_resource': {
       const params = new URLSearchParams();
       if (args?.gvk) params.set('gvk', args.gvk as string);
@@ -159,7 +177,23 @@ async function webFallback<T>(command: string, args?: Record<string, unknown>): 
     }
     case 'list_namespaces': {
       const res = await fetch(`${base}/namespaces`);
-      return (await res.json()) as T;
+      return await expectJson<T>(res);
+    }
+    case 'create_namespace': {
+      const res = await fetch(`${base}/namespaces/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: args?.name })
+      });
+      const data = await expectJson<{ message: string }>(res);
+      return data.message as T;
+    }
+    case 'delete_namespace': {
+      const res = await fetch(`${base}/namespaces/${encodeURIComponent(args?.name as string)}`, {
+        method: 'DELETE'
+      });
+      const data = await expectJson<{ message: string }>(res);
+      return data.message as T;
     }
     case 'get_namespace': {
       const res = await fetch(`${base}/namespace`);
@@ -256,6 +290,41 @@ async function webFallback<T>(command: string, args?: Record<string, unknown>): 
         })
       });
       return await expectJson<T>(res);
+    }
+    case 'apply_dynamic_resource': {
+      const res = await fetch(`${base}/dynamic/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          group: args?.group,
+          version: args?.version,
+          kind: args?.kind,
+          plural: args?.plural,
+          namespace: args?.namespace,
+          manifest: args?.manifest,
+          dry_run: args?.dry_run,
+        })
+      });
+      return await expectJson<T>(res);
+    }
+    case 'delete_dynamic_resource': {
+      const res = await fetch(`${base}/dynamic/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          group: args?.group,
+          version: args?.version,
+          kind: args?.kind,
+          plural: args?.plural,
+          namespace: args?.namespace,
+          name: args?.name,
+        })
+      });
+      const data = await expectJson<{ success: boolean; message: string }>(res);
+      if (!data.success) {
+        throw new Error(data.message);
+      }
+      return data.message as T;
     }
     case 'rollout_restart': {
       const res = await fetch(`${base}/rollout/restart`, {
@@ -360,6 +429,57 @@ async function webFallback<T>(command: string, args?: Record<string, unknown>): 
       await expectOk(res);
       return undefined as T;
     }
+    case 'cordon_node': {
+      const res = await fetch(
+        `${base}/nodes/${encodeURIComponent(args?.name as string)}/cordon`,
+        { method: 'POST' }
+      );
+      const data = await expectJson<{ message: string }>(res);
+      return data.message as T;
+    }
+    case 'uncordon_node': {
+      const res = await fetch(
+        `${base}/nodes/${encodeURIComponent(args?.name as string)}/uncordon`,
+        { method: 'POST' }
+      );
+      const data = await expectJson<{ message: string }>(res);
+      return data.message as T;
+    }
+    case 'drain_node': {
+      const res = await fetch(
+        `${base}/nodes/${encodeURIComponent(args?.name as string)}/drain`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grace_period: args?.grace_period ?? 30,
+            ignore_daemonsets: args?.ignore_daemonsets ?? true,
+            force: args?.force ?? false
+          })
+        }
+      );
+      return await expectJson<T>(res);
+    }
+    case 'add_node_taint': {
+      const res = await fetch(
+        `${base}/nodes/${encodeURIComponent(args?.name as string)}/taints`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: args?.key, value: args?.value, effect: args?.effect })
+        }
+      );
+      const data = await expectJson<{ message: string }>(res);
+      return data.message as T;
+    }
+    case 'remove_node_taint': {
+      const res = await fetch(
+        `${base}/nodes/${encodeURIComponent(args?.name as string)}/taints/${encodeURIComponent(args?.key as string)}`,
+        { method: 'DELETE' }
+      );
+      const data = await expectJson<{ message: string }>(res);
+      return data.message as T;
+    }
 
     default:
       console.warn(`[telescope] No hub mapping for command: ${command}`);
@@ -441,6 +561,44 @@ export async function countResources(gvk: string, namespace?: string): Promise<n
     return await invoke<number>('count_resources', { gvk, namespace: namespace ?? null });
   } catch {
     return 0;
+  }
+}
+
+export async function listDynamicResources(
+  group: string,
+  version: string,
+  plural: string,
+  namespace?: string | null,
+): Promise<ResourceEntry[]> {
+  try {
+    return await invoke<ResourceEntry[]>('list_dynamic_resources', {
+      group,
+      version,
+      plural,
+      namespace: namespace ?? null,
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function getDynamicResource(
+  group: string,
+  version: string,
+  plural: string,
+  namespace: string | null,
+  name: string,
+): Promise<ResourceEntry | null> {
+  try {
+    return await invoke<ResourceEntry | null>('get_dynamic_resource', {
+      group,
+      version,
+      plural,
+      namespace,
+      name,
+    });
+  } catch {
+    return null;
   }
 }
 
@@ -536,6 +694,14 @@ export async function listNamespaces(): Promise<string[]> {
   }
 }
 
+export async function createNamespace(name: string): Promise<string> {
+  return invoke<string>('create_namespace', { name });
+}
+
+export async function deleteNamespace(name: string): Promise<string> {
+  return invoke<string>('delete_namespace', { name });
+}
+
 /** Get the current active namespace. */
 export async function getNamespace(): Promise<string> {
   try {
@@ -617,6 +783,44 @@ export async function execCommand(
 export interface ApplyResult {
   success: boolean;
   message: string;
+}
+
+export async function applyDynamicResource(
+  group: string,
+  version: string,
+  kind: string,
+  plural: string,
+  namespace: string | null,
+  manifest: string,
+  dryRun = false,
+): Promise<ApplyResult> {
+  return invoke<ApplyResult>('apply_dynamic_resource', {
+    group,
+    version,
+    kind,
+    plural,
+    namespace,
+    manifest,
+    dry_run: dryRun,
+  });
+}
+
+export async function deleteDynamicResource(
+  group: string,
+  version: string,
+  kind: string,
+  plural: string,
+  namespace: string | null,
+  name: string,
+): Promise<string> {
+  return invoke<string>('delete_dynamic_resource', {
+    group,
+    version,
+    kind,
+    plural,
+    namespace,
+    name,
+  });
 }
 
 /** Apply (create or update) a Kubernetes resource from a JSON/YAML manifest. */
@@ -713,4 +917,51 @@ export async function getPreference(key: string): Promise<string | null> {
 /** Write a single user preference. */
 export async function setPreference(key: string, value: string): Promise<void> {
   await invoke<void>('set_preference', { key, value });
+}
+
+// ── Node operations ──────────────────────────────────────────────────────
+
+/** Cordon a node (mark as unschedulable). */
+export async function cordonNode(name: string): Promise<string> {
+  return invoke<string>('cordon_node', { name });
+}
+
+/** Uncordon a node (mark as schedulable). */
+export async function uncordonNode(name: string): Promise<string> {
+  return invoke<string>('uncordon_node', { name });
+}
+
+/** Drain options for drainNode(). */
+export interface DrainOptions {
+  grace_period?: number;
+  ignore_daemonsets?: boolean;
+  force?: boolean;
+}
+
+/** Result of a drain operation. */
+export interface DrainResult {
+  success: boolean;
+  message: string;
+  evicted_pods: string[];
+  skipped_pods: string[];
+}
+
+/** Drain a node: cordon then evict eligible pods. */
+export async function drainNode(name: string, options?: DrainOptions): Promise<DrainResult> {
+  return invoke<DrainResult>('drain_node', {
+    name,
+    grace_period: options?.grace_period ?? 30,
+    ignore_daemonsets: options?.ignore_daemonsets ?? true,
+    force: options?.force ?? false
+  });
+}
+
+/** Add a taint to a node. */
+export async function addNodeTaint(name: string, key: string, value: string, effect: string): Promise<string> {
+  return invoke<string>('add_node_taint', { name, key, value, effect });
+}
+
+/** Remove a taint from a node by key. */
+export async function removeNodeTaint(name: string, key: string): Promise<string> {
+  return invoke<string>('remove_node_taint', { name, key });
 }

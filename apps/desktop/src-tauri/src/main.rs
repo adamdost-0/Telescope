@@ -239,6 +239,56 @@ fn count_resources(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn list_dynamic_resources(
+    state: State<'_, AppState>,
+    group: String,
+    version: String,
+    plural: String,
+    namespace: Option<String>,
+) -> Result<Vec<ResourceEntry>, String> {
+    let client = active_client(&state).await?;
+    let kind = telescope_engine::dynamic::resolve_dynamic_kind(&client, &group, &version, &plural)
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::dynamic::list_dynamic_resources(
+        &client,
+        &group,
+        &version,
+        &kind,
+        &plural,
+        namespace.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_dynamic_resource(
+    state: State<'_, AppState>,
+    group: String,
+    version: String,
+    plural: String,
+    namespace: Option<String>,
+    name: String,
+) -> Result<Option<ResourceEntry>, String> {
+    let client = active_client(&state).await?;
+    let kind = telescope_engine::dynamic::resolve_dynamic_kind(&client, &group, &version, &plural)
+        .await
+        .map_err(|e| e.to_string())?;
+    telescope_engine::dynamic::get_dynamic_resource(
+        &client,
+        &group,
+        &version,
+        &kind,
+        &plural,
+        namespace.as_deref(),
+        &name,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// Get a specific resource by GVK, namespace, and name.
 #[tauri::command]
 fn get_resource(
@@ -374,6 +424,70 @@ async fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<String>, Stri
     telescope_engine::namespace::list_namespaces(&client)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Create a namespace in the connected cluster.
+#[tauri::command]
+async fn create_namespace(state: State<'_, AppState>, name: String) -> Result<String, String> {
+    let client = active_client(&state).await?;
+    let outcome = telescope_engine::namespace::create_namespace(&client, &name).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: name.clone(),
+            action: "create_namespace".into(),
+            resource_type: "v1/Namespace".into(),
+            resource_name: name,
+            result: result_str.into(),
+            detail: None,
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
+/// Delete a namespace in the connected cluster.
+#[tauri::command]
+async fn delete_namespace(state: State<'_, AppState>, name: String) -> Result<String, String> {
+    let client = active_client(&state).await?;
+    let outcome = telescope_engine::namespace::delete_namespace(&client, &name).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: name.clone(),
+            action: "delete_namespace".into(),
+            resource_type: "v1/Namespace".into(),
+            resource_name: name,
+            result: result_str.into(),
+            detail: None,
+        },
+    );
+    outcome.map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -637,6 +751,108 @@ async fn start_log_stream(
 // ---------------------------------------------------------------------------
 // Resource actions
 // ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn apply_dynamic_resource(
+    state: State<'_, AppState>,
+    group: String,
+    version: String,
+    kind: String,
+    plural: String,
+    namespace: Option<String>,
+    manifest: String,
+    dry_run: bool,
+) -> Result<telescope_engine::actions::ApplyResult, String> {
+    let client = active_client(&state).await?;
+    let outcome = telescope_engine::dynamic::apply_dynamic_resource(
+        &client,
+        &group,
+        &version,
+        &kind,
+        &plural,
+        namespace.as_deref(),
+        &manifest,
+        dry_run,
+    )
+    .await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: namespace.clone().unwrap_or_default(),
+            action: "apply_dynamic".into(),
+            resource_type: format!("{}/{}/{}", group, version, kind),
+            resource_name: String::new(),
+            result: result_str.into(),
+            detail: Some(format!("dry_run={}", dry_run)),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn delete_dynamic_resource(
+    state: State<'_, AppState>,
+    group: String,
+    version: String,
+    kind: String,
+    plural: String,
+    namespace: Option<String>,
+    name: String,
+) -> Result<String, String> {
+    let client = active_client(&state).await?;
+    let outcome = telescope_engine::dynamic::delete_dynamic_resource(
+        &client,
+        &group,
+        &version,
+        &kind,
+        &plural,
+        namespace.as_deref().unwrap_or_default(),
+        &name,
+    )
+    .await;
+    let result_str = match &outcome {
+        Ok(r) if r.success => "success",
+        _ => "failure",
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: namespace.clone().unwrap_or_default(),
+            action: "delete_dynamic".into(),
+            resource_type: format!("{}/{}/{}", group, version, kind),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: None,
+        },
+    );
+    let result = outcome.map_err(|e| e.to_string())?;
+    if result.success {
+        Ok(result.message)
+    } else {
+        Err(result.message)
+    }
+}
 
 /// Scale a Deployment or StatefulSet to the specified replica count.
 #[tauri::command]
@@ -1017,6 +1233,193 @@ async fn rollout_status(
 }
 
 // ---------------------------------------------------------------------------
+// Node operations
+// ---------------------------------------------------------------------------
+
+/// Cordon a node (mark as unschedulable).
+#[tauri::command]
+async fn cordon_node(state: State<'_, AppState>, name: String) -> Result<String, String> {
+    let client = active_client(&state).await?;
+    let outcome = telescope_engine::node_ops::cordon_node(&client, &name).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: String::new(),
+            action: "cordon".into(),
+            resource_type: "Node".into(),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: None,
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
+/// Uncordon a node (mark as schedulable).
+#[tauri::command]
+async fn uncordon_node(state: State<'_, AppState>, name: String) -> Result<String, String> {
+    let client = active_client(&state).await?;
+    let outcome = telescope_engine::node_ops::uncordon_node(&client, &name).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: String::new(),
+            action: "uncordon".into(),
+            resource_type: "Node".into(),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: None,
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
+/// Drain a node: cordon then evict eligible pods.
+#[tauri::command]
+async fn drain_node(
+    state: State<'_, AppState>,
+    name: String,
+    grace_period: Option<i64>,
+    ignore_daemonsets: Option<bool>,
+    force: Option<bool>,
+) -> Result<telescope_engine::node_ops::DrainResult, String> {
+    let client = active_client(&state).await?;
+    let options = telescope_engine::node_ops::DrainOptions {
+        grace_period: grace_period.unwrap_or(30),
+        ignore_daemonsets: ignore_daemonsets.unwrap_or(true),
+        force: force.unwrap_or(false),
+    };
+    let outcome = telescope_engine::node_ops::drain_node(&client, &name, &options).await;
+    let result_str = match &outcome {
+        Ok(r) if r.success => "success",
+        _ => "failure",
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: String::new(),
+            action: "drain".into(),
+            resource_type: "Node".into(),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: Some(format!(
+                "grace_period={}, ignore_daemonsets={}, force={}",
+                options.grace_period, options.ignore_daemonsets, options.force
+            )),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
+/// Add a taint to a node.
+#[tauri::command]
+async fn add_node_taint(
+    state: State<'_, AppState>,
+    name: String,
+    key: String,
+    value: String,
+    effect: String,
+) -> Result<String, String> {
+    let client = active_client(&state).await?;
+    let outcome =
+        telescope_engine::node_ops::add_taint(&client, &name, &key, &value, &effect).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: String::new(),
+            action: "add_taint".into(),
+            resource_type: "Node".into(),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: Some(format!("{}={}:{}", key, value, effect)),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
+/// Remove a taint from a node by key.
+#[tauri::command]
+async fn remove_node_taint(
+    state: State<'_, AppState>,
+    name: String,
+    key: String,
+) -> Result<String, String> {
+    let client = active_client(&state).await?;
+    let outcome = telescope_engine::node_ops::remove_taint(&client, &name, &key).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state
+                .active_context
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default(),
+            namespace: String::new(),
+            action: "remove_taint".into(),
+            resource_type: "Node".into(),
+            resource_name: name.clone(),
+            result: result_str.into(),
+            detail: Some(format!("key={}", key)),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Container exec
 // ---------------------------------------------------------------------------
@@ -1215,9 +1618,13 @@ fn main() {
             search_resources,
             count_resources,
             get_resource,
+            list_dynamic_resources,
+            get_dynamic_resource,
             get_secrets,
             get_secret,
             list_namespaces,
+            create_namespace,
+            delete_namespace,
             list_helm_releases,
             get_helm_release_history,
             get_helm_release_values,
@@ -1233,8 +1640,15 @@ fn main() {
             scale_resource,
             delete_resource,
             apply_resource,
+            apply_dynamic_resource,
+            delete_dynamic_resource,
             rollout_restart,
             rollout_status,
+            cordon_node,
+            uncordon_node,
+            drain_node,
+            add_node_taint,
+            remove_node_taint,
             exec_command,
             get_pod_metrics,
             check_metrics_available,

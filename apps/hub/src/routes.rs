@@ -12,6 +12,13 @@ use telescope_engine::actions::{
     scale_resource as engine_scale_resource, ApplyResult, DeleteResult, RolloutStatus,
 };
 use telescope_engine::audit::AuditEntry;
+use telescope_engine::dynamic::{
+    apply_dynamic_resource as engine_apply_dynamic_resource,
+    delete_dynamic_resource as engine_delete_dynamic_resource,
+    get_dynamic_resource as engine_get_dynamic_resource,
+    list_dynamic_resources as engine_list_dynamic_resources,
+    resolve_dynamic_kind as engine_resolve_dynamic_kind,
+};
 use telescope_engine::exec::{
     exec_command as engine_exec_command, ExecRequest as EngineExecRequest, ExecResult,
 };
@@ -25,6 +32,11 @@ use telescope_engine::kubeconfig::active_context as engine_active_context;
 use telescope_engine::metrics::{
     get_node_metrics as engine_get_node_metrics,
     is_metrics_available as engine_is_metrics_available, NodeMetricsData, PodMetrics,
+};
+use telescope_engine::node_ops::{
+    add_taint as engine_add_taint, cordon_node as engine_cordon_node,
+    drain_node as engine_drain_node, remove_taint as engine_remove_taint,
+    uncordon_node as engine_uncordon_node, DrainOptions, DrainResult,
 };
 use telescope_engine::portforward::{
     start_port_forward as engine_start_port_forward, PortForwardRequest as EnginePortForwardRequest,
@@ -52,6 +64,32 @@ pub struct ResourceQuery {
 #[derive(Deserialize)]
 pub struct NamespaceQuery {
     pub namespace: Option<String>,
+}
+#[derive(Deserialize)]
+pub struct DynamicListQuery {
+    pub namespace: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DynamicApplyRequest {
+    pub group: String,
+    pub version: String,
+    pub kind: String,
+    pub plural: String,
+    pub namespace: Option<String>,
+    pub manifest: String,
+    #[serde(default, alias = "dryRun")]
+    pub dry_run: bool,
+}
+
+#[derive(Deserialize)]
+pub struct DynamicDeleteRequest {
+    pub group: String,
+    pub version: String,
+    pub kind: String,
+    pub plural: String,
+    pub namespace: Option<String>,
+    pub name: String,
 }
 
 #[derive(Deserialize)]
@@ -149,8 +187,20 @@ pub struct NamespaceRequest {
 }
 
 #[derive(Deserialize)]
+pub struct CreateNamespaceRequest {
+    pub name: String,
+}
+
+#[derive(Deserialize)]
 pub struct PreferenceValueRequest {
     pub value: String,
+}
+
+#[derive(Deserialize)]
+pub struct AddTaintRequest {
+    pub key: String,
+    pub value: String,
+    pub effect: String,
 }
 
 #[derive(Serialize)]
@@ -369,6 +419,62 @@ pub async fn get_resources(
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/v1/dynamic/:group/:version/:plural?namespace=...
+// GET /api/v1/dynamic/:group/:version/:plural/:namespace/:name
+// ---------------------------------------------------------------------------
+
+pub async fn list_dynamic_resources(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Path((group, version, plural)): Path<(String, String, String)>,
+    Query(params): Query<DynamicListQuery>,
+) -> ApiResult<Vec<ResourceEntry>> {
+    let client = active_client_for_user(&state, &user).await?;
+    let kind = engine_resolve_dynamic_kind(&client, &group, &version, &plural)
+        .await
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    engine_list_dynamic_resources(
+        &client,
+        &group,
+        &version,
+        &kind,
+        &plural,
+        params.namespace.as_deref(),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub async fn get_dynamic_resource(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Path((group, version, plural, namespace, name)): Path<(String, String, String, String, String)>,
+) -> ApiResult<Option<ResourceEntry>> {
+    let client = active_client_for_user(&state, &user).await?;
+    let kind = engine_resolve_dynamic_kind(&client, &group, &version, &plural)
+        .await
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let namespace = if namespace == "_cluster" || namespace.is_empty() {
+        None
+    } else {
+        Some(namespace)
+    };
+    engine_get_dynamic_resource(
+        &client,
+        &group,
+        &version,
+        &kind,
+        &plural,
+        namespace.as_deref(),
+        &name,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/v1/pods?namespace=...
 // ---------------------------------------------------------------------------
 
@@ -434,6 +540,56 @@ pub async fn list_namespaces(
     telescope_engine::namespace::list_namespaces(&client)
         .await
         .map(Json)
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub async fn create_namespace(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<CreateNamespaceRequest>,
+) -> ApiResult<MessageResponse> {
+    let client = active_client_for_user(&state, &user).await?;
+    let result = telescope_engine::namespace::create_namespace(&client, &body.name).await;
+
+    audit_action(
+        &state,
+        &user,
+        body.name.clone(),
+        "create_namespace",
+        "v1/Namespace".to_string(),
+        body.name.clone(),
+        result.is_ok(),
+        None,
+    )
+    .await;
+
+    result
+        .map(|message| Json(MessageResponse { message }))
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub async fn delete_namespace(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Path(name): Path<String>,
+) -> ApiResult<MessageResponse> {
+    let client = active_client_for_user(&state, &user).await?;
+    let result = telescope_engine::namespace::delete_namespace(&client, &name).await;
+
+    audit_action(
+        &state,
+        &user,
+        name.clone(),
+        "delete_namespace",
+        "v1/Namespace".to_string(),
+        name.clone(),
+        result.is_ok(),
+        None,
+    )
+    .await;
+
+    result
+        .map(|message| Json(MessageResponse { message }))
         .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
@@ -756,6 +912,80 @@ pub async fn apply_resource(
         .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
+pub async fn apply_dynamic_resource(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<DynamicApplyRequest>,
+) -> ApiResult<ApplyResult> {
+    let client = active_client_for_user(&state, &user).await?;
+    let result = engine_apply_dynamic_resource(
+        &client,
+        &body.group,
+        &body.version,
+        &body.kind,
+        &body.plural,
+        body.namespace.as_deref(),
+        &body.manifest,
+        body.dry_run,
+    )
+    .await;
+
+    audit_action(
+        &state,
+        &user,
+        body.namespace.clone().unwrap_or_default(),
+        "apply_dynamic",
+        format!("{}/{}/{}", body.group, body.version, body.kind),
+        String::new(),
+        result
+            .as_ref()
+            .is_ok_and(|apply_result| apply_result.success),
+        Some(format!("dry_run={}", body.dry_run)),
+    )
+    .await;
+
+    result
+        .map(Json)
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub async fn delete_dynamic_resource(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<DynamicDeleteRequest>,
+) -> ApiResult<DeleteResult> {
+    let client = active_client_for_user(&state, &user).await?;
+    let namespace = body.namespace.clone().unwrap_or_default();
+    let result = engine_delete_dynamic_resource(
+        &client,
+        &body.group,
+        &body.version,
+        &body.kind,
+        &body.plural,
+        &namespace,
+        &body.name,
+    )
+    .await;
+
+    audit_action(
+        &state,
+        &user,
+        namespace,
+        "delete_dynamic",
+        format!("{}/{}/{}", body.group, body.version, body.kind),
+        body.name.clone(),
+        result
+            .as_ref()
+            .is_ok_and(|delete_result| delete_result.success),
+        None,
+    )
+    .await;
+
+    result
+        .map(Json)
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
 pub async fn scale_resource(
     State(state): State<Arc<HubState>>,
     Extension(user): Extension<AuthUser>,
@@ -822,6 +1052,140 @@ pub async fn rollout_status(
     engine_rollout_status(&client, &params.gvk, &params.namespace, &params.name)
         .await
         .map(Json)
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+// ---------------------------------------------------------------------------
+// Node operations
+// ---------------------------------------------------------------------------
+
+pub async fn cordon_node(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Path(name): Path<String>,
+) -> ApiResult<MessageResponse> {
+    let client = active_client_for_user(&state, &user).await?;
+    let result = engine_cordon_node(&client, &name).await;
+
+    audit_action(
+        &state,
+        &user,
+        String::new(),
+        "cordon",
+        "Node".to_string(),
+        name.clone(),
+        result.is_ok(),
+        None,
+    )
+    .await;
+
+    result
+        .map(|message| Json(MessageResponse { message }))
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub async fn uncordon_node(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Path(name): Path<String>,
+) -> ApiResult<MessageResponse> {
+    let client = active_client_for_user(&state, &user).await?;
+    let result = engine_uncordon_node(&client, &name).await;
+
+    audit_action(
+        &state,
+        &user,
+        String::new(),
+        "uncordon",
+        "Node".to_string(),
+        name.clone(),
+        result.is_ok(),
+        None,
+    )
+    .await;
+
+    result
+        .map(|message| Json(MessageResponse { message }))
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub async fn drain_node(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Path(name): Path<String>,
+    Json(options): Json<DrainOptions>,
+) -> ApiResult<DrainResult> {
+    let client = active_client_for_user(&state, &user).await?;
+    let result = engine_drain_node(&client, &name, &options).await;
+
+    audit_action(
+        &state,
+        &user,
+        String::new(),
+        "drain",
+        "Node".to_string(),
+        name.clone(),
+        result.as_ref().is_ok_and(|r| r.success),
+        Some(format!(
+            "grace_period={}, ignore_daemonsets={}, force={}",
+            options.grace_period, options.ignore_daemonsets, options.force
+        )),
+    )
+    .await;
+
+    result
+        .map(Json)
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub async fn add_node_taint(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Path(name): Path<String>,
+    Json(body): Json<AddTaintRequest>,
+) -> ApiResult<MessageResponse> {
+    let client = active_client_for_user(&state, &user).await?;
+    let result = engine_add_taint(&client, &name, &body.key, &body.value, &body.effect).await;
+
+    audit_action(
+        &state,
+        &user,
+        String::new(),
+        "add_taint",
+        "Node".to_string(),
+        name.clone(),
+        result.is_ok(),
+        Some(format!("{}={}:{}", body.key, body.value, body.effect)),
+    )
+    .await;
+
+    result
+        .map(|message| Json(MessageResponse { message }))
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub async fn remove_node_taint(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Path((name, key)): Path<(String, String)>,
+) -> ApiResult<MessageResponse> {
+    let client = active_client_for_user(&state, &user).await?;
+    let result = engine_remove_taint(&client, &name, &key).await;
+
+    audit_action(
+        &state,
+        &user,
+        String::new(),
+        "remove_taint",
+        "Node".to_string(),
+        name.clone(),
+        result.is_ok(),
+        Some(format!("key={}", key)),
+    )
+    .await;
+
+    result
+        .map(|message| Json(MessageResponse { message }))
         .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 

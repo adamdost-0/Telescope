@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { onMount, onDestroy } from 'svelte';
-  import { getResources, getNodeMetrics, checkMetricsAvailable } from '$lib/api';
+  import { getResources, getNodeMetrics, checkMetricsAvailable, cordonNode, uncordonNode, drainNode, addNodeTaint, removeNodeTaint } from '$lib/api';
+  import type { DrainOptions, DrainResult } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
@@ -16,11 +17,108 @@
   let activeTab = $state('summary');
   let error: string | null = $state(null);
 
+  // Action state
+  let actionLoading = $state(false);
+  let actionMessage: string | null = $state(null);
+  let actionError: string | null = $state(null);
+
+  // Drain dialog state
+  let showDrainDialog = $state(false);
+  let drainGracePeriod = $state(30);
+  let drainIgnoreDaemonsets = $state(true);
+  let drainForce = $state(false);
+  let drainResult: DrainResult | null = $state(null);
+
+  // Taint dialog state
+  let showTaintDialog = $state(false);
+  let newTaintKey = $state('');
+  let newTaintValue = $state('');
+  let newTaintEffect = $state('NoSchedule');
+
   // Sparkline metrics ring buffer (30 points, polled every 30s)
   const MAX_SPARKLINE_POINTS = 30;
   let cpuHistory: number[] = $state([]);
   let memoryHistory: number[] = $state([]);
   let metricsTimer: ReturnType<typeof setInterval> | null = null;
+
+  let isUnschedulable = $derived(node?.spec?.unschedulable === true);
+
+  function clearMessages() {
+    actionMessage = null;
+    actionError = null;
+  }
+
+  async function handleCordonToggle() {
+    clearMessages();
+    actionLoading = true;
+    try {
+      if (isUnschedulable) {
+        actionMessage = await uncordonNode(nodeName);
+      } else {
+        actionMessage = await cordonNode(nodeName);
+      }
+      await loadNode();
+    } catch (e) {
+      actionError = e instanceof Error ? e.message : 'Operation failed';
+    } finally {
+      actionLoading = false;
+    }
+  }
+
+  async function handleDrain() {
+    clearMessages();
+    actionLoading = true;
+    drainResult = null;
+    try {
+      const opts: DrainOptions = {
+        grace_period: drainGracePeriod,
+        ignore_daemonsets: drainIgnoreDaemonsets,
+        force: drainForce
+      };
+      drainResult = await drainNode(nodeName, opts);
+      if (drainResult.success) {
+        actionMessage = drainResult.message;
+      } else {
+        actionError = drainResult.message;
+      }
+      await loadNode();
+    } catch (e) {
+      actionError = e instanceof Error ? e.message : 'Drain failed';
+    } finally {
+      actionLoading = false;
+      showDrainDialog = false;
+    }
+  }
+
+  async function handleAddTaint() {
+    if (!newTaintKey.trim()) return;
+    clearMessages();
+    actionLoading = true;
+    try {
+      actionMessage = await addNodeTaint(nodeName, newTaintKey.trim(), newTaintValue.trim(), newTaintEffect);
+      newTaintKey = '';
+      newTaintValue = '';
+      newTaintEffect = 'NoSchedule';
+      await loadNode();
+    } catch (e) {
+      actionError = e instanceof Error ? e.message : 'Failed to add taint';
+    } finally {
+      actionLoading = false;
+    }
+  }
+
+  async function handleRemoveTaint(key: string) {
+    clearMessages();
+    actionLoading = true;
+    try {
+      actionMessage = await removeNodeTaint(nodeName, key);
+      await loadNode();
+    } catch (e) {
+      actionError = e instanceof Error ? e.message : 'Failed to remove taint';
+    } finally {
+      actionLoading = false;
+    }
+  }
 
   async function pollNodeMetrics() {
     try {
@@ -118,7 +216,113 @@
       { label: nodeName }
     ]} />
     <h1>{nodeName}</h1>
+    {#if node}
+      <span class="scheduling-badge" class:schedulable={!isUnschedulable} class:unschedulable={isUnschedulable}>
+        {isUnschedulable ? 'SchedulingDisabled' : 'Schedulable'}
+      </span>
+      <div class="header-actions">
+        <button class="action-btn" class:cordon-btn={!isUnschedulable} class:uncordon-btn={isUnschedulable} disabled={actionLoading} onclick={handleCordonToggle}>
+          {isUnschedulable ? 'Uncordon' : 'Cordon'}
+        </button>
+        <button class="action-btn drain-btn" disabled={actionLoading} onclick={() => { showDrainDialog = true; drainResult = null; }}>
+          Drain
+        </button>
+        <button class="action-btn taint-btn" disabled={actionLoading} onclick={() => { showTaintDialog = !showTaintDialog; }}>
+          Manage Taints
+        </button>
+      </div>
+    {/if}
   </header>
+
+  {#if actionMessage}
+    <div class="action-success" role="status">{actionMessage}</div>
+  {/if}
+  {#if actionError}
+    <div class="action-error" role="alert">{actionError}</div>
+  {/if}
+  {#if drainResult && drainResult.evicted_pods.length > 0}
+    <details class="drain-details">
+      <summary>Drain details ({drainResult.evicted_pods.length} evicted, {drainResult.skipped_pods.length} skipped)</summary>
+      {#if drainResult.evicted_pods.length > 0}
+        <p><strong>Evicted:</strong></p>
+        <ul>{#each drainResult.evicted_pods as pod}<li>{pod}</li>{/each}</ul>
+      {/if}
+      {#if drainResult.skipped_pods.length > 0}
+        <p><strong>Skipped:</strong></p>
+        <ul>{#each drainResult.skipped_pods as pod}<li>{pod}</li>{/each}</ul>
+      {/if}
+    </details>
+  {/if}
+
+  <!-- Drain confirmation dialog -->
+  {#if showDrainDialog}
+    <div class="dialog-overlay" role="dialog" aria-label="Drain node">
+      <div class="dialog">
+        <h3>Drain Node: {nodeName}</h3>
+        <p class="drain-warning">⚠️ Draining will cordon the node and evict all eligible pods. This is a disruptive operation.</p>
+        <div class="dialog-field">
+          <label for="grace-period">Grace period (seconds)</label>
+          <input id="grace-period" type="number" min="0" bind:value={drainGracePeriod} />
+        </div>
+        <div class="dialog-field">
+          <label>
+            <input type="checkbox" bind:checked={drainIgnoreDaemonsets} />
+            Ignore DaemonSet pods
+          </label>
+        </div>
+        <div class="dialog-field">
+          <label>
+            <input type="checkbox" bind:checked={drainForce} />
+            Force (continue on eviction errors)
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="action-btn" onclick={() => { showDrainDialog = false; }}>Cancel</button>
+          <button class="action-btn drain-btn" disabled={actionLoading} onclick={handleDrain}>
+            {actionLoading ? 'Draining…' : 'Drain'}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Taint management dialog -->
+  {#if showTaintDialog}
+    <div class="taint-panel">
+      <h3>Manage Taints</h3>
+      <div class="add-taint-form">
+        <input type="text" placeholder="Key" bind:value={newTaintKey} />
+        <input type="text" placeholder="Value" bind:value={newTaintValue} />
+        <select bind:value={newTaintEffect}>
+          <option value="NoSchedule">NoSchedule</option>
+          <option value="PreferNoSchedule">PreferNoSchedule</option>
+          <option value="NoExecute">NoExecute</option>
+        </select>
+        <button class="action-btn taint-btn" disabled={actionLoading || !newTaintKey.trim()} onclick={handleAddTaint}>
+          Add Taint
+        </button>
+      </div>
+      {#if getTaints(node).length > 0}
+        <table>
+          <thead><tr><th scope="col">Key</th><th scope="col">Value</th><th scope="col">Effect</th><th scope="col"></th></tr></thead>
+          <tbody>
+            {#each getTaints(node) as taint}
+              <tr>
+                <td>{taint.key}</td>
+                <td>{taint.value ?? ''}</td>
+                <td>{taint.effect}</td>
+                <td>
+                  <button class="remove-taint-btn" disabled={actionLoading} onclick={() => handleRemoveTaint(taint.key)} title="Remove taint">✕</button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="muted">No taints</p>
+      {/if}
+    </div>
+  {/if}
 
   {#if loading}
     <p role="status">Loading node details…</p>
@@ -510,5 +714,205 @@
     font-family: monospace;
     color: #e0e0e0;
     white-space: nowrap;
+  }
+
+  .scheduling-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .scheduling-badge.schedulable {
+    background: rgba(102, 187, 106, 0.15);
+    color: #66bb6a;
+    border: 1px solid rgba(102, 187, 106, 0.3);
+  }
+  .scheduling-badge.unschedulable {
+    background: rgba(255, 167, 38, 0.15);
+    color: #ffa726;
+    border: 1px solid rgba(255, 167, 38, 0.3);
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+
+  .action-btn {
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid #30363d;
+    background: #21262d;
+    color: #c9d1d9;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .action-btn:hover:not(:disabled) {
+    background: #30363d;
+    border-color: #484f58;
+  }
+  .action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .cordon-btn { border-color: #ffa726; color: #ffa726; }
+  .cordon-btn:hover:not(:disabled) { background: rgba(255, 167, 38, 0.15); }
+  .uncordon-btn { border-color: #66bb6a; color: #66bb6a; }
+  .uncordon-btn:hover:not(:disabled) { background: rgba(102, 187, 106, 0.15); }
+  .drain-btn { border-color: #ef5350; color: #ef5350; }
+  .drain-btn:hover:not(:disabled) { background: rgba(239, 83, 80, 0.15); }
+  .taint-btn { border-color: #58a6ff; color: #58a6ff; }
+  .taint-btn:hover:not(:disabled) { background: rgba(88, 166, 255, 0.15); }
+
+  .action-success {
+    background: rgba(102, 187, 106, 0.1);
+    border: 1px solid rgba(102, 187, 106, 0.3);
+    color: #66bb6a;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+  }
+  .action-error {
+    background: rgba(239, 83, 80, 0.1);
+    border: 1px solid rgba(239, 83, 80, 0.3);
+    color: #ef5350;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+  }
+
+  .drain-details {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+  }
+  .drain-details summary {
+    cursor: pointer;
+    color: #8b949e;
+  }
+  .drain-details ul {
+    margin: 0.25rem 0;
+    padding-left: 1.5rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+  }
+
+  .dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .dialog {
+    background: #1a1a2e;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 1.5rem;
+    min-width: 400px;
+    max-width: 500px;
+  }
+  .dialog h3 {
+    margin: 0 0 0.75rem;
+    color: #e0e0e0;
+    font-size: 1rem;
+  }
+  .drain-warning {
+    background: rgba(255, 167, 38, 0.1);
+    border: 1px solid rgba(255, 167, 38, 0.3);
+    color: #ffa726;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+  }
+  .dialog-field {
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+    color: #c9d1d9;
+  }
+  .dialog-field label {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #8b949e;
+  }
+  .dialog-field input[type="number"] {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #c9d1d9;
+    padding: 0.35rem 0.5rem;
+    width: 100px;
+    font-size: 0.85rem;
+  }
+  .dialog-field input[type="checkbox"] {
+    margin-right: 0.5rem;
+  }
+  .dialog-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+  }
+
+  .taint-panel {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .taint-panel h3 {
+    margin: 0 0 0.75rem;
+    color: #8b949e;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .add-taint-form {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .add-taint-form input,
+  .add-taint-form select {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #c9d1d9;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.8rem;
+    font-family: monospace;
+  }
+  .add-taint-form input { flex: 1; min-width: 100px; }
+  .add-taint-form select { min-width: 140px; }
+
+  .remove-taint-btn {
+    background: none;
+    border: none;
+    color: #ef5350;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+  }
+  .remove-taint-btn:hover:not(:disabled) {
+    background: rgba(239, 83, 80, 0.15);
+  }
+  .remove-taint-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>
