@@ -1,158 +1,136 @@
-# Agent Guidance — SvelteKit Web App
+# Agent Guidance — SvelteKit Desktop Frontend
 
 ## Overview
 
-`apps/web` is the SvelteKit 2 web client for Telescope, using Svelte 5 with runes. It serves as:
+`apps/web` is the SvelteKit 2 frontend for Telescope, using **Svelte 5 with runes**. It is packaged into the Tauri v2 desktop app — it does **not** run as a standalone web application.
 
-1. The standalone web UI (SvelteKit dev server or static build)
-2. The frontend for `apps/desktop` (Tauri packages the built output)
+**Transport:** All backend communication goes through **Tauri IPC** (`@tauri-apps/api/core invoke()`). There is no HTTP fallback or hub/browser mode.
 
-## Technology Stack
+## Build Flow
 
-- **Framework:** SvelteKit 2
-- **Svelte version:** Svelte 5 (runes-based, NOT legacy syntax)
-- **Build tool:** Vite 6
-- **Language:** TypeScript
-- **Testing:** Vitest (unit), Playwright (E2E)
-- **Package manager:** pnpm
+`apps/web` is consumed by the desktop app:
+1. `apps/desktop/scripts/prepare-frontend.mjs` runs `pnpm run build` in `apps/web`
+2. Copies `apps/web/build/` to `apps/desktop/dist/`
+3. Tauri packages `dist/` as the desktop frontend
 
-## Svelte 5 Rules (Critical)
+UI changes must be made here in `apps/web`, not in desktop-specific files.
 
-**Always use Svelte 5 runes:**
-
-```svelte
-<script lang="ts">
-  // ✅ Correct: use $props() and $state()
-  let { cluster } = $props<{ cluster: Cluster }>();
-  let expanded = $state(false);
-  
-  // ❌ Wrong: don't use legacy export let or $:
-  // export let cluster;
-  // $: expanded = false;
-</script>
-```
-
-**Event handling:**
-
-```svelte
-<!-- ✅ Correct: Svelte 5 event syntax -->
-<button onclick={handleClick}>Click me</button>
-
-<!-- ❌ Wrong: don't use legacy on:click -->
-<button on:click={handleClick}>Click me</button>
-```
-
-## Build and Test Commands
+## Commands
 
 ```bash
-# Dev server (port 5173)
-pnpm -C apps/web dev
-
-# Production build
-pnpm -C apps/web build
-
-# Unit tests (Vitest)
-pnpm -C apps/web test
-
-# Run specific test file
-pnpm -C apps/web exec vitest run src/lib/hello.test.ts
-
-# E2E tests (Playwright)
-pnpm -C apps/web e2e
-
-# Install Playwright browsers (required once)
-pnpm -C apps/web exec playwright install --with-deps
-
-# Lint (currently a no-op — needs real implementation)
-pnpm -C apps/web lint
+pnpm -C apps/web dev       # Dev server (requires Tauri for IPC)
+pnpm -C apps/web build     # Production build
+pnpm -C apps/web test      # Vitest unit tests
+pnpm -C apps/web e2e       # Playwright E2E tests
+pnpm -C apps/web lint      # Lint (runs build)
 ```
 
-## Current State (v0.0.1)
+## Svelte 5 Patterns
 
-**What works:**
-- SvelteKit routing and pages
-- Stub `/api/clusters` endpoint with hardcoded data
-- Basic cluster/namespace UI components
-- Vitest unit tests for core functions
-- Playwright E2E smoke coverage for standalone frontend pages
+**Mandatory:** Use Svelte 5 runes and modern event syntax exclusively.
 
-**What's NOT real yet:**
-- No live web backend connection; desktop remains the most complete path
-- `src/lib/engine.ts` is a fetch wrapper with no real engine integration
-- No shared component library (`packages/ui` is empty)
+| Pattern | Usage |
+|---------|-------|
+| `$props()` | Component props (typed with destructuring) |
+| `$state()` | Reactive local state |
+| `$derived()` | Computed values |
+| `$effect()` | Side effects |
+| `onclick` / `onchange` / `onkeydown` | Direct event props (NOT `on:click`) |
+| `Snippet` | Typed children in layouts |
 
-## Architecture
+**Do NOT use:** Legacy `on:click` event syntax, `$:` reactive statements, or `export let` props.
 
-### Backend for Frontend (BFF)
+## Key Files
 
-`apps/web/src/routes/api/` contains SvelteKit server routes:
+| File | Purpose |
+|------|---------|
+| `src/lib/api.ts` | Tauri IPC client layer — all `invoke()` calls to Rust backend |
+| `src/lib/stores.ts` | Shared Svelte stores: context, namespace, connection state, AKS detection |
+| `src/lib/azure-utils.ts` | AKS URL parsing, cluster detection, Azure Portal deep links |
+| `src/lib/preferences.ts` | Production-context patterns, preferred namespace, auto-refresh |
+| `src/lib/resource-routing.ts` | Route map between K8s GVKs and Telescope URLs (~240 entries) |
+| `src/lib/error-suggestions.ts` | User-friendly error suggestions |
+| `src/lib/prod-detection.ts` | Production context detection logic |
 
-- `/api/clusters` — Returns stub cluster data for the standalone frontend
-- Future endpoints may embed Rust engine functionality via WASM or another local bridge
+## Route Inventory (~39 pages)
 
-### Client-Side Engine Abstraction
+### Top-level pages
+- `/` — Home / landing
+- `/overview` — Cluster overview dashboard
+- `/pods` — Pod list
+- `/pods/[namespace]/[name]` — Pod detail
+- `/nodes` — Node list
+- `/nodes/[name]` — Node detail
+- `/events` — Cluster events
+- `/namespaces` — Namespace management
+- `/helm` — Helm release list
+- `/helm/[namespace]/[name]` — Helm release detail
+- `/crds` — CRD list
+- `/crds/[group]/[kind]` — CRD instance list
+- `/create` — Create resource
+- `/settings` — User settings
+- `/azure/node-pools` — AKS node pool management
 
-`src/lib/engine.ts` exports a `fetch`-based API client:
+### Resource list pages (`/resources/*`)
+configmaps, cronjobs, daemonsets, deployments, endpointslices, hpas, ingresses, jobs, limitranges, networkpolicies, persistentvolumes, poddisruptionbudgets, priorityclasses, pvcs, resourcequotas, rolebindings, roles, secrets, serviceaccounts, services, statefulsets, storageclasses, webhooks
 
-```typescript
-export async function listClusters(fetchFn = fetch): Promise<Cluster[]> {
-  const res = await fetchFn('/api/clusters');
-  return res.json();
-}
-```
+### Generic resource detail
+- `/resources/[kind]/[namespace]/[name]` — Dynamic detail page for any resource type
 
-The `fetchFn` parameter enables dependency injection for testing (pass a mock fetch).
+## Component Inventory (25 components)
 
-### Component Structure
+| Component | Purpose |
+|-----------|---------|
+| `AppHeader.svelte` | Top navigation bar |
+| `Sidebar.svelte` | Navigation sidebar |
+| `Breadcrumbs.svelte` | Breadcrumb navigation |
+| `ConnectionStatus.svelte` | Cluster connection indicator |
+| `ContextSwitcher.svelte` | Kubeconfig context switcher |
+| `SearchPalette.svelte` | Global search (⌘K) |
+| `ShortcutHelp.svelte` | Keyboard shortcut overlay |
+| `ThemeToggle.svelte` | Light/dark theme toggle |
+| `FilterBar.svelte` | Namespace/label filtering |
+| `ResourceTable.svelte` | Generic resource list table |
+| `PodTable.svelte` | Pod-specific list table |
+| `EventsTable.svelte` | Events list table |
+| `LogViewer.svelte` | Pod log streaming viewer |
+| `ExecTerminal.svelte` | Pod exec terminal |
+| `PortForwardDialog.svelte` | Port-forward setup dialog |
+| `ScaleDialog.svelte` | Replica scale dialog |
+| `ConfirmDialog.svelte` | Confirmation modal |
+| `YamlEditor.svelte` | YAML editor for create/apply |
+| `ErrorMessage.svelte` | Error display |
+| `LoadingSkeleton.svelte` | Loading placeholder |
+| `Sparkline.svelte` | Inline metric sparklines |
+| `Tabs.svelte` | Tab navigation |
+| `NodePoolHeader.svelte` | AKS node pool header |
+| `AksAddons.svelte` | AKS addon display |
+| `AzureIdentitySection.svelte` | AKS identity info |
 
-- `src/routes/` — SvelteKit pages and API routes
-- `src/lib/` — Reusable logic and (eventually) components
-- `src/lib/**/*.test.ts` — Vitest unit tests
-- `tests-e2e/` — Playwright E2E tests
+## Testing
 
-## Testing Strategy
+### Unit tests (Vitest)
+Located alongside source in `src/lib/`:
+- `azure-utils.test.ts` — AKS URL parsing, portal links
+- `error-suggestions.test.ts` — Error suggestion logic
+- `prod-detection.test.ts` — Production context detection
+- `version.test.ts` — Version utilities
 
-### Unit Tests (Vitest)
+### E2E tests (Playwright)
+Located in `tests-e2e/`:
+- `smoke.spec.ts` — Basic navigation and rendering
+- `settings.spec.ts` — Settings page interaction
 
-- Test pure functions and business logic
-- Use dependency injection (`fetchFn` parameter) for testability
-- Run with `pnpm test`
+E2E tests run against `tools/devtest/stub-server.mjs` with deterministic fake data (no live K8s cluster).
 
-### E2E Tests (Playwright)
+## Configuration
+- `svelte.config.js` — SvelteKit adapter-static (for Tauri packaging)
+- `vite.config.ts` — Vite build config
+- `playwright.config.ts` — Playwright config
+- `tsconfig.json` — TypeScript config
 
-- Test standalone frontend pages that do not require Hub/browser-mode API emulation
-- CI runs E2E in a separate job after web tests pass
-
-## Desktop Integration
-
-**Important:** The desktop app consumes this web build. Changes to the desktop UI must be made here.
-
-Build flow:
-1. `apps/desktop/scripts/prepare-frontend.mjs` runs `pnpm run build` in this directory
-2. Copies `apps/web/build/` to `apps/desktop/dist/`
-3. Tauri packages `dist/` as the native desktop frontend
-
-## Environment Variables
-
-- No environment variables are required for local frontend testing
-
-## CI Enforcement
-
-CI validates:
-- `pnpm test` — Vitest unit tests must pass
-- `pnpm e2e` — Playwright E2E tests must pass
-- `pnpm lint` — Currently a no-op (TODO: implement real linting)
-
-## Code Conventions
-
-- **TypeScript everywhere** (`lang="ts"` in script blocks)
-- **Svelte 5 runes only** (no legacy reactive syntax)
-- **Dependency injection** for testability (pass `fetch` as a param)
-- **Minimal server logic** (BFF routes are thin proxies or stub providers)
-
-## What's Missing
-
-- Real linting (ESLint + svelte-eslint-parser needed)
-- Connection to live hub/engine
-- Shared component library (`packages/ui` is a placeholder)
-- Web-to-hub feature parity (some features may be hub-only)
+## When to Edit
+- **Add a new resource page:** Create route under `src/routes/resources/`, add GVK mapping in `resource-routing.ts`
+- **Add a Tauri command:** Add the `invoke()` call in `api.ts`, create UI in route/component
+- **Add a component:** Place in `src/lib/components/`
+- **Modify preferences:** Edit `preferences.ts` and corresponding Tauri commands

@@ -10,7 +10,6 @@ This app provides the main Kubernetes IDE UI for cluster connection, resource br
 
 The desktop integration lives in [`src/lib/api.ts`](src/lib/api.ts).
 
-- `api.ts` checks `isTauri()`.
 - When running inside Tauri, it dynamically imports `@tauri-apps/api/core` and uses `invoke(...)` to call Rust commands over Tauri IPC.
 - This path talks directly to the Rust backend used by the desktop app.
 

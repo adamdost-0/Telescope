@@ -36,11 +36,6 @@ export type ConnectionState =
       detail: { attempt: number; wait: { secs: number; nanos: number } };
     };
 
-export interface LogChunk {
-  lines: string;
-  is_complete: boolean;
-}
-
 export interface ClusterInfo {
   server_version: string;
   platform: string;
@@ -61,7 +56,7 @@ export interface AksIdentityInfo {
   arm_resource_id: string;
 }
 
-export interface PowerState {
+interface PowerState {
   code: string | null;
 }
 
@@ -102,7 +97,7 @@ export interface PoolUpgradeProfile {
   latestNodeImageVersion: string | null;
 }
 
-export interface ContainerMetrics {
+interface ContainerMetrics {
   name: string;
   cpu_millicores: number;
   memory_bytes: number;
@@ -199,12 +194,12 @@ export interface AksClusterDetail {
   } | null;
 }
 
-export interface AksMaintenanceTimeSpan {
+interface AksMaintenanceTimeSpan {
   start: string | null;
   end: string | null;
 }
 
-export interface AksMaintenanceTimeInWeek {
+interface AksMaintenanceTimeInWeek {
   day: string | null;
   hourSlots: number[] | null;
 }
@@ -213,11 +208,4 @@ export interface AksMaintenanceConfig {
   name: string;
   notAllowedTime: AksMaintenanceTimeSpan[];
   timeInWeek: AksMaintenanceTimeInWeek[];
-}
-
-/**
- * Check if running inside Tauri (desktop) or browser (web).
- */
-export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

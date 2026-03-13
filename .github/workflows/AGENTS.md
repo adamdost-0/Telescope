@@ -2,101 +2,99 @@
 
 ## Overview
 
-`.github/workflows/` contains GitHub Actions CI pipelines that enforce code quality, testing, and build validation.
+`.github/workflows/` contains GitHub Actions CI pipelines for code quality, testing, and release.
 
 **Primary workflow:** `ci.yml` — runs on all PRs and pushes to `main`.
 
 **Release workflow:** `release.yml` — runs on pushed Git tags matching `v*`.
 
-## Current CI Jobs
+## Current CI Jobs (`ci.yml`)
 
 ### 1. Rust Job (`rust`)
 
 Runs on: `ubuntu-latest`
 
-Validates:
 ```bash
-cargo fmt --all -- --check          # Format check
+cargo fmt --all -- --check
 cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings
 cargo test --workspace --exclude telescope-desktop --all-features
 ```
 
-**Note:** `telescope-desktop` is excluded on Linux because of platform-specific GTK/WebKit dependencies. Desktop builds run separately on Windows/macOS.
+`telescope-desktop` is excluded on Linux (GTK/WebKit system deps). Desktop builds run separately on Windows/macOS.
 
 ### 2. Web Job (`web`)
 
 Runs on: `ubuntu-latest`
 
-Validates:
 ```bash
 pnpm install --frozen-lockfile
-pnpm -r --if-present lint           # Runs lint script in all packages (many are no-ops)
-pnpm -r --if-present test           # Runs test script in all packages
+pnpm -C apps/web test      # Vitest unit tests
+pnpm -C apps/web build     # Production build
 ```
-
-**Current reality:**
-- `apps/web/lint` is a no-op (needs ESLint setup)
-- `apps/desktop/lint` is a no-op
-- `packages/ui/lint` and `packages/ui/test` are no-ops (package is empty)
 
 ### 3. Web E2E Job (`web-e2e`)
 
 Runs on: `ubuntu-latest` (depends on `web` job)
 
-Validates:
 ```bash
 pnpm install --frozen-lockfile
-pnpm -C apps/web exec playwright install --with-deps
-pnpm -C apps/web e2e                # Playwright tests against stub server
+pnpm -C apps/web exec playwright install --with-deps chromium
+pnpm -C apps/web e2e       # Playwright tests against stub server
 ```
 
-**Test setup:** E2E tests run against `tools/devtest/stub-server.mjs` with deterministic fake data (no live K8s cluster).
+E2E tests run against `tools/devtest/stub-server.mjs` with deterministic fake data (no live K8s cluster).
 
 ### 4. Desktop Build Job (`desktop-build`)
 
 Runs on: **Matrix** — `[windows-latest, macos-latest]`
 
-Validates:
 ```bash
 pnpm install --frozen-lockfile
-pnpm -C apps/desktop build          # Tauri debug build
+pnpm -C apps/desktop build   # Tauri debug build
 ```
 
-**Why matrix?** Desktop has platform-specific native dependencies:
+Platform-specific native dependencies:
 - **macOS:** Xcode command-line tools
 - **Windows:** Windows SDK
-- **Linux:** Excluded (GTK/WebKit system deps not in CI environment)
+- **Linux:** Excluded (GTK/WebKit system deps not in CI)
 
-### 5. Release Workflow (`release.yml`)
+## Release Workflow (`release.yml`)
 
 Runs on: pushed tags matching `v*`
 
-Builds:
-```bash
-pnpm install --frozen-lockfile
-pnpm -C apps/desktop bundle
-```
+**Matrix:** `windows-latest`, `macos-latest`
 
-Publishes:
-- Windows and macOS desktop release artifacts
-- GitHub Release entries via `softprops/action-gh-release`
+Steps:
+1. Extract version from tag
+2. Stamp version into `Cargo.toml` manifests and `tauri.conf.json`
+3. `pnpm install --frozen-lockfile`
+4. `pnpm -C apps/desktop bundle` — full release build
+5. Rename binary with version tag
+6. Create GitHub Release via `softprops/action-gh-release@v2`
+
+**Release artifacts:**
+- Windows: versioned `.exe`, MSI installer, NSIS installer
+- macOS: versioned binary, DMG, `.app` bundle
+
+**Version stamping targets:**
+- `apps/desktop/src-tauri/Cargo.toml`
+- `crates/core/Cargo.toml`
+- `crates/engine/Cargo.toml`
+- `apps/desktop/src-tauri/tauri.conf.json`
 
 ## CI Enforcement Summary
 
-What CI actually enforces (vs. what's aspirational):
-
 | Check | Enforced | Notes |
 |-------|----------|-------|
-| Rust formatting | ✅ Yes | `cargo fmt --check` |
-| Rust linting | ✅ Yes | `cargo clippy -D warnings` |
-| Rust tests | ✅ Yes | `cargo test --all-features` |
-| Web unit tests | ✅ Yes | `pnpm test` runs Vitest |
-| Web E2E tests | ✅ Yes | Playwright against stub server |
-| JavaScript linting | ⚠️ Partial | `pnpm lint` runs but many scripts are no-ops |
-| Desktop builds | ✅ Yes | On Windows/macOS only |
-| Tagged release builds | ✅ Yes | `release.yml` runs on `v*` tags |
-| Application deployment | ❌ No | No deployment pipeline yet |
-| Security scanning | ❌ No | No Dependabot, CodeQL, or audit checks |
+| Rust formatting | ✅ | `cargo fmt --check` |
+| Rust linting | ✅ | `cargo clippy -D warnings` |
+| Rust tests | ✅ | `cargo test --all-features` |
+| Web unit tests | ✅ | Vitest via `pnpm -C apps/web test` |
+| Web build | ✅ | `pnpm -C apps/web build` |
+| Web E2E tests | ✅ | Playwright against stub server |
+| Desktop builds | ✅ | Windows + macOS matrix |
+| Tagged releases | ✅ | `release.yml` on `v*` tags |
+| Security scanning | ❌ | No Dependabot, CodeQL, or audit checks |
 
 ## Concurrency
 
@@ -106,106 +104,37 @@ concurrency:
   cancel-in-progress: true
 ```
 
-Multiple pushes to the same branch cancel older runs (saves CI time).
+Multiple pushes to the same branch cancel older runs.
 
-## What's Missing
+## CI Toolchain
 
-High-priority CI gaps:
-
-1. **Real JavaScript linting:** ESLint + svelte-eslint-parser not configured
-2. **Security scanning:** No Dependabot, `cargo audit`, or CodeQL
-3. **Code coverage:** No coverage reporting (Codecov, Coveralls, etc.)
-4. **Release automation:** Tagged desktop release builds exist; broader release/versioning policy still needs discipline
-5. **Deployment pipelines:** No CD workflow for application/web deployment yet
-6. **Changelog automation:** No release notes generation
-7. **Linux desktop builds:** Excluded due to system deps (could use Docker)
-
-## Adding a New Check
-
-To add a validation step:
-
-1. Add a new job in `.github/workflows/ci.yml`
-2. Use `needs: [...]` for dependencies between jobs
-3. Keep jobs independent when possible (parallel execution)
-4. Use matrix strategy for multi-platform checks
-5. Cache dependencies (`actions/cache`, `rust-cache`, etc.)
-
-Example:
-```yaml
-jobs:
-  new-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run check
-        run: ./scripts/my-check.sh
-```
+- `actions/checkout@v4`
+- `dtolnay/rust-toolchain@stable`
+- `Swatinem/rust-cache@v2`
+- `actions/setup-node@v4` with `node-version: 22`
+- `corepack enable` for pnpm support
+- `--frozen-lockfile` for deterministic installs
+- `permissions: { contents: read }` for CI, `{ contents: write }` for releases
 
 ## Debugging CI Failures
 
-Common failure modes:
-
-1. **Rust format failure:**
-   - Fix locally: `cargo fmt --all`
-   - Verify: `cargo fmt --all -- --check`
-
-2. **Clippy warnings:**
-   - Fix locally: `cargo clippy --fix --workspace --all-targets --all-features`
-   - Verify: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-
-3. **Test failures:**
-   - Run locally: `cargo test --workspace --all-features` (Rust) or `pnpm test` (JS)
-   - Check for flaky tests (E2E timing issues)
-
-4. **Frozen lockfile mismatch:**
-   - Run `pnpm install` locally to regenerate `pnpm-lock.yaml`
-   - Commit the updated lockfile
-
-5. **Desktop build failures:**
-   - Check matrix-specific logs (Windows vs. macOS)
-   - Verify Tauri dependencies are correct in `src-tauri/Cargo.toml`
-
-## CI Performance
-
-Current CI run time (approximate):
-
-- **Rust job:** ~3-5 minutes (with cache)
-- **Web job:** ~2-3 minutes
-- **Web E2E:** ~3-5 minutes (Playwright install + tests)
-- **Desktop builds:** ~5-10 minutes per platform
-
-Total: ~10-15 minutes for full CI pass (jobs run in parallel).
-
-## Future Enhancements
-
-Planned but not implemented:
-
-- **Nightly builds:** Scheduled workflow for continuous integration
-- **Deployment workflow:** CD pipeline for future hosted components or web publishing
-- **Benchmark tracking:** Performance regression detection
-- **Multi-cluster E2E:** Test against real K8s clusters (GKE, AKS, EKS)
+1. **Rust format:** Fix with `cargo fmt --all`, verify with `cargo fmt --all -- --check`
+2. **Clippy warnings:** Fix with `cargo clippy --fix --workspace --all-targets --all-features`
+3. **Test failures:** Run locally: `cargo test --workspace --all-features` or `pnpm -C apps/web test`
+4. **Frozen lockfile:** Run `pnpm install` locally, commit updated `pnpm-lock.yaml`
+5. **Desktop build:** Check matrix-specific logs (Windows vs macOS)
 
 ## Agent Delivery Policy
 
-- After validated changes are finished, agents should:
-  1. commit the completed work,
-  2. push the branch upstream,
-  3. create and push a release tag that matches `v*` so the release workflow runs.
-- If the user does not provide a version, continue the existing SemVer-style tag sequence.
+After validated changes are finished:
+1. Commit the completed work
+2. Push the branch upstream
+3. Create and push a release tag matching `v*` to trigger the release workflow
 
-## Code Conventions
-
-- Use `actions/checkout@v4` (latest stable)
-- Use `dtolnay/rust-toolchain@stable` for Rust setup
-- Use `Swatinem/rust-cache@v2` for Cargo caching
-- Use `actions/setup-node@v4` with `node-version: 22`
-- Enable `corepack` for pnpm support
-- Use `--frozen-lockfile` for deterministic installs
-- Set `permissions: { contents: read }` (principle of least privilege)
+If the user does not provide a version, continue the existing SemVer-style tag sequence.
 
 ## When to Edit
 
-- **Add a new validation:** Add a job or step in `ci.yml`
+- **Add validation:** Add a job or step in `ci.yml`
 - **Change build matrix:** Edit `strategy.matrix` for platform coverage
-- **Add deployment:** Create a separate `deploy.yml` workflow (don't mix with CI)
-- **Add scheduled checks:** Create a new workflow with `on: schedule`
+- **Add deployment:** Create a separate workflow (don't mix with CI)

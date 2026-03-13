@@ -49,8 +49,7 @@ jobs:
           for manifest in \
             apps/desktop/src-tauri/Cargo.toml \
             crates/core/Cargo.toml \
-            crates/engine/Cargo.toml \
-            crates/api/Cargo.toml; do
+            crates/engine/Cargo.toml; do
             perl -pi -e 's/^version\s*=\s*"[^"]*"/version = "'"${RELEASE_VERSION}"'"/' "$manifest"
           done
           # Stamp Tauri app version (JSON)

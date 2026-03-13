@@ -2,15 +2,15 @@
 
 ## Project
 
-AKS-first Kubernetes IDE with a Tauri desktop app, a packaged SvelteKit frontend, and Rust backends. No Electron.
+AKS-first Kubernetes IDE with a Tauri v2 desktop app, a packaged SvelteKit frontend, and Rust backends. Desktop-only — no Electron, no browser/hub mode.
 
 ## Stable Repo Shape
 
-- Cargo workspace: `crates/core`, `crates/engine`, `crates/api`, `apps/desktop/src-tauri`
+- Cargo workspace: `crates/core`, `crates/engine`, `crates/azure`, `apps/desktop/src-tauri`
 - pnpm workspace: `apps/*`, `packages/*`
-- `crates/core` — shared domain/state/storage types
-- `crates/engine` — real Kubernetes engine code: client, watchers, logs, exec, port-forward, actions, Helm, metrics, CRDs
-- `crates/api` — thin facade over engine/core
+- `crates/core` — shared domain types, SQLite-backed ResourceStore, ConnectionState machine
+- `crates/engine` — Kubernetes engine: client, 28+ resource watchers, actions, Helm, logs, exec, port-forward, metrics, node ops, CRDs, dynamic resources, secrets, namespaces, audit
+- `crates/azure` — Azure ARM client, AKS management-plane operations (cluster, node pools, upgrades, maintenance, identity resolution)
 - `apps/web` — SvelteKit frontend packaged into the desktop app
 - `apps/desktop` — Tauri v2 shell for that frontend
 - `packages/ui` exists but is still minimal; do not assume a mature shared component library
@@ -19,12 +19,12 @@ AKS-first Kubernetes IDE with a Tauri desktop app, a packaged SvelteKit frontend
 
 - `apps/web` contains the UI used by the desktop app.
 - `apps/desktop/scripts/prepare-frontend.mjs` builds `apps/web` and copies its output into `apps/desktop/dist` for Tauri.
-- In desktop/Tauri, `apps/web/src/lib/api.ts` talks to Rust through Tauri IPC.
+- In desktop/Tauri, `apps/web/src/lib/api.ts` talks to Rust through Tauri IPC. There is no HTTP fallback.
 
 ## Current Implementation Reality
 
-- This repository is **not scaffold-only** anymore; real engine, desktop, and UI functionality exists.
-- Desktop is the supported client surface.
+- This is a **shipped v1.0.0 desktop application** with substantial Kubernetes and Azure ARM functionality.
+- Desktop is the only supported client surface.
 - `packages/ui` is still lightweight compared with the app-local UI in `apps/web`.
 
 ## Verified Commands
@@ -55,6 +55,6 @@ pnpm -C apps/desktop bundle
 
 ## Guidance
 
-- Rust dependency direction is `api → engine → core`.
+- Rust dependency direction is `engine → core`, `azure → core`, `desktop → engine + azure + core`.
 - Use Svelte 5 runes and modern event syntax in `apps/web`.
 - Treat `docs/` as mixed-source documentation: some files describe the current implementation, while others are aspirational or partially stale. Cross-check claims against code and `.github/workflows/*.yml` before relying on them.

@@ -101,15 +101,6 @@ export async function getResources(gvk: string, namespace?: string): Promise<Res
   }
 }
 
-/** Count resources for a specific GVK, optionally scoped to a namespace. */
-export async function countResources(gvk: string, namespace?: string): Promise<number> {
-  try {
-    return await invoke<number>('count_resources', { gvk, namespace: namespace ?? null });
-  } catch {
-    return 0;
-  }
-}
-
 export async function listDynamicResources(
   group: string,
   version: string,
@@ -248,15 +239,6 @@ export async function deleteNamespace(name: string): Promise<string> {
   return invoke<string>('delete_namespace', { name });
 }
 
-/** Get the current active namespace. */
-export async function getNamespace(): Promise<string> {
-  try {
-    return await invoke<string>('get_namespace');
-  } catch {
-    return 'default';
-  }
-}
-
 /** Fetch log output for a pod container. */
 export async function getPodLogs(
   namespace: string,
@@ -303,7 +285,7 @@ export async function startLogStream(
 }
 
 /** Result of a non-interactive exec command. */
-export interface ExecResult {
+interface ExecResult {
   stdout: string;
   stderr: string;
   success: boolean;
@@ -326,7 +308,7 @@ export async function execCommand(
 
 
 /** Result of applying a resource. */
-export interface ApplyResult {
+interface ApplyResult {
   success: boolean;
   message: string;
 }

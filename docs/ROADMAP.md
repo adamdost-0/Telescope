@@ -1,159 +1,111 @@
-# Telescope — Roadmap to Lens Parity
+# Telescope — Post-v1.0.0 Roadmap
 
-> **Goal:** deliver an open-source Kubernetes IDE with strong desktop ergonomics and AKS-aware workflows.
-> Track progress with ✅ (shipped), 🚧 (partially shipped / substantial alpha), and 🔲 (planned).
+> **Goal:** keep extending the shipped desktop Kubernetes IDE with deeper operator workflows while preserving the native Tauri-first experience.
+> Historical milestones are marked as **Closed** or **Complete** now that v1.0.0 has shipped.
 
-## Current Status: substantial alpha (~65–70% Lens parity in desktop/Tauri)
+## Current Status: v1.0.0 SHIPPED
 
-Telescope today goes well beyond the early read-only v0.0.1 shape. The current codebase supports real cluster connection and context switching, namespace management, a cluster overview dashboard, node inventory/detail pages, broad built-in resource browsing, pod logs, non-interactive exec, basic pod port-forwarding, create/apply/delete/scale/restart flows, Helm release list/detail/history/values/rollback, CRD definition browsing plus instance listing, metrics-server integration, a search palette, theme/settings UI, and local audit logging.
+Telescope v1.0.0 is now the shipped baseline: a **desktop-only** Kubernetes IDE with broad built-in resource coverage, CRD workflows, Helm + metrics, local audit logging, and a real **Azure ARM management plane** for AKS lifecycle and node operations.
 
-The main remaining gaps are richer desktop workflows such as interactive exec, broader mutation coverage, and continued UX polish around advanced operations.
-
----
-
-## ✅ M0 — Foundations (COMPLETE)
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | Monorepo: Rust workspace (`core` / `engine` / `api`) plus desktop and frontend apps | ✅ |
-| 2 | Tauri desktop shell packaging the `apps/web` frontend | ✅ |
-| 3 | SvelteKit frontend used for the desktop UI | ✅ |
-| 4 | CI for Rust, frontend tests/E2E, and desktop builds | ✅ |
-| 5 | Deterministic test fixtures for frontend coverage | ✅ |
+### What v1.0.0 delivered
+- Desktop-only Tauri packaging with the SvelteKit frontend bundled for native distribution
+- **28+ watched Kubernetes resource types** and **16 primary desktop resource blades**
+- Real cluster connection, context switching, namespace management, and watch-backed desktop caching
+- Logs, events, YAML inspection/edit/apply flows, delete/scale/restart actions, and basic exec + port-forward workflows
+- Helm release list/detail/history/values/rollback and metrics-server-backed pod/node metrics
+- CRD discovery, instance browsing, and desktop CRUD-oriented apply/delete flows
+- Search palette, themes, keyboard shortcuts, settings surface, and local audit logging
+- **Azure ARM management-plane support**: AKS identity/resource resolution, Portal links, node-pool CRUD, autoscaler updates, cluster start/stop, upgrade management, and maintenance/diagnostic visibility
+- A desktop-first operator workflow that no longer targets discontinued browser/Hub delivery modes
 
 ---
 
-## ✅ M1 — Connect + Browse (COMPLETE)
+## Shipped Milestones
 
-| # | Item | Status |
-|---|------|--------|
-| 1 | Kubeconfig parsing (including multi-context discovery) | ✅ |
-| 2 | Context switching with explicit connection-state transitions | ✅ |
-| 3 | Namespace listing/selection | ✅ |
-| 4 | Watch-driven sync into SQLite-backed cache/store | ✅ |
-| 5 | Broad built-in resource browsing (Pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, Services, Ingresses, ConfigMaps, Secrets, PVCs, Events, Nodes) | ✅ |
-| 6 | Collapsible resource sidebar and cluster overview landing page | ✅ |
-
----
-
-## ✅ M2 — Debug Loop + UX Foundation (COMPLETE)
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | Pod detail page with Summary / Logs / Exec / Events / YAML tabs | ✅ |
-| 2 | Pod logs snapshot + streaming, previous logs, search, auto-scroll, container selector | ✅ |
-| 3 | Events browsing/filtering | ✅ |
-| 4 | Read-only and editable YAML views for supported resources | ✅ |
-| 5 | Search palette, keyboard shortcuts/help, breadcrumbs, theme toggle, and settings page shell | ✅ |
+| Milestone | Title | Status | Delivered scope |
+|-----------|-------|--------|-----------------|
+| **M0** | Foundations | ✅ Closed | Workspace architecture, Tauri shell, shared frontend packaging, CI, and deterministic fixtures |
+| **M1** | Connect + Browse | ✅ Closed | Kubeconfig import, context switching, namespace selection, overview dashboard, and watch-backed browsing |
+| **M2** | Debug Loop + UX Foundation | ✅ Closed | Pod detail, logs, events, YAML, search, shortcuts, themes, breadcrumbs, and settings |
+| **M3** | Resource Actions + Safe Ops | ✅ Closed | Create/apply/delete, scale, rollout restart/status, non-interactive exec, basic pod port-forward, and guardrails |
+| **M4** | AKS Visibility + Guardrails | ✅ Closed | AKS detection, node-pool awareness, Portal links, workload identity hints, and production-context UX |
+| **M5** | Helm + Metrics | ✅ Closed | Helm release operations, redacted values/history/rollback, and pod/node metrics with trend views |
+| **M6** | Search, CRDs + Advanced UX | ✅ Closed | Cached-resource search, CRD discovery/instance browsing, generic routes, filtering, and polished navigation |
+| **M7** | Desktop Hardening + Auditability | ✅ Closed | Desktop packaging maturity, local audit logging, safer destructive actions, and operator polish |
+| **M8** | Resource Breadth + Operator Workflows | ✅ Closed | Broader built-in resource coverage, generic detail/action flows, and desktop workflow consolidation |
+| **M9** | Desktop Resource Expansion | ✅ Complete | 16 primary resource blades and 28+ watched resource types across the desktop cache and UI |
+| **M10** | Azure ARM Management Plane | ✅ Complete | `telescope-azure` ARM client, AKS node-pool CRUD, cluster start/stop, upgrade profiles, pool/node-image upgrades, and ARM-backed diagnostics |
 
 ---
 
-## 🚧 M3 — Full Debug Loop + Resource Actions (MOSTLY IMPLEMENTED)
+## v1.0.0 Feature Summary by Area
 
-| # | Item | Current state | Status |
-|---|------|---------------|--------|
-| 1 | Exec terminal | Non-interactive command execution exists from the pod detail page; full interactive TTY/xterm experience is still planned. | 🚧 |
-| 2 | Port forwarding | Pod port-forward dialog and engine forwarder exist; active-forward management and saved profiles are still missing. | 🚧 |
-| 3 | YAML edit + apply | Dry-run/apply exists for supported namespaced resource kinds. Coverage is real, but not universal across every kind. | 🚧 |
-| 4 | Delete resource | Engine delete support exists for many built-in kinds and the pod detail page exposes delete UI. Generic delete coverage is still incomplete. | 🚧 |
-| 5 | Scale workloads | Deployment/StatefulSet scaling is implemented in engine and UI. | ✅ |
-| 6 | Rollout actions | Rollout restart/status exists for Deployment/StatefulSet/DaemonSet workloads. Full history/rollback UX for workloads is still planned. | 🚧 |
-| 7 | Create resource from YAML/templates | Implemented via `/create` plus apply support. | ✅ |
-| 8 | Resource detail pages | Generic detail pages exist for the core built-in kinds, with workload-specific pods/scale/restart affordances. | ✅ |
-| 9 | Node list/detail | Implemented, including metrics and capacity/condition views. | ✅ |
-| 10 | Cluster overview dashboard | Implemented. | ✅ |
+### Desktop operator workflows
+- Real cluster connection + namespace switching
+- Broad resource inventory across workloads, networking, storage, RBAC, autoscaling, scheduling, and admission resources
+- Pod detail workflows for logs, events, YAML, exec, and delete/restart actions
+- Workload scaling and rollout restart/status flows
+- Generic resource detail pages and create/apply workflows
 
----
+### AKS/Azure differentiators
+- ARM resource resolution from the active AKS cluster context
+- Azure Portal deep links from the desktop UI
+- AKS cluster start/stop controls
+- Cluster upgrade profile inspection and control-plane upgrade actions
+- Node-pool list/create/delete/scale/autoscaler/version/node-image operations
+- Maintenance configuration visibility and ARM-backed diagnostics
+- AKS-first depth while still supporting any conformant Kubernetes cluster
 
-## 🚧 M4 — AKS-First Experience (PARTIALLY IMPLEMENTED)
+### Desktop UX delivered in v1.0.0
+- Global search palette
+- Dark/light themes
+- Keyboard shortcuts + help overlay
+- Breadcrumbs and grouped sidebar navigation
+- Settings/preferences surface
+- Local audit logging for operator actions
 
-| # | Item | Current state | Status |
-|---|------|---------------|--------|
-| 1 | kubelogin / exec-auth UX | Auth-type hints and error suggestions exist, but there is no full interactive Azure login flow. | 🚧 |
-| 2 | Azure identity awareness | Pod/workload identity hints exist; signed-in Azure identity and token lifecycle UX do not. | 🚧 |
-| 3 | Node pool visibility | AKS node-pool grouping/labels are surfaced in the node views. | ✅ |
-| 4 | AKS add-on status | Overview/add-on hints exist via cluster heuristics, not deep Azure integration. | 🚧 |
-| 5 | Azure Portal deep links | Overview can surface a Portal action, but metadata extraction is still incomplete in common cases. | 🚧 |
-| 6 | Managed identity awareness | Workload identity clues are surfaced in pod detail, but this remains heuristic. | 🚧 |
-| 7 | Production guardrails | Production-context bannering and stronger confirmations exist in the UI. | ✅ |
-
----
-
-## 🚧 M5 — Helm + Metrics (SUBSTANTIALLY IMPLEMENTED)
-
-| # | Item | Current state | Status |
-|---|------|---------------|--------|
-| 1 | Helm release list | Implemented. | ✅ |
-| 2 | Helm release detail | Implemented with info, values, and history tabs. | ✅ |
-| 3 | Helm values handling | Values extraction and sensitive-value redaction are implemented. | ✅ |
-| 4 | Helm rollback | Implemented. | ✅ |
-| 5 | Helm upgrade / diff preview | Still planned; current UI provides rollback and upgrade CLI guidance rather than in-app upgrade workflows. | 🔲 |
-| 6 | metrics-server discovery | Implemented. | ✅ |
-| 7 | Pod CPU + memory usage | Implemented. | ✅ |
-| 8 | Node CPU + memory usage | Implemented. | ✅ |
-| 9 | Lightweight trend charts | Implemented as sparklines/basic history in the UI. | ✅ |
-| 10 | Namespace usage summary | Overview surfaces namespace usage summaries, but not yet a full Lens-style analytics surface. | 🚧 |
+### Known deliberate gaps after v1.0.0
+- Fully interactive exec terminal with TTY/xterm.js
+- Richer port-forward session management
+- In-app Helm upgrade + diff workflows
+- Broader table sorting, richer label filtering, and more advanced analytics/visualization surfaces
+- Plugin/extensibility model
 
 ---
 
-## 🚧 M6 — Search, CRDs + Advanced UX (PARTIALLY IMPLEMENTED)
+## Future Milestones (M11+)
 
-| # | Item | Current state | Status |
-|---|------|---------------|--------|
-| 1 | Global resource search | Ctrl/Cmd+K search palette exists over cached resources. | ✅ |
-| 2 | Resource filtering | Text filtering exists across major lists; richer label/filter/query support is still planned. | 🚧 |
-| 3 | Table sorting | Not broadly implemented yet. | 🔲 |
-| 4 | CRD discovery and browsing | CRD definitions and instance browsing exist; fully generic CRD detail flows are still incomplete. | 🚧 |
-| 5 | Keyboard shortcuts / help | Implemented. | ✅ |
-| 6 | Theme support | Dark/light theme support and toggle exist. | ✅ |
-| 7 | Breadcrumb navigation | Implemented. | ✅ |
-| 8 | Settings / preferences | Settings page exists, but preference persistence still has room to grow. | 🚧 |
-| 9 | Context favorites / pinning | Planned. | 🔲 |
-| 10 | Tabbed workspace / hotbar | Planned. | 🔲 |
+### 🔲 M11 — Interactive Terminal + Deeper Live Operations
+Focus on making the desktop debug loop fully self-contained.
 
----
+Planned scope:
+- xterm.js-backed interactive exec / TTY sessions
+- richer port-forward lifecycle management and active-session visibility
+- stronger copy/paste, resize, and reconnect ergonomics for live workflows
+- deeper streaming UX around long-running operator actions
 
-## 🔲 M7 — Desktop Hardening + Workflow Depth
+### 🔲 M12 — Plugin System
+Open Telescope up for controlled extension without regressing desktop safety.
 
-| # | Item | Current state | Status |
-|---|------|---------------|--------|
-| 1 | Interactive exec | Current exec remains non-interactive; full terminal UX is still planned. | 🚧 |
-| 2 | Port-forward management | Per-pod forwarding exists; broader active-session management is still planned. | 🚧 |
-| 3 | Audit coverage | Local audit logging exists, but coverage is still partial across the UI surface. | 🚧 |
-| 4 | Packaging hardening | Native packaging works; signing, notarization, and installer polish remain environment-specific work. | 🚧 |
-| 5 | Native-platform ergonomics | Additional desktop integration, shortcuts, and native UX improvements remain planned. | 🔲 |
+Planned scope:
+- plugin host / extension runtime
+- permissions and trust model
+- packaging/discovery story for internal and community plugins
+- extraction of optional first-party integrations into plugins where it improves maintainability
 
----
+### 🔲 M13 — Advanced Visualizations + Operations Analytics
+Build richer operator insight surfaces on top of the shipped inventory and metrics baseline.
 
-## 🔲 M8 — Plugins v1
-
-Still planned:
-- WASM plugin host
-- Plugin permissions manifest
-- Marketplace/registry story
-- First-party extension extraction (for example Helm / AKS tools)
+Planned scope:
+- workload and topology visualizations
+- richer namespace / cluster rollups
+- more advanced trend charts and comparative views
+- better surfacing of relationships between workloads, services, storage, and policies
 
 ---
 
-## Parity Summary
+## Planning Notes for Post-v1
 
-| Milestone | Scope | Approx. parity contribution | Status |
-|-----------|-------|-----------------------------|--------|
-| M0–M1 | Foundations + connect/browse | ~25% | ✅ |
-| M2 | Debug loop basics + shared UX | ~40% | ✅ |
-| M3 | Resource actions + richer detail pages | ~55% | 🚧 |
-| M4 | AKS-aware workflows | Differentiator more than parity; partial today | 🚧 |
-| M5 | Helm + metrics | ~65–70% in desktop/Tauri mode | 🚧 |
-| M6 | Search + CRDs + advanced UX | pushes polish and breadth further, still partial | 🚧 |
-| M7 | Desktop hardening + advanced workflows | major remaining gap | 🚧 |
-| M8 | Plugins | future extensibility layer | 🔲 |
-
----
-
-## v1.0 Readiness Checklist
-
-- [ ] Interactive exec and more complete port-forward UX
-- [ ] Stronger desktop security and audit coverage
-- [ ] In-app Helm upgrade/diff support
-- [ ] Broader generic CRD detail/edit experience
-- [ ] More complete E2E coverage for real user workflows
+- Telescope planning is now **desktop-first**. Discontinued browser/Hub delivery modes are no longer roadmap drivers.
+- AKS remains the deepest provider integration, but the product should continue to work well across non-AKS clusters.
+- Future milestones should extend the shipped v1.0.0 operator core rather than reopen discontinued deployment modes.

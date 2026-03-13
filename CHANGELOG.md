@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [v1.0.0] - 2026-03-13
+### Added
+- Completed the M9 desktop resource expansion with coverage across 16 primary Kubernetes resource blades and 28+ watched resource types in the desktop cache.
+- Completed the M10 Azure management-plane milestone with the new `telescope-azure` ARM client, AKS node pool CRUD, cluster start/stop controls, upgrade management, and ARM-backed diagnostics.
+
+### Changed
+- Finalized Telescope as a desktop-only Tauri application with the SvelteKit frontend packaged exclusively for native distribution.
+- Expanded the desktop IPC surface to 60+ Tauri commands spanning Kubernetes operations, Helm workflows, metrics, preferences, and Azure ARM actions.
+
+### Removed
+- Removed the discontinued non-desktop delivery stack and legacy browser-only workflow references.
+
+## [v1.0.0-rc5] - 2026-03-13
+### Changed
+- Finalized release-candidate polish for the desktop-only packaging flow and Azure ARM-driven AKS management experience.
+- Refined release notes, contributor guidance, and top-level docs to match the v1.0.0 crate layout (`core`, `engine`, `azure`, desktop).
+
 ## [v1.0.0-rc4] - 2026-03-12
 ### Changed
 - Stamped the release tag into build artifacts and output filenames in CI.
@@ -18,14 +35,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 - Codified the repository push and release tagging policy.
 - Improved AI guidance used for contributors and agents.
-- Shipped resource blade updates across the UI.
+- Shipped resource blade updates across the desktop UI.
 
 ## [v1.0.0-rc1] - 2026-03-12
 ### Added
-- Added the `telescope-hub` Axum HTTP server for browser mode.
-- Wired the shared web API layer to hub HTTP endpoints.
-- Added OIDC authentication scaffolding in the hub.
-- Added Kubernetes user impersonation and an audit log viewer in hub mode.
+- Cut the first v1.0.0 desktop release candidate with broader desktop validation, packaging, and resource workflow coverage.
+- Landed additional desktop-facing Kubernetes resource pages and operational guardrails needed for the release train.
 
 ## [v0.9.0-beta] - 2026-03-12
 ### Added

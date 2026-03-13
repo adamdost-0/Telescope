@@ -39,30 +39,33 @@ pnpm -C apps/web e2e
 
 ### Desktop app
 ```bash
+pnpm -C apps/desktop dev
 pnpm -C apps/desktop build
 pnpm -C apps/desktop bundle
 ```
 
 ### Practical notes
-- Desktop changes to the UI should usually happen in `apps/web`.
+- Telescope ships as a desktop-only Tauri app; all user-facing UI work still happens in `apps/web`.
 - `apps/desktop` packages the built `apps/web` output for the native app.
 - Prefer repo-defined commands and existing CI workflows over ad hoc scripts.
+- Keep changes desktop-focused; do not reintroduce separate browser or hub flows in docs or code.
 
 ## Project Structure
 
 ### Cargo workspace
 - `crates/core` - shared domain, state, and storage types
 - `crates/engine` - Kubernetes engine code: clients, watchers, logs, exec, port-forward, Helm, metrics, CRDs
-- `crates/api` - thin facade over `engine` and `core`
+- `crates/azure` - Azure ARM management client for AKS lifecycle, node pools, upgrades, and diagnostics
+- `apps/desktop/src-tauri` - Tauri desktop backend and IPC commands
 
 ### pnpm workspace
-- `apps/web` - SvelteKit frontend packaged into the desktop app
+- `apps/web` - SvelteKit frontend source packaged into the desktop app
 - `apps/desktop` - Tauri desktop shell that packages the frontend
 
 ## Pull Request Process
 - Open PRs with the repository PR template in `.github/pull_request_template.md`.
 - Describe the change clearly, including scope, user-visible behavior, and any risks.
-- Include a short test plan and note whether unit, E2E, or CI changes were needed.
+- Include a short test plan and note whether unit, E2E, desktop, or CI changes were needed.
 - Ensure the relevant CI checks pass before requesting review.
 - Keep PRs focused; split unrelated changes into separate submissions.
 
