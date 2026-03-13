@@ -1,44 +1,49 @@
 # Telescope Architecture Diagrams
 
-These standalone diagrams summarize the current Telescope desktop architecture. They are grounded in the current code layout in `apps/web`, `apps/desktop`, `crates/engine`, and `crates/core`.
+These standalone diagrams summarize the current Telescope v1.0.0 desktop architecture. They are grounded in the current code layout in `apps/web`, `apps/desktop`, `crates/engine`, `crates/azure`, and `crates/core`.
 
 ## 1. System Context Diagram
 
-This diagram shows the primary user entry point: the Tauri desktop application, which packages the frontend and connects to the shared Rust engine to reach the Kubernetes API.
+The Tauri desktop application packages the frontend and connects to shared Rust crates for both Kubernetes API access and Azure ARM management.
 
 ```mermaid
 flowchart TB
     userDesktop["User"]
     k8s["Kubernetes API"]
+    arm["Azure Resource Manager"]
 
     subgraph desktopMode["Desktop application"]
         desktopApp["Desktop App<br/>Tauri v2 shell"]
-        webUi["SvelteKit Frontend<br/>apps/web"]
-        rustBackend["Rust Backend<br/>apps/desktop/src-tauri"]
+        webUi["SvelteKit Frontend<br/>apps/web · 25 components · 39 routes"]
+        rustBackend["Rust Backend<br/>apps/desktop/src-tauri · 66 commands"]
     end
 
     subgraph sharedRust["Shared Rust crates"]
-        engine["crates/engine<br/>watchers · logs · exec · port-forward · Helm · metrics · CRDs · secrets · actions · audit"]
+        engine["crates/engine<br/>watchers · logs · exec · port-forward · Helm · metrics · CRDs · secrets · actions · audit · node-ops"]
+        azure["crates/azure<br/>ArmClient · AKS operations · identity resolution"]
         core["crates/core<br/>connection state · ResourceStore · ResourceEntry"]
     end
 
     userDesktop --> desktopApp --> webUi
     desktopApp --> rustBackend
     rustBackend --> engine
+    rustBackend --> azure
     rustBackend --> core
     engine --> core
+    azure --> core
     engine --> k8s
+    azure --> arm
 ```
 
 ## 2. Component Diagram
 
-This diagram breaks the repository into the main application and crate boundaries, then highlights the important modules inside each subsystem and the main dependency directions between them.
+This diagram breaks the repository into application and crate boundaries, showing the modules and dependency directions.
 
 ```mermaid
 flowchart LR
     subgraph web["apps/web · desktop frontend"]
-        routes["routes/"]
-        components["lib/components/"]
+        routes["routes/ (39 pages)"]
+        components["lib/components/ (25)"]
         api["lib/api.ts"]
         stores["lib/stores.ts + lib/stores/*"]
         webBuild["build output"]
@@ -56,7 +61,7 @@ flowchart LR
 
     subgraph desktop["apps/desktop · Tauri shell"]
         prepare["scripts/prepare-frontend.mjs<br/>build + copy apps/web"]
-        tauriMain["src-tauri/src/main.rs<br/>commands + AppState"]
+        tauriMain["src-tauri/src/main.rs<br/>66 commands + AppState"]
     end
 
     subgraph engineCrate["crates/engine"]
@@ -72,6 +77,8 @@ flowchart LR
         secrets["secrets"]
         audit["audit"]
         kubeconfig["kubeconfig"]
+        nodeOps["node_ops"]
+        dynamic["dynamic"]
 
         watcher --> client
         logs --> client
@@ -82,6 +89,18 @@ flowchart LR
         metrics --> client
         crd --> client
         secrets --> client
+        nodeOps --> client
+        dynamic --> client
+    end
+
+    subgraph azureCrate["crates/azure"]
+        armClient["client<br/>ArmClient · DefaultAzureCredential"]
+        aks["aks<br/>cluster + node pool operations"]
+        resolve["resolve<br/>identity resolution"]
+        azureTypes["types<br/>AzureCloud · AksResourceId"]
+
+        aks --> armClient
+        resolve --> azureTypes
     end
 
     subgraph coreCrate["crates/core"]
@@ -97,6 +116,7 @@ flowchart LR
 
     tauriMain --> client
     tauriMain --> kubeconfig
+    tauriMain --> armClient
     tauriMain --> resourceStore
     tauriMain --> connection
     watcher --> resourceStore
@@ -104,7 +124,7 @@ flowchart LR
 
 ## 3. Data Flow Diagram
 
-This diagram shows how a typical user action travels from the packaged frontend through the Tauri IPC path, and how watcher-driven synchronization keeps cached resource data current.
+Shows how a typical user action travels through the Tauri IPC path.
 
 ```mermaid
 sequenceDiagram
@@ -146,17 +166,55 @@ sequenceDiagram
     end
 ```
 
-## 4. Desktop Deployment Architecture
+## 4. Azure ARM Flow
 
-This diagram shows the supported deployment shape today: a local desktop binary running on a user workstation with access to local kubeconfig.
+Shows how AKS management operations flow through the Azure ARM crate, separate from the Kubernetes API path.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as apps/web UI
+    participant Desktop as Tauri IPC
+    participant Azure as crates/azure
+    participant ARM as Azure Resource Manager
+
+    User->>UI: AKS management action
+    UI->>Desktop: invoke(aks_command, args)
+    Desktop->>Azure: ArmClient operation
+    Azure->>Azure: DefaultAzureCredential → token
+    Azure->>ARM: REST API call (GET/PUT/POST/DELETE)
+    ARM-->>Azure: Response / provisioning state
+
+    opt Long-running operation
+        loop Poll until complete (15s interval)
+            Azure->>ARM: GET resource status
+            ARM-->>Azure: provisioningState
+        end
+    end
+
+    Azure-->>Desktop: Result
+    Desktop-->>UI: AKS data
+```
+
+## 5. Desktop Deployment Architecture
+
+Desktop-only: a local Tauri binary with access to kubeconfig for Kubernetes and Azure credentials for ARM.
 
 ```mermaid
 flowchart LR
-    aks["AKS cluster / Kubernetes API"]
+    aks["AKS Cluster /<br/>Kubernetes API"]
+    arm["Azure Resource<br/>Manager"]
 
     subgraph desktopDeploy["Desktop deployment"]
-        machine["User machine"] --> tauriBinary["Tauri binary"] --> kubeconfig["Local kubeconfig"]
+        machine["User machine"]
+        tauriBinary["Tauri binary"]
+        kubeconfig["Local kubeconfig"]
+        azureCreds["Azure credentials<br/>(az CLI / env vars /<br/>managed identity)"]
     end
 
+    machine --> tauriBinary
+    tauriBinary --> kubeconfig
+    tauriBinary --> azureCreds
     kubeconfig --> aks
+    azureCreds --> arm
 ```

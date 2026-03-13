@@ -1,6 +1,6 @@
 # Telescope — Testing Strategy
 
-> **Status: Current suite + future direction** — The repository is no longer at the “3 Rust / 2 Vitest / 2 E2E” stage. The current test inventory is **107 Rust tests**, **5 Vitest files**, and **4 Playwright specs**.
+> **Status: v1.0.0** — Current test inventory: **133 Rust tests**, **4 Vitest files (39 test cases)**, and **2 Playwright specs**.
 
 ## Goals
 - Keep CI **green by default**: no flaky E2E, no hidden cluster dependency in routine PR validation.
@@ -9,29 +9,30 @@
 
 ## Test pyramid (what runs where)
 
-### 1) Rust engine, core, and API (`crates/*`)
-**Current Rust coverage: 107 tests**
-- `crates/core` exercises the connection-state machine and SQLite-backed resource store.
-- `crates/engine` covers actions, audit logging, CRD discovery, exec helpers, Helm parsing/history/value redaction, log helpers, metrics parsing, port-forward helpers, secret redaction, and watcher lifecycle logic.
-- `crates/engine/tests/integration_k3d.rs` provides the real-cluster integration harness for the engine surface.
+### 1) Rust crates (`crates/*`)
+**Current Rust coverage: 133 tests**
+
+| Crate | Tests | Scope |
+|-------|-------|-------|
+| `telescope-core` | 39 | Connection-state machine transitions, SQLite-backed resource store (upsert, delete, list, count, preferences) |
+| `telescope-engine` | 57 | Actions, audit logging, CRD discovery, exec helpers, Helm parsing/history/value redaction, log helpers, metrics parsing, port-forward helpers, secret redaction, watcher lifecycle, node operations, dynamic resources |
+| `telescope-azure` | 29 | ArmClient construction, AzureCloud endpoint resolution, AKS identity resolution, node pool operations, upgrade profile parsing, maintenance config parsing, error mapping |
+| Integration (`engine/tests/integration_k3d.rs`) | 8 | Real-cluster integration harness for the engine surface (requires k3d) |
 
 **Run locally:** `cargo test --workspace --exclude telescope-desktop --all-features`
 
 ### 2) Frontend UI (`apps/web`)
-**Current Vitest coverage: 5 test files**
-- `src/lib/azure-utils.test.ts` — AKS URL detection and Azure Portal link generation helpers.
-- `src/lib/error-suggestions.test.ts` — friendly error-message suggestions for auth, RBAC, timeout, and connectivity failures.
-- `src/lib/hello.test.ts` — minimal sanity/unit smoke test for the sample helper.
-- `src/lib/prod-detection.test.ts` — production-context pattern detection.
-- `src/lib/version.test.ts` — shared version exposure.
+**Current Vitest coverage: 4 test files, 39 test cases**
+- `src/lib/azure-utils.test.ts` (16 cases) — AKS URL detection, Azure Portal link generation, Azure Government endpoint handling.
+- `src/lib/error-suggestions.test.ts` (8 cases) — friendly error-message suggestions for auth, RBAC, timeout, and connectivity failures.
+- `src/lib/prod-detection.test.ts` (14 cases) — production-context pattern detection via `it.each()` table-driven tests.
+- `src/lib/version.test.ts` (1 case) — shared version exposure.
 
 **Run locally:** `pnpm -C apps/web test`
 
 ### 3) Frontend E2E (`apps/web/tests-e2e`)
-**Current Playwright coverage: 4 specs**
+**Current Playwright coverage: 2 specs**
 - `smoke.spec.ts` — app boots and renders the landing page.
-- `clusters.spec.ts` — cluster selection flow navigates into the connected resource views.
-- `resources.spec.ts` — expanded resource navigation and detail coverage for StatefulSets, DaemonSets, Jobs, CronJobs, Secrets, Ingresses, PVCs, and the command-palette search flow.
 - `settings.spec.ts` — settings/about page exposes the shared application version.
 
 These E2E tests run against deterministic stubbed data, not a live Kubernetes cluster.
@@ -45,12 +46,28 @@ These E2E tests run against deterministic stubbed data, not a live Kubernetes cl
 
 **Current gap:** there is still no dedicated Tauri WebDriver-style desktop E2E suite.
 
+### 5) Azure ARM (`crates/azure`)
+**Current coverage: 29 unit tests**
+- `ArmClient` construction and cloud endpoint resolution.
+- `AzureCloud` detection from AKS server URLs (Commercial + Government).
+- `AksResourceId` ARM path construction.
+- AKS operations: node pool parsing, upgrade profile parsing, maintenance config parsing.
+- Error mapping: 404 → `NotFound`, 409 → `Conflict`, API error extraction.
+- Identity resolution logic.
+
+**No automated ARM integration tests** — ARM operations require a live Azure subscription with an AKS cluster. Unit tests use mocked responses. Manual validation against real AKS clusters is documented in the smoke test checklist.
+
 ## CI policy (current)
 - No live AKS/Kubernetes dependency in standard PR CI for the frontend.
+- No live Azure subscription dependency in Rust CI — `telescope-azure` tests use mocks.
 - Frontend E2E uses deterministic fixtures/stubbed responses.
-- Rust, frontend, and desktop validations are split across workflow jobs rather than hidden behind one opaque script.
+- Rust, frontend, and desktop validations are split across workflow jobs (`ci.yml`):
+  - `rust` job: fmt + clippy + test (excludes desktop on Linux)
+  - `web` job: Vitest unit tests + production build
+  - `web-e2e` job: Playwright E2E (needs `web`)
+  - `desktop-build` job: Tauri build on macOS + Windows
 
-## “Definition of Done” for a component
+## "Definition of Done" for a component
 - Relevant unit/integration tests written or updated and passing.
 - If UI surface changed: update Playwright coverage or deterministic fixtures when it materially affects the user flow.
 - CI commands and docs updated in the same PR when the testing surface changes.
@@ -58,3 +75,4 @@ These E2E tests run against deterministic stubbed data, not a live Kubernetes cl
 ## Still planned
 - More end-to-end coverage for logs, exec, port-forward, Helm, and resource mutation workflows.
 - Dedicated desktop E2E coverage once the Tauri surface stabilizes further.
+- ARM integration tests against a dedicated test AKS cluster (gated, not in standard PR CI).
