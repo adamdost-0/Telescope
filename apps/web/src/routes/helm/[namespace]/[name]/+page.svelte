@@ -161,7 +161,7 @@
 <div class="detail-page">
   <header class="detail-header">
     <Breadcrumbs crumbs={[
-      { label: 'Overview', href: '/' },
+      { label: 'Overview', href: '/overview' },
       { label: 'Helm', href: '/helm' },
       { label: namespace, href: `/helm?namespace=${encodeURIComponent(namespace)}` },
       { label: releaseName }

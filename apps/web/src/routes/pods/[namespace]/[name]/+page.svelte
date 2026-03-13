@@ -13,6 +13,7 @@
   import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+  import { gvkForKind, resourceDetailHref } from '$lib/resource-routing';
   import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -150,12 +151,19 @@
       console.error('Port forward failed:', e);
     }
   }
+
+  function ownerHref(ref: { kind: string; name: string; apiVersion?: string }) {
+    const gvk = ref.apiVersion ? `${ref.apiVersion}/${ref.kind}` : gvkForKind(ref.kind);
+    return gvk
+      ? resourceDetailHref({ gvk, namespace, name: ref.name, label: ref.kind })
+      : null;
+  }
 </script>
 
 <div class="detail-page">
   <header class="detail-header">
     <Breadcrumbs crumbs={[
-      { label: 'Overview', href: '/' },
+      { label: 'Overview', href: '/overview' },
       { label: 'Pods', href: '/pods' },
       { label: namespace, href: `/pods?namespace=${encodeURIComponent(namespace)}` },
       { label: podName }
@@ -229,7 +237,12 @@
           <h3>Owner</h3>
           {#each pod.metadata.ownerReferences as ref}
             <p>
-              {ref.kind}: <a class="owner-link" href="/resources/{ref.kind.toLowerCase()}s/{pod.metadata.namespace}/{ref.name}">{ref.name}</a>
+              {ref.kind}:
+              {#if ownerHref(ref)}
+                <a class="owner-link" href={ownerHref(ref)}>{ref.name}</a>
+              {:else}
+                <span class="muted">{ref.name}</span>
+              {/if}
             </p>
           {/each}
         {/if}

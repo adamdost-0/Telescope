@@ -5,6 +5,7 @@
     getEvents,
     getPods,
     getResources,
+    getResource,
     getSecret,
     rolloutRestart,
     rolloutStatus,
@@ -19,6 +20,7 @@
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
   import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+  import { decodeNamespaceParam, labelForGvk, resourceCollectionHref } from '$lib/resource-routing';
   import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -41,9 +43,17 @@
   const ROLLOUT_STATUS_KINDS = new Set(['deployments', 'statefulsets']);
 
   let kind = $derived(page.params.kind);
-  let namespace = $derived(page.params.namespace);
+  let namespaceParam = $derived(page.params.namespace);
+  let namespace = $derived(decodeNamespaceParam(namespaceParam));
+  let resourceNamespace = $derived(namespace ?? '');
+  let namespaceLabel = $derived(namespace ?? 'Cluster-scoped');
   let resourceName = $derived(page.params.name);
   let kindInfo = $derived(KIND_MAP[kind]);
+  let fallbackGvk = $derived(page.url.searchParams.get('gvk') ?? '');
+  let effectiveGvk = $derived(kindInfo?.gvk ?? fallbackGvk);
+  let resourceLabel = $derived(kindInfo?.label ?? page.url.searchParams.get('label') ?? (effectiveGvk ? labelForGvk(effectiveGvk) : kind));
+  let collectionHref = $derived(effectiveGvk ? resourceCollectionHref(effectiveGvk) : null);
+  let namespaceHref = $derived(kindInfo && namespace ? `/resources/${kind}?namespace=${encodeURIComponent(namespace)}` : null);
   let isSecret = $derived(kind === 'secrets');
   let isWorkload = $derived(WORKLOAD_KINDS.has(kind));
   let isScalable = $derived(SCALABLE_KINDS.has(kind));
@@ -92,24 +102,34 @@
   async function loadResource() {
     loading = true;
     error = null;
+    resource = null;
+    events = [];
+    ownedPods = [];
+
     try {
-      if (!kindInfo) {
+      if (!effectiveGvk) {
         error = `Unknown resource kind: "${kind}"`;
         return;
       }
-      const entry = isSecret
-        ? await getSecret(namespace, resourceName)
-        : (await getResources(kindInfo.gvk, namespace)).find((r: ResourceEntry) => r.name === resourceName);
+
+      const entry = isSecret && namespace
+        ? await getSecret(resourceNamespace, resourceName)
+        : namespace
+          ? (await getResource(effectiveGvk, resourceNamespace, resourceName))
+            ?? (await getResources(effectiveGvk, resourceNamespace)).find((r: ResourceEntry) => r.name === resourceName)
+          : (await getResources(effectiveGvk)).find((r: ResourceEntry) => r.name === resourceName);
+
       if (entry) {
         resource = JSON.parse(entry.content);
       } else {
-        error = `${kindInfo.label} "${resourceName}" not found in namespace "${namespace}"`;
+        error = `${resourceLabel} "${resourceName}" not found${namespace ? ` in namespace "${namespace}"` : ''}`;
         return;
       }
+
       events = await getEvents(namespace, resourceName);
 
       if (isWorkload && resource?.spec?.selector?.matchLabels) {
-        const allPods = await getPods(namespace);
+        const allPods = await getPods(resourceNamespace);
         const selectorLabels = resource.spec.selector.matchLabels as Record<string, string>;
         ownedPods = allPods.filter((p: ResourceEntry) => {
           try {
@@ -163,7 +183,7 @@
   async function loadRolloutStatus() {
     if (!hasRolloutStatus || !kindInfo) return;
     try {
-      rollout = await rolloutStatus(kindInfo.gvk, namespace, resourceName);
+      rollout = await rolloutStatus(kindInfo.gvk, resourceNamespace, resourceName);
     } catch {
       rollout = null;
     }
@@ -175,7 +195,7 @@
     rolloutLoading = true;
     rolloutMessage = null;
     try {
-      rolloutMessage = await rolloutRestart(kindInfo.gvk, namespace, resourceName);
+      rolloutMessage = await rolloutRestart(kindInfo.gvk, resourceNamespace, resourceName);
       setTimeout(loadRolloutStatus, 2000);
     } catch (e) {
       rolloutMessage = `Error: ${e instanceof Error ? e.message : e}`;
@@ -239,7 +259,7 @@
   async function executeScale(replicas: number) {
     if (!kindInfo) return;
     try {
-      await scaleResource(kindInfo.gvk, namespace, resourceName, replicas);
+      await scaleResource(kindInfo.gvk, resourceNamespace, resourceName, replicas);
       await loadResource();
     } catch (e) {
       console.error('Scale failed:', e);
@@ -258,20 +278,20 @@
 <div class="detail-page">
   <header class="detail-header">
     <Breadcrumbs crumbs={[
-      { label: 'Overview', href: '/' },
-      { label: kindInfo?.label ?? kind, href: `/resources/${kind}` },
-      { label: namespace, href: `/resources/${kind}?namespace=${encodeURIComponent(namespace)}` },
+      { label: 'Overview', href: '/overview' },
+      { label: resourceLabel, href: collectionHref ?? undefined },
+      ...(namespace ? [{ label: namespace, href: namespaceHref ?? undefined }] : []),
       { label: resourceName }
     ]} />
     <h1>{resourceName}</h1>
-    <span class="namespace-badge">{namespace}</span>
+    <span class="namespace-badge">{namespaceLabel}</span>
     {#if isScalable && resource}
       <button class="action-btn" onclick={() => showScale = true}>⚖ Scale</button>
     {/if}
   </header>
 
   {#if loading}
-    <p role="status">Loading {kindInfo?.label?.toLowerCase() ?? 'resource'} details…</p>
+    <p role="status">Loading {resourceLabel.toLowerCase()} details…</p>
   {:else if error}
     <p role="alert" class="error">{error}</p>
   {:else if resource}
@@ -683,7 +703,9 @@
           <h3>Metadata</h3>
           <dl>
             <dt>Name</dt><dd>{resource.metadata?.name ?? 'N/A'}</dd>
-            <dt>Namespace</dt><dd>{resource.metadata?.namespace ?? 'N/A'}</dd>
+            <dt>Namespace</dt><dd>{resource.metadata?.namespace ?? 'Cluster-scoped'}</dd>
+            <dt>API Version</dt><dd>{resource.apiVersion ?? effectiveGvk ?? 'N/A'}</dd>
+            <dt>Kind</dt><dd>{resource.kind ?? resourceLabel}</dd>
             <dt>Created</dt><dd>{resource.metadata?.creationTimestamp ?? 'N/A'}</dd>
           </dl>
         {/if}

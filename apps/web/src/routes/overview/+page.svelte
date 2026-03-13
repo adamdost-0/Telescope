@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getResourceCounts, getPods, getEvents, activeContext, getClusterInfo, getPodMetrics } from '$lib/api';
+  import { getAutoRefreshIntervalMs } from '$lib/preferences';
   import { selectedContext, selectedNamespace, isConnected, clusterServerUrl, isAks } from '$lib/stores';
   import { parseAksUrl, getAzurePortalUrl } from '$lib/azure-utils';
   import AksAddons from '$lib/components/AksAddons.svelte';
@@ -17,6 +18,7 @@
   let refreshError = $state(false);
   let lastSuccessfulRefresh: number | null = $state(null);
   let timer: ReturnType<typeof setInterval> | null = $state(null);
+  let namespaceTimer: ReturnType<typeof setInterval> | null = $state(null);
   let clusterInfo: ClusterInfo | null = $state(null);
 
   // Namespace resource usage (Feature: #74)
@@ -114,19 +116,27 @@
     }
   }
 
+  let destroyed = false;
+
   onMount(() => {
     refresh();
     // Fetch cluster info once (not on every poll cycle).
     getClusterInfo().then((info) => { clusterInfo = info; });
     // Fetch namespace usage once and then every 30s
     refreshNamespaceUsage();
-    const nsTimer = setInterval(refreshNamespaceUsage, 30_000);
-    timer = setInterval(refresh, 5000);
-    return () => { clearInterval(nsTimer); };
+    namespaceTimer = setInterval(refreshNamespaceUsage, 30_000);
+    void (async () => {
+      const refreshIntervalMs = await getAutoRefreshIntervalMs(5000);
+      if (!destroyed) {
+        timer = setInterval(refresh, refreshIntervalMs);
+      }
+    })();
   });
 
   onDestroy(() => {
+    destroyed = true;
     if (timer) clearInterval(timer);
+    if (namespaceTimer) clearInterval(namespaceTimer);
   });
 
   async function refreshNamespaceUsage() {

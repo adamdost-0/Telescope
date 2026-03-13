@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { searchResources } from '$lib/api';
+  import { kindFromGvk, routeForSearchEntry } from '$lib/resource-routing';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   let { open = $bindable(false) }: { open: boolean } = $props();
@@ -26,49 +27,13 @@
     Event: '⚡',
   };
 
-  /** Map a GVK string like "apps/v1/Deployment" → its kind name. */
-  function kindFromGvk(gvk: string): string {
-    const parts = gvk.split('/');
-    return parts[parts.length - 1];
-  }
-
   function iconForGvk(gvk: string): string {
     return KIND_ICONS[kindFromGvk(gvk)] ?? '📄';
   }
 
   /** Navigate to the appropriate detail page for a resource entry. */
   function routeForEntry(entry: ResourceEntry): string {
-    const kind = kindFromGvk(entry.gvk).toLowerCase();
-    const ns = entry.namespace || 'default';
-
-    switch (kind) {
-      case 'pod':
-        return `/pods/${ns}/${entry.name}`;
-      case 'node':
-        return `/nodes/${entry.name}`;
-      case 'event':
-        return `/events`;
-      case 'deployment':
-        return `/resources/deployments/${ns}/${entry.name}`;
-      case 'statefulset':
-        return `/resources/statefulsets/${ns}/${entry.name}`;
-      case 'daemonset':
-        return `/resources/daemonsets/${ns}/${entry.name}`;
-      case 'job':
-        return `/resources/jobs/${ns}/${entry.name}`;
-      case 'cronjob':
-        return `/resources/cronjobs/${ns}/${entry.name}`;
-      case 'service':
-        return `/resources/services/${ns}/${entry.name}`;
-      case 'ingress':
-        return `/resources/ingresses/${ns}/${entry.name}`;
-      case 'configmap':
-        return `/resources/configmaps/${ns}/${entry.name}`;
-      case 'persistentvolumeclaim':
-        return `/resources/pvcs/${ns}/${entry.name}`;
-      default:
-        return `/resources/${kind}/${ns}/${entry.name}`;
-    }
+    return routeForSearchEntry(entry);
   }
 
   /** Group results by kind for display. */

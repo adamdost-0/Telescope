@@ -18,16 +18,29 @@
 
 ## Features
 
-### Core Kubernetes IDE
-- 📦 **Resource Explorer** — Browse Pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, Services, Ingresses, ConfigMaps, Secrets, PVCs, Nodes, and Events
-- 📋 **Log Viewer** — Stream pod logs with container selector, search, and previous logs
-- 💻 **Exec Terminal** — Run commands in containers
-- ⇌ **Port Forward** — TCP tunneling with local/remote port mapping
-- ✏️ **YAML Editor** — Edit and apply resources with dry-run preview
-- 🗑️ **Safe Operations** — Delete, scale, rollout restart with confirmation dialogs
-- 📊 **Cluster Dashboard** — Overview with resource counts, pod phases, warning events
+### Cluster connection and navigation
+- 🔌 **Full cluster connection and context management** — Discover kubeconfig contexts, connect/disconnect, track connection state, and switch namespaces
+- 🔎 **Search and settings** — Search cached resources quickly and manage user-facing preferences from the UI
+- 🧾 **Audit logging** — Record key Hub-side actions for traceability in web mode
 
-### AKS-First (Features Lens Doesn't Have)
+### Workloads, networking, and configuration
+- 📦 **Comprehensive workload management** — Browse and manage Pods, Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs
+- 🌐 **Service and networking views** — Inspect Services and Ingresses alongside related cluster state
+- ⚙️ **Configuration resources** — Work with ConfigMaps, Secrets, and PersistentVolumeClaims
+- 🧩 **CRD browsing** — Explore installed CustomResourceDefinitions and their schemas/details
+
+### Operations and troubleshooting
+- 📋 **Pod operations** — View logs, exec into containers, and start port-forwards
+- 🗑️ **Resource actions** — Scale workloads, delete resources, and trigger rollout operations with safety checks
+- ⛵ **Helm release management** — List releases, inspect history/values, and support Helm workflows
+- 📊 **Node management and metrics** — Inspect nodes plus pod and node metrics for cluster health
+
+### Desktop and web delivery
+- 🖥️ **Desktop mode** — Native Tauri app using Rust backend commands over IPC
+- 🌍 **Web mode** — Browser deployment backed by Telescope Hub REST/WebSocket services
+- 🔁 **Shared frontend** — One SvelteKit UI adapted to desktop and browser environments
+
+### AKS-first experience
 - 🔑 **Auth Detection** — Identifies exec/token/certificate auth, kubelogin guidance
 - 🏷️ **Node Pool Grouping** — Nodes organized by AKS agent pool with VM size, OS, mode
 - 🛡️ **Add-on Status** — Container Insights, Azure Policy, Key Vault CSI, KEDA, Flux health
@@ -36,9 +49,10 @@
 - 🚨 **Production Guardrails** — Red banner, type-to-confirm for destructive ops in production
 
 ### Architecture
-- **Rust Engine** — kube-rs client, watch-driven sync, SQLite storage
-- **Tauri Desktop** — Native WebView, no Electron, 25+ IPC commands
-- **SvelteKit Frontend** — Svelte 5 runes, shared state stores, dark theme
+- **Rust Engine** — kube-rs client, watchers, actions, logs, exec, port-forwarding, Helm, metrics, and CRD support
+- **Tauri Desktop** — Native WebView shell for the shared frontend
+- **Hub Server** — Axum REST/WebSocket backend for browser deployments
+- **SvelteKit Frontend** — Shared UI across desktop and web modes
 
 ## Quick Start
 
@@ -95,19 +109,17 @@ K3D_TEST=1 cargo test -p telescope-engine --test integration_k3d
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed diagrams.
 
 ## Roadmap
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the full milestone plan.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the broader milestone plan.
 
-| Milestone | Status | Parity |
-|-----------|--------|--------|
-| M0 Foundations | ✅ Complete | - |
-| M1 Connect + Browse | ✅ Complete | 15% |
-| M2 Debug Loop + UX | ✅ Complete | 25% |
-| M3 Resource Actions | ✅ Complete | 50% |
-| M4 AKS-First | ✅ Complete | 60% |
-| M5 Helm + Metrics | 🔄 In Progress | 75% |
-| M6 Search + CRDs | 🔲 Planned | 90% |
-| M7 Web + Hub | 🔲 Planned | 95% |
-| M8 Plugins | 🔲 Planned | 100% |
+Today Telescope already ships both **desktop (Tauri)** and **web (Hub-backed)** deployment modes with broad Kubernetes coverage for day-to-day cluster operations.
+
+Current priorities:
+
+- **Desktop/web parity** — close remaining gaps where browser mode still defers some write operations to the desktop/Tauri path
+- **Hub hardening** — strengthen authentication, authorization, and multi-user deployment readiness
+- **More live workflows** — continue expanding streaming updates, WebSocket usage, and operational feedback loops
+- **UX polish and testing** — keep improving performance, usability, and coverage across Rust, web, and desktop flows
+- **Extensibility over time** — leave room for future integrations and plugin-style capabilities without blocking the current core IDE experience
 
 ## License
 MIT

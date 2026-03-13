@@ -113,7 +113,7 @@
 <div class="detail-page">
   <header class="detail-header">
     <Breadcrumbs crumbs={[
-      { label: 'Overview', href: '/' },
+      { label: 'Overview', href: '/overview' },
       { label: 'Nodes', href: '/nodes' },
       { label: nodeName }
     ]} />

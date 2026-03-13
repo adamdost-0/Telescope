@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getPods, getPodMetrics } from '$lib/api';
+  import { getAutoRefreshIntervalMs } from '$lib/preferences';
   import { selectedNamespace, isConnected } from '$lib/stores';
   import PodTable from '$lib/components/PodTable.svelte';
   import FilterBar from '$lib/components/FilterBar.svelte';
@@ -74,14 +75,23 @@
     loadPods();
   });
 
+  let destroyed = false;
+
   onMount(() => {
-    refreshTimer = setInterval(loadPods, 3000);
+    void (async () => {
+      const refreshIntervalMs = await getAutoRefreshIntervalMs(3000);
+      if (!destroyed) {
+        refreshTimer = setInterval(loadPods, refreshIntervalMs);
+      }
+    })();
+
     timestampTimer = setInterval(() => {
       lastUpdatedText = formatTimestamp();
     }, 1000);
   });
 
   onDestroy(() => {
+    destroyed = true;
     if (refreshTimer) clearInterval(refreshTimer);
     if (timestampTimer) clearInterval(timestampTimer);
   });

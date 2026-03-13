@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getEvents } from '$lib/api';
-  import { namespaces, isConnected } from '$lib/stores';
+  import { isConnected } from '$lib/stores';
   import EventsTable from '$lib/components/EventsTable.svelte';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
@@ -13,10 +13,31 @@
   let lastUpdated: Date | null = $state(null);
   let filterType = $state('all');
   let filterNamespace = $state('__all__');
+  let filterQuery = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+  function matchesFilterQuery(event: ResourceEntry, query: string): boolean {
+    try {
+      const parsed = JSON.parse(event.content);
+      const involved = parsed.involvedObject;
+      const objectRef = involved ? `${involved.kind ?? ''}/${involved.name ?? ''}` : '';
+      return [event.name, event.namespace, parsed.type, parsed.reason, objectRef, parsed.message]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+    } catch {
+      return [event.name, event.namespace, event.content]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+    }
+  }
 
   let filteredEvents = $derived.by(() => {
     let result = events;
+    const query = filterQuery.trim().toLowerCase();
+
+    if (query) {
+      result = result.filter((event) => matchesFilterQuery(event, query));
+    }
     if (filterType !== 'all') {
       result = result.filter((e) => {
         try {

@@ -1,20 +1,29 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { listContexts, connectToContext, listNamespaces, setNamespace } from '$lib/api';
+  import { goto } from '$app/navigation';
+  import { disconnect, listContexts, connectToContext, listNamespaces, setNamespace } from '$lib/api';
   import {
     selectedContext,
     selectedNamespace,
     namespaces,
     connectionState,
     clusterServerUrl,
+    isConnected,
+    resetConnectionStores,
   } from '$lib/stores';
   import { isAksCluster } from '$lib/azure-utils';
-  import { isProductionContext } from '$lib/prod-detection';
+  import {
+    ensureProductionPatternsLoaded,
+    isProductionContext,
+    productionPatterns,
+  } from '$lib/prod-detection';
+  import { getPreferredNamespace } from '$lib/preferences';
   import type { ClusterContext } from '$lib/tauri-commands';
 
   let contexts: ClusterContext[] = $state([]);
   let loading = $state(true);
   let connecting = $state(false);
+  let disconnecting = $state(false);
   let error: string | null = $state(null);
   let namespacesLoading = $state(false);
 
@@ -25,29 +34,35 @@
     return raw;
   }
 
+  async function syncNamespaces() {
+    namespacesLoading = true;
+    const nsList = await listNamespaces();
+    namespaces.set(nsList);
+    const namespace = await getPreferredNamespace(nsList);
+    selectedNamespace.set(namespace);
+    await setNamespace(namespace);
+  }
+
   onMount(async () => {
+    ensureProductionPatternsLoaded();
+
     try {
       contexts = await listContexts();
-      const active = contexts.find(c => c.is_active);
+      const active = contexts.find((c) => c.is_active);
       const initial = active?.name ?? contexts[0]?.name ?? null;
 
       if (initial) {
         selectedContext.set(initial);
-        const initialCtx = contexts.find(c => c.name === initial);
+        const initialCtx = contexts.find((c) => c.name === initial);
         clusterServerUrl.set(initialCtx?.cluster_server ?? null);
         connecting = true;
         try {
           await connectToContext(initial);
           connectionState.set({ state: 'Ready' });
-          namespacesLoading = true;
-          const nsList = await listNamespaces();
-          namespaces.set(nsList);
-          const ns = nsList.includes('default') ? 'default' : nsList[0] ?? 'default';
-          selectedNamespace.set(ns);
-          await setNamespace(ns);
+          await syncNamespaces();
         } catch (err) {
           const raw = err instanceof Error ? err.message : 'Auto-connect failed';
-          const activeAuth = contexts.find(c => c.name === initial)?.auth_type;
+          const activeAuth = contexts.find((c) => c.name === initial)?.auth_type;
           error = friendlyError(raw, activeAuth);
           connectionState.set({ state: 'Error', detail: { message: error ?? 'Auto-connect failed' } });
         } finally {
@@ -66,7 +81,7 @@
     const target = e.target as HTMLSelectElement;
     const name = target.value;
     selectedContext.set(name);
-    const ctx = contexts.find(c => c.name === name);
+    const ctx = contexts.find((c) => c.name === name);
     clusterServerUrl.set(ctx?.cluster_server ?? null);
     connecting = true;
     error = null;
@@ -75,15 +90,10 @@
     try {
       await connectToContext(name);
       connectionState.set({ state: 'Ready' });
-      namespacesLoading = true;
-      const nsList = await listNamespaces();
-      namespaces.set(nsList);
-      const ns = nsList.includes('default') ? 'default' : nsList[0] ?? 'default';
-      selectedNamespace.set(ns);
-      await setNamespace(ns);
+      await syncNamespaces();
     } catch (err) {
       const raw = err instanceof Error ? err.message : 'Connection failed. Verify the cluster is reachable and kubeconfig is valid.';
-      const ctxAuth = contexts.find(c => c.name === name)?.auth_type;
+      const ctxAuth = contexts.find((c) => c.name === name)?.auth_type;
       error = friendlyError(raw, ctxAuth);
       connectionState.set({ state: 'Error', detail: { message: error ?? 'Connection failed' } });
     } finally {
@@ -99,6 +109,23 @@
       await setNamespace(target.value);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to switch namespace';
+    }
+  }
+
+  async function handleDisconnect() {
+    disconnecting = true;
+    error = null;
+
+    try {
+      await disconnect();
+      resetConnectionStores();
+      await goto('/');
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to disconnect';
+    } finally {
+      disconnecting = false;
+      namespacesLoading = false;
+      connecting = false;
     }
   }
 </script>
@@ -123,7 +150,7 @@
         <option value={ctx.name}>
           {ctx.name}
           {#if ctx.namespace}({ctx.namespace}){/if}
-          {#if isProductionContext(ctx.name)} 🔴 PROD{/if}
+          {#if isProductionContext(ctx.name, $productionPatterns)} 🔴 PROD{/if}
         </option>
       {/each}
     </select>
@@ -140,13 +167,24 @@
         id="namespace-select"
         value={$selectedNamespace}
         onchange={handleNamespaceChange}
-        disabled={namespacesLoading}
+        disabled={namespacesLoading || disconnecting}
         aria-busy={namespacesLoading}
       >
         {#each $namespaces as ns (ns)}
           <option value={ns}>{ns}</option>
         {/each}
       </select>
+    {/if}
+
+    {#if $isConnected}
+      <button
+        type="button"
+        class="disconnect-btn"
+        onclick={handleDisconnect}
+        disabled={disconnecting}
+      >
+        {disconnecting ? 'Disconnecting…' : '⏏ Disconnect'}
+      </button>
     {/if}
 
     {#if $selectedContext && !connecting}
@@ -200,6 +238,25 @@
   }
   select:disabled {
     opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .disconnect-btn {
+    background: rgba(239, 83, 80, 0.12);
+    border: 1px solid rgba(239, 83, 80, 0.35);
+    color: #ef9a9a;
+    border-radius: 4px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .disconnect-btn:hover:not(:disabled) {
+    background: rgba(239, 83, 80, 0.2);
+    border-color: rgba(239, 83, 80, 0.5);
+  }
+  .disconnect-btn:disabled {
+    opacity: 0.6;
     cursor: not-allowed;
   }
   .auth-badge {

@@ -14,6 +14,7 @@ kube = { version = "3.0.1", features = ["client"] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 telescope-engine = { path = "../../../crates/engine" }
 telescope-core = { path = "../../../crates/core" }
 tokio = { version = "1", features = ["full"] }

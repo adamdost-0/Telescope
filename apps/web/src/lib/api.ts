@@ -42,6 +42,34 @@ const HUB_URL =
       'http://localhost:3001')
     : (publicEnv.PUBLIC_ENGINE_HTTP_BASE ?? 'http://localhost:3001');
 
+type HubErrorResponse = { error?: string };
+
+async function readHubError(res: Response): Promise<Error> {
+  let message = `Request failed (${res.status})`;
+  try {
+    const payload = (await res.json()) as HubErrorResponse;
+    if (payload?.error) {
+      message = payload.error;
+    }
+  } catch {
+    // Ignore malformed error bodies and fall back to the status-based message.
+  }
+  return new Error(message);
+}
+
+async function expectJson<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    throw await readHubError(res);
+  }
+  return (await res.json()) as T;
+}
+
+async function expectOk(res: Response): Promise<void> {
+  if (!res.ok) {
+    throw await readHubError(res);
+  }
+}
+
 async function webFallback<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const base = `${HUB_URL}/api/v1`;
 
@@ -79,6 +107,28 @@ async function webFallback<T>(command: string, args?: Record<string, unknown>): 
       const res = await fetch(`${base}/resources?${params}`);
       return (await res.json()) as T;
     }
+    case 'count_resources': {
+      const params = new URLSearchParams();
+      if (args?.gvk) params.set('gvk', args.gvk as string);
+      if (args?.namespace) params.set('namespace', args.namespace as string);
+      const res = await fetch(`${base}/resources?${params}`);
+      if (!res.ok) {
+        throw new Error(`Failed to count resources (${res.status})`);
+      }
+      const resources = (await res.json()) as ResourceEntry[];
+      return resources.length as T;
+    }
+    case 'get_resource': {
+      const params = new URLSearchParams();
+      if (args?.gvk) params.set('gvk', args.gvk as string);
+      if (args?.namespace) params.set('namespace', args.namespace as string);
+      const res = await fetch(`${base}/resources?${params}`);
+      if (!res.ok) {
+        throw new Error(`Failed to load resource (${res.status})`);
+      }
+      const resources = (await res.json()) as ResourceEntry[];
+      return (resources.find((resource) => resource.name === args?.name) ?? null) as T;
+    }
     case 'get_secrets': {
       const params = new URLSearchParams();
       if (args?.namespace) params.set('namespace', args.namespace as string);
@@ -111,13 +161,21 @@ async function webFallback<T>(command: string, args?: Record<string, unknown>): 
       const res = await fetch(`${base}/namespaces`);
       return (await res.json()) as T;
     }
+    case 'get_namespace': {
+      const res = await fetch(`${base}/namespace`);
+      return await expectJson<T>(res);
+    }
     case 'get_pod_logs': {
       const params = new URLSearchParams();
       if (args?.container) params.set('container', args.container as string);
       if (args?.tailLines) params.set('tail', String(args.tailLines));
       if (args?.previous) params.set('previous', 'true');
       const res = await fetch(`${base}/pods/${args?.namespace}/${args?.pod}/logs?${params}`);
-      return (await res.text()) as T;
+      if (!res.ok) {
+        throw new Error(`Failed to load pod logs (${res.status})`);
+      }
+      const data = (await res.json()) as { logs?: string };
+      return (data.logs ?? '') as T;
     }
     case 'get_cluster_info': {
       const res = await fetch(`${base}/cluster-info`);
@@ -138,40 +196,170 @@ async function webFallback<T>(command: string, args?: Record<string, unknown>): 
       return (await res.json()) as T;
     }
     case 'check_metrics_available': {
-      try {
-        const res = await fetch(`${base}/metrics/pods`);
-        return res.ok as unknown as T;
-      } catch {
-        return false as unknown as T;
-      }
+      const res = await fetch(`${base}/metrics/available`);
+      return await expectJson<T>(res);
     }
     case 'list_crds': {
       const res = await fetch(`${base}/crds`);
       return (await res.json()) as T;
     }
-    case 'get_resource_counts':
-      // Hub doesn't have this endpoint yet — compute client-side
-      return [] as unknown as T;
-
-    // ── Write operations (deferred to next iteration) ─────────────────────
-    case 'set_namespace':
-    case 'scale_resource':
-    case 'delete_resource':
-    case 'apply_resource':
-    case 'rollout_restart':
-    case 'rollout_status':
-    case 'start_port_forward':
-    case 'exec_command':
-    case 'helm_rollback':
-    case 'get_helm_release_history':
-    case 'get_helm_release_values':
-    case 'list_containers':
+    case 'get_resource_counts': {
+      const res = await fetch(`${base}/resource-counts`);
+      return await expectJson<T>(res);
+    }
+    case 'set_namespace': {
+      const res = await fetch(`${base}/namespace`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ namespace: args?.namespace })
+      });
+      await expectOk(res);
+      return undefined as T;
+    }
+    case 'scale_resource': {
+      const res = await fetch(`${base}/resources/scale`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gvk: args?.gvk,
+          namespace: args?.namespace,
+          name: args?.name,
+          replicas: args?.replicas
+        })
+      });
+      const data = await expectJson<{ message: string }>(res);
+      return data.message as T;
+    }
+    case 'delete_resource': {
+      const res = await fetch(`${base}/resources/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gvk: args?.gvk,
+          namespace: args?.namespace,
+          name: args?.name
+        })
+      });
+      const data = await expectJson<{ success: boolean; message: string }>(res);
+      if (!data.success) {
+        throw new Error(data.message);
+      }
+      return data.message as T;
+    }
+    case 'apply_resource': {
+      const res = await fetch(`${base}/resources/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manifest: args?.json_content,
+          dry_run: args?.dry_run
+        })
+      });
+      return await expectJson<T>(res);
+    }
+    case 'rollout_restart': {
+      const res = await fetch(`${base}/rollout/restart`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gvk: args?.gvk,
+          namespace: args?.namespace,
+          name: args?.name
+        })
+      });
+      const data = await expectJson<{ message: string }>(res);
+      return data.message as T;
+    }
+    case 'rollout_status': {
+      const params = new URLSearchParams({
+        gvk: String(args?.gvk ?? ''),
+        namespace: String(args?.namespace ?? ''),
+        name: String(args?.name ?? '')
+      });
+      const res = await fetch(`${base}/rollout/status?${params}`);
+      return await expectJson<T>(res);
+    }
+    case 'start_port_forward': {
+      const res = await fetch(`${base}/port-forward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          namespace: args?.namespace,
+          pod: args?.pod,
+          local_port: args?.localPort,
+          remote_port: args?.remotePort
+        })
+      });
+      const data = await expectJson<{ local_port: number }>(res);
+      return data.local_port as T;
+    }
+    case 'exec_command': {
+      const res = await fetch(`${base}/exec`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          namespace: args?.namespace,
+          pod: args?.pod,
+          container: args?.container,
+          command: args?.command
+        })
+      });
+      return await expectJson<T>(res);
+    }
+    case 'helm_rollback': {
+      const res = await fetch(
+        `${base}/helm/releases/${encodeURIComponent(args?.namespace as string)}/${encodeURIComponent(args?.name as string)}/rollback`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ revision: args?.revision })
+        }
+      );
+      const data = await expectJson<{ message: string }>(res);
+      return data.message as T;
+    }
+    case 'get_helm_release_history': {
+      const res = await fetch(
+        `${base}/helm/releases/${encodeURIComponent(args?.namespace as string)}/${encodeURIComponent(args?.name as string)}/history`
+      );
+      return await expectJson<T>(res);
+    }
+    case 'get_helm_release_values': {
+      const params = new URLSearchParams({ reveal: String(Boolean(args?.reveal)) });
+      const res = await fetch(
+        `${base}/helm/releases/${encodeURIComponent(args?.namespace as string)}/${encodeURIComponent(args?.name as string)}/values?${params}`
+      );
+      return await expectJson<T>(res);
+    }
+    case 'list_containers': {
+      const res = await fetch(
+        `${base}/containers/${encodeURIComponent(args?.namespace as string)}/${encodeURIComponent(args?.pod as string)}`
+      );
+      return await expectJson<T>(res);
+    }
     case 'start_log_stream':
-    case 'active_context':
-    case 'get_node_metrics':
-    case 'get_preference':
-    case 'set_preference':
       return undefined as unknown as T;
+    case 'active_context': {
+      const res = await fetch(`${base}/active-context`);
+      return await expectJson<T>(res);
+    }
+    case 'get_node_metrics': {
+      const res = await fetch(`${base}/metrics/nodes`);
+      return await expectJson<T>(res);
+    }
+    case 'get_preference': {
+      const res = await fetch(`${base}/preferences/${encodeURIComponent(args?.key as string)}`);
+      return await expectJson<T>(res);
+    }
+    case 'set_preference': {
+      const res = await fetch(`${base}/preferences/${encodeURIComponent(args?.key as string)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: args?.value })
+      });
+      await expectOk(res);
+      return undefined as T;
+    }
 
     default:
       console.warn(`[telescope] No hub mapping for command: ${command}`);
@@ -244,6 +432,28 @@ export async function getResources(gvk: string, namespace?: string): Promise<Res
     return await invoke<ResourceEntry[]>('get_resources', { gvk, namespace: namespace ?? null });
   } catch {
     return [];
+  }
+}
+
+/** Count resources for a specific GVK, optionally scoped to a namespace. */
+export async function countResources(gvk: string, namespace?: string): Promise<number> {
+  try {
+    return await invoke<number>('count_resources', { gvk, namespace: namespace ?? null });
+  } catch {
+    return 0;
+  }
+}
+
+/** Fetch a single resource by GVK, namespace, and name. */
+export async function getResource(
+  gvk: string,
+  namespace: string,
+  name: string,
+): Promise<ResourceEntry | null> {
+  try {
+    return await invoke<ResourceEntry | null>('get_resource', { gvk, namespace, name });
+  } catch {
+    return null;
   }
 }
 
@@ -326,6 +536,15 @@ export async function listNamespaces(): Promise<string[]> {
   }
 }
 
+/** Get the current active namespace. */
+export async function getNamespace(): Promise<string> {
+  try {
+    return await invoke<string>('get_namespace');
+  } catch {
+    return 'default';
+  }
+}
+
 /** Fetch log output for a pod container. */
 export async function getPodLogs(
   namespace: string,
@@ -402,7 +621,7 @@ export interface ApplyResult {
 
 /** Apply (create or update) a Kubernetes resource from a JSON/YAML manifest. */
 export async function applyResource(manifest: string, dryRun = false): Promise<ApplyResult> {
-  return invoke<ApplyResult>('apply_resource', { manifest, dryRun });
+  return invoke<ApplyResult>('apply_resource', { json_content: manifest, dry_run: dryRun });
 }
 
 /** Scale a Deployment or StatefulSet to the desired replica count. */

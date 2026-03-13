@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getPreference, setPreference } from '$lib/api';
+  import { updateProductionPatterns } from '$lib/prod-detection';
   import { version } from '$lib/version';
 
   let theme = $state('system');
@@ -40,6 +41,18 @@
         setPreference(PREF_KEYS.defaultNamespace, defaultNamespace),
         setPreference(PREF_KEYS.autoRefreshInterval, autoRefreshInterval),
       ]);
+      updateProductionPatterns(productionPatterns);
+      if (typeof document !== 'undefined') {
+        const resolvedTheme = theme === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+          : theme;
+        document.documentElement.setAttribute('data-theme', resolvedTheme);
+      }
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('telescope-theme', theme === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+          : theme);
+      }
       saved = true;
       setTimeout(() => (saved = false), 2000);
     } finally {
@@ -79,7 +92,7 @@
     <h2>Safety</h2>
     <label class="field">
       <span class="field-label">Production patterns</span>
-      <span class="field-hint">One pattern per line. Context names matching any pattern are flagged as production.</span>
+      <span class="field-hint">Use commas or new lines. Context names matching any pattern are flagged as production.</span>
       <textarea rows="5" bind:value={productionPatterns} placeholder="prod&#10;production&#10;prd"></textarea>
     </label>
   </section>

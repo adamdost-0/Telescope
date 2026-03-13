@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { listContexts, connectToContext, listNamespaces, setNamespace } from '$lib/api';
+  import { getPreferredNamespace } from '$lib/preferences';
   import {
     selectedContext,
     selectedNamespace,
@@ -37,7 +38,7 @@
 
       const nsList = await listNamespaces();
       namespaces.set(nsList);
-      const ns = nsList.includes('default') ? 'default' : nsList[0] ?? 'default';
+      const ns = await getPreferredNamespace(nsList);
       selectedNamespace.set(ns);
       await setNamespace(ns);
 

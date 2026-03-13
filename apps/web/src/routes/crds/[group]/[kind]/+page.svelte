@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
   import { getResources } from '$lib/api';
+  import { resourceDetailHref } from '$lib/resource-routing';
   import { selectedNamespace, isConnected } from '$lib/stores';
   import ResourceTable from '$lib/components/ResourceTable.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
@@ -132,7 +133,7 @@
       {resources}
       {columns}
       emptyMessage="No {kind} resources found."
-      hrefFn={(entry) => `/resources/${plural}/${entry.namespace}/${entry.name}`}
+      hrefFn={(entry) => resourceDetailHref({ gvk, namespace: entry.namespace, name: entry.name, label: kind })}
     />
   {/if}
 </div>

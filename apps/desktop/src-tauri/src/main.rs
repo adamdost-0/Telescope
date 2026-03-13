@@ -268,11 +268,10 @@ async fn get_secret(
 /// List Helm releases by parsing Helm release Secrets from Kubernetes.
 #[tauri::command]
 async fn list_helm_releases(
+    state: State<'_, AppState>,
     namespace: Option<String>,
 ) -> Result<Vec<telescope_engine::helm::HelmRelease>, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     telescope_engine::helm::list_releases(&client, namespace.as_deref())
         .await
         .map_err(|e| e.to_string())
@@ -281,12 +280,11 @@ async fn list_helm_releases(
 /// Get all revisions of a specific Helm release, sorted by revision number.
 #[tauri::command]
 async fn get_helm_release_history(
+    state: State<'_, AppState>,
     namespace: String,
     name: String,
 ) -> Result<Vec<telescope_engine::helm::HelmRelease>, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     telescope_engine::helm::get_release_history(&client, &namespace, &name)
         .await
         .map_err(|e| e.to_string())
@@ -298,21 +296,21 @@ async fn get_helm_release_history(
 /// Pass `reveal: true` to return unredacted values.
 #[tauri::command]
 async fn get_helm_release_values(
+    state: State<'_, AppState>,
     namespace: String,
     name: String,
     reveal: Option<bool>,
 ) -> Result<String, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     let mut values = telescope_engine::helm::get_release_values(&client, &namespace, &name)
         .await
         .map_err(|e| e.to_string())?;
-    if !reveal.unwrap_or(false) {
-        if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&values) {
-            telescope_engine::helm::redact_sensitive_values(&mut json);
-            values = serde_json::to_string_pretty(&json).unwrap_or(values);
-        }
+    if !reveal.unwrap_or(false) && !values.trim_start().starts_with('#') {
+        let mut json = serde_yaml::from_str::<serde_json::Value>(&values)
+            .map_err(|e| format!("Failed to parse Helm values YAML: {e}"))?;
+        telescope_engine::helm::redact_sensitive_values(&mut json);
+        values = serde_yaml::to_string(&json)
+            .map_err(|e| format!("Failed to serialize redacted Helm values YAML: {e}"))?;
     }
     Ok(values)
 }
@@ -356,13 +354,7 @@ async fn helm_rollback(
 /// List available namespaces from the connected cluster.
 #[tauri::command]
 async fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    let ctx = state.active_context.read().await.clone();
-    if ctx.is_none() {
-        return Ok(vec!["default".to_string()]);
-    }
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     telescope_engine::namespace::list_namespaces(&client)
         .await
         .map_err(|e| e.to_string())
@@ -539,15 +531,14 @@ async fn get_namespace(state: State<'_, AppState>) -> Result<String, String> {
 /// Fetch pod logs (non-streaming snapshot).
 #[tauri::command]
 async fn get_pod_logs(
+    state: State<'_, AppState>,
     namespace: String,
     pod: String,
     container: Option<String>,
     previous: Option<bool>,
     tail_lines: Option<i64>,
 ) -> Result<String, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
 
     let req = telescope_engine::logs::LogRequest {
         namespace,
@@ -565,10 +556,12 @@ async fn get_pod_logs(
 
 /// List containers in a pod.
 #[tauri::command]
-async fn list_containers(namespace: String, pod: String) -> Result<Vec<String>, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+async fn list_containers(
+    state: State<'_, AppState>,
+    namespace: String,
+    pod: String,
+) -> Result<Vec<String>, String> {
+    let client = active_client(&state).await?;
 
     telescope_engine::logs::list_containers(&client, &namespace, &pod)
         .await
@@ -579,14 +572,13 @@ async fn list_containers(namespace: String, pod: String) -> Result<Vec<String>, 
 #[tauri::command]
 async fn start_log_stream(
     app: AppHandle,
+    state: State<'_, AppState>,
     namespace: String,
     pod: String,
     container: Option<String>,
     tail_lines: Option<i64>,
 ) -> Result<(), String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
 
     let req = telescope_engine::logs::LogRequest {
         namespace,
@@ -639,9 +631,7 @@ async fn scale_resource(
     name: String,
     replicas: i32,
 ) -> Result<String, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     let outcome =
         telescope_engine::actions::scale_resource(&client, &gvk, &namespace, &name, replicas).await;
     let result_str = if outcome.is_ok() {
@@ -679,9 +669,7 @@ async fn delete_resource(
     namespace: String,
     name: String,
 ) -> Result<String, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     let outcome =
         telescope_engine::actions::delete_resource(&client, &gvk, &namespace, &name).await;
     let result_str = match &outcome {
@@ -722,9 +710,7 @@ async fn apply_resource(
     json_content: String,
     dry_run: bool,
 ) -> Result<telescope_engine::actions::ApplyResult, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     let outcome = telescope_engine::actions::apply_resource(&client, &json_content, dry_run).await;
     let result_str = if outcome.is_ok() {
         "success"
@@ -888,9 +874,7 @@ async fn rollout_restart(
     namespace: String,
     name: String,
 ) -> Result<String, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     let outcome =
         telescope_engine::actions::rollout_restart(&client, &gvk, &namespace, &name).await;
     let result_str = if outcome.is_ok() {
@@ -923,13 +907,12 @@ async fn rollout_restart(
 /// Get rollout status for a Deployment or StatefulSet.
 #[tauri::command]
 async fn rollout_status(
+    state: State<'_, AppState>,
     gvk: String,
     namespace: String,
     name: String,
 ) -> Result<telescope_engine::actions::RolloutStatus, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     telescope_engine::actions::rollout_status(&client, &gvk, &namespace, &name)
         .await
         .map_err(|e| e.to_string())
@@ -952,9 +935,7 @@ async fn exec_command(
     let cmd_detail = command.join(" ");
     let audit_ns = namespace.clone();
     let audit_pod = pod.clone();
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     let req = telescope_engine::exec::ExecRequest {
         namespace,
         pod,
@@ -992,14 +973,13 @@ async fn exec_command(
 /// Start port forwarding from a local port to a pod port.
 #[tauri::command]
 async fn start_port_forward(
+    state: State<'_, AppState>,
     namespace: String,
     pod: String,
     local_port: u16,
     remote_port: u16,
 ) -> Result<u16, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     let req = telescope_engine::portforward::PortForwardRequest {
         namespace,
         pod,
@@ -1016,29 +996,26 @@ async fn start_port_forward(
 
 #[tauri::command]
 async fn get_pod_metrics(
+    state: State<'_, AppState>,
     namespace: Option<String>,
 ) -> Result<Vec<telescope_engine::metrics::PodMetrics>, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = active_client(&state).await?;
     telescope_engine::metrics::get_pod_metrics(&client, namespace.as_deref())
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn check_metrics_available() -> Result<bool, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+async fn check_metrics_available(state: State<'_, AppState>) -> Result<bool, String> {
+    let client = active_client(&state).await?;
     Ok(telescope_engine::metrics::is_metrics_available(&client).await)
 }
 
 #[tauri::command]
-async fn get_node_metrics() -> Result<Vec<telescope_engine::metrics::NodeMetricsData>, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+async fn get_node_metrics(
+    state: State<'_, AppState>,
+) -> Result<Vec<telescope_engine::metrics::NodeMetricsData>, String> {
+    let client = active_client(&state).await?;
     telescope_engine::metrics::get_node_metrics(&client)
         .await
         .map_err(|e| e.to_string())
@@ -1051,10 +1028,10 @@ async fn get_node_metrics() -> Result<Vec<telescope_engine::metrics::NodeMetrics
 
 /// List all Custom Resource Definitions installed on the cluster.
 #[tauri::command]
-async fn list_crds() -> Result<Vec<telescope_engine::crd::CrdInfo>, String> {
-    let client = telescope_engine::client::create_client()
-        .await
-        .map_err(|e| e.to_string())?;
+async fn list_crds(
+    state: State<'_, AppState>,
+) -> Result<Vec<telescope_engine::crd::CrdInfo>, String> {
+    let client = active_client(&state).await?;
     telescope_engine::crd::list_crds(&client)
         .await
         .map_err(|e| e.to_string())

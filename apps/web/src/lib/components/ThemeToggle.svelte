@@ -1,17 +1,60 @@
 <script lang="ts">
-  let theme = $state(
-    typeof localStorage !== 'undefined'
-      ? (localStorage.getItem('telescope-theme') ?? 'dark')
-      : 'dark'
-  );
+  import { onMount } from 'svelte';
+  import { getPreference, setPreference } from '$lib/api';
 
-  $effect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('telescope-theme', theme);
+  let theme = $state<'dark' | 'light'>('dark');
+
+  function systemTheme(): 'dark' | 'light' {
+    if (typeof window === 'undefined') {
+      return 'dark';
+    }
+
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+
+  function resolveTheme(value: string | null | undefined): 'dark' | 'light' | null {
+    if (value === 'dark' || value === 'light') {
+      return value;
+    }
+
+    if (value === 'system') {
+      return systemTheme();
+    }
+
+    return null;
+  }
+
+  onMount(() => {
+    void (async () => {
+      const savedTheme = resolveTheme(await getPreference('theme'));
+      const storedTheme = resolveTheme(
+        typeof localStorage !== 'undefined' ? localStorage.getItem('telescope-theme') : null
+      );
+      theme = savedTheme ?? storedTheme ?? systemTheme();
+    })();
   });
 
-  function toggle() {
-    theme = theme === 'dark' ? 'light' : 'dark';
+  $effect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    document.documentElement.setAttribute('data-theme', theme);
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('telescope-theme', theme);
+    }
+  });
+
+  async function toggle() {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    theme = nextTheme;
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('telescope-theme', nextTheme);
+    }
+
+    await setPreference('theme', nextTheme);
   }
 </script>
 

@@ -72,18 +72,57 @@ async fn main() {
         .route("/connect", post(routes::connect))
         .route("/disconnect", post(routes::disconnect))
         .route("/connection-state", get(routes::connection_state))
+        .route("/active-context", get(routes::active_context))
+        .route(
+            "/namespace",
+            get(routes::get_namespace).post(routes::set_namespace),
+        )
         .route("/resources", get(routes::get_resources))
+        .route("/resources/delete", post(routes::delete_resource))
+        .route("/resources/apply", post(routes::apply_resource))
+        .route("/resources/scale", post(routes::scale_resource))
+        .route("/resource-counts", get(routes::get_resource_counts))
+        .route("/rollout/restart", post(routes::rollout_restart))
+        .route("/rollout/status", get(routes::rollout_status))
+        .route("/exec", post(routes::exec_command))
+        .route("/port-forward", post(routes::start_port_forward))
+        .route(
+            "/containers/{namespace}/{pod}",
+            get(routes::list_containers),
+        )
         .route("/secrets", get(routes::list_secrets))
         .route("/secrets/{namespace}/{name}", get(routes::get_secret))
         .route("/pods", get(routes::get_pods))
         .route("/events", get(routes::get_events))
         .route("/namespaces", get(routes::list_namespaces))
         .route("/pods/{namespace}/{name}/logs", get(routes::get_pod_logs))
+        .route(
+            "/pods/{namespace}/{pod}/logs/stream",
+            get(routes::stream_pod_logs),
+        )
         .route("/cluster-info", get(routes::cluster_info))
         .route("/search", get(routes::search))
         .route("/helm/releases", get(routes::helm_releases))
+        .route(
+            "/helm/releases/{namespace}/{name}/history",
+            get(routes::get_helm_release_history),
+        )
+        .route(
+            "/helm/releases/{namespace}/{name}/values",
+            get(routes::get_helm_release_values),
+        )
+        .route(
+            "/helm/releases/{namespace}/{name}/rollback",
+            post(routes::rollback_helm_release),
+        )
         .route("/metrics/pods", get(routes::pod_metrics))
+        .route("/metrics/nodes", get(routes::node_metrics))
+        .route("/metrics/available", get(routes::metrics_available))
         .route("/crds", get(routes::list_crds))
+        .route(
+            "/preferences/{key}",
+            get(routes::get_preference).put(routes::set_preference),
+        )
         .route("/audit", get(routes::get_audit_log))
         .layer(axum::middleware::from_fn(auth::auth_middleware))
         .with_state(Arc::clone(&hub_state));

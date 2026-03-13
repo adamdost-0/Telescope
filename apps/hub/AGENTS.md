@@ -14,10 +14,10 @@ Built with Rust, using `telescope-engine` and `telescope-core` crates for Kubern
 
 **What works:**
 - Axum HTTP server with CORS middleware
-- `/api/clusters` and `/api/clusters/:id/namespaces` REST endpoints
-- kube-rs integration for real cluster queries
+- `/api/v1/*` REST endpoints for cluster queries, mutations, Helm, metrics, and preferences
+- kube-rs integration for real cluster queries and imperative actions
 - Basic WebSocket setup (partial implementation)
-- Tracing and logging
+- Tracing and audit logging
 
 **What's NOT production-ready:**
 - **OIDC authentication is scaffolding only:**
@@ -62,9 +62,42 @@ Environment variables:
 ### REST Routes
 
 ```
-GET  /api/clusters                      # List all clusters
-GET  /api/clusters/:id/namespaces       # List namespaces in a cluster
-GET  /health                            # Health check
+GET  /api/v1/contexts
+POST /api/v1/connect
+POST /api/v1/disconnect
+GET  /api/v1/connection-state
+GET  /api/v1/active-context
+GET  /api/v1/namespace
+POST /api/v1/namespace
+GET  /api/v1/resources
+POST /api/v1/resources/delete
+POST /api/v1/resources/apply
+POST /api/v1/resources/scale
+POST /api/v1/rollout/restart
+GET  /api/v1/rollout/status
+POST /api/v1/exec
+POST /api/v1/port-forward
+GET  /api/v1/containers/{namespace}/{pod}
+GET  /api/v1/pods/{namespace}/{name}/logs
+GET  /api/v1/secrets
+GET  /api/v1/secrets/{namespace}/{name}
+GET  /api/v1/events
+GET  /api/v1/namespaces
+GET  /api/v1/cluster-info
+GET  /api/v1/search
+GET  /api/v1/helm/releases
+GET  /api/v1/helm/releases/{namespace}/{name}/history
+GET  /api/v1/helm/releases/{namespace}/{name}/values
+POST /api/v1/helm/releases/{namespace}/{name}/rollback
+GET  /api/v1/metrics/pods
+GET  /api/v1/metrics/nodes
+GET  /api/v1/metrics/available
+GET  /api/v1/resource-counts
+GET  /api/v1/crds
+GET  /api/v1/preferences/{key}
+PUT  /api/v1/preferences/{key}
+GET  /api/v1/audit
+GET  /healthz
 ```
 
 ### WebSocket (partial)
