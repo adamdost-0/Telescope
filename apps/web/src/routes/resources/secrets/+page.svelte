@@ -1,13 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getResources } from '$lib/api';
+  import { getSecrets } from '$lib/api';
   import { selectedNamespace, isConnected } from '$lib/stores';
   import ResourceTable from '$lib/components/ResourceTable.svelte';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
-  const GVK = 'v1/Secret';
   const PAGE_TITLE = 'Secrets';
 
   function formatAge(timestamp: string): string {
@@ -65,7 +64,7 @@
     if (isInitial) loading = true; else refreshing = true;
     error = null;
     try {
-      resources = await getResources(GVK, $selectedNamespace);
+      resources = await getSecrets($selectedNamespace);
       lastUpdated = new Date();
       lastUpdatedText = formatTimestamp();
     } catch (e) {

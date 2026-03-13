@@ -555,6 +555,176 @@ const resourceFixtures = [
       active: [],
       lastScheduleTime: '2025-03-10T06:30:00.000Z'
     }
+  }),
+  resourceEntry('networking.k8s.io/v1/Ingress', 'default', 'checkout-edge', {
+    metadata: {
+      name: 'checkout-edge',
+      namespace: 'default',
+      creationTimestamp: '2025-03-11T01:20:00.000Z',
+      labels: {
+        'app.kubernetes.io/name': 'checkout-edge',
+        'app.kubernetes.io/part-of': 'checkout-platform'
+      },
+      annotations: {
+        'nginx.ingress.kubernetes.io/rewrite-target': '/'
+      }
+    },
+    spec: {
+      ingressClassName: 'nginx',
+      tls: [
+        {
+          secretName: 'checkout-edge-tls',
+          hosts: ['shop.telescope.dev']
+        }
+      ],
+      rules: [
+        {
+          host: 'shop.telescope.dev',
+          http: {
+            paths: [
+              {
+                path: '/',
+                pathType: 'Prefix',
+                backend: {
+                  service: {
+                    name: 'checkout-api',
+                    port: { number: 80 }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    status: {
+      loadBalancer: {
+        ingress: [{ ip: '20.51.10.12' }]
+      }
+    }
+  }),
+  resourceEntry('networking.k8s.io/v1/Ingress', 'default', 'grafana-public', {
+    metadata: {
+      name: 'grafana-public',
+      namespace: 'default',
+      creationTimestamp: '2025-03-10T23:40:00.000Z',
+      labels: {
+        'app.kubernetes.io/name': 'grafana-public',
+        'app.kubernetes.io/part-of': 'aks-observability'
+      }
+    },
+    spec: {
+      ingressClassName: 'nginx',
+      rules: [
+        {
+          host: 'grafana.telescope.dev',
+          http: {
+            paths: [
+              {
+                path: '/',
+                pathType: 'Prefix',
+                backend: {
+                  service: {
+                    name: 'grafana',
+                    port: { name: 'http' }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    status: {
+      loadBalancer: {
+        ingress: [{ hostname: 'aks-gw-12345.eastus.cloudapp.azure.com' }]
+      }
+    }
+  }),
+  resourceEntry('v1/PersistentVolumeClaim', 'default', 'orders-db-data-0', {
+    metadata: {
+      name: 'orders-db-data-0',
+      namespace: 'default',
+      creationTimestamp: '2025-03-10T19:00:00.000Z',
+      labels: {
+        'app.kubernetes.io/name': 'orders-db',
+        'app.kubernetes.io/component': 'database'
+      }
+    },
+    spec: {
+      volumeName: 'pvc-0f1e2d3c4b5a',
+      storageClassName: 'managed-csi-premium',
+      accessModes: ['ReadWriteOnce'],
+      resources: {
+        requests: {
+          storage: '128Gi'
+        }
+      }
+    },
+    status: {
+      phase: 'Bound',
+      capacity: {
+        storage: '128Gi'
+      }
+    }
+  }),
+  resourceEntry('v1/PersistentVolumeClaim', 'default', 'reports-cache', {
+    metadata: {
+      name: 'reports-cache',
+      namespace: 'default',
+      creationTimestamp: '2025-03-11T04:15:00.000Z',
+      labels: {
+        'app.kubernetes.io/name': 'reports-cache',
+        'app.kubernetes.io/part-of': 'finops'
+      }
+    },
+    spec: {
+      storageClassName: 'managed-csi',
+      accessModes: ['ReadWriteOnce'],
+      resources: {
+        requests: {
+          storage: '20Gi'
+        }
+      }
+    },
+    status: {
+      phase: 'Pending'
+    }
+  })
+];
+
+const secretFixtures = [
+  resourceEntry('v1/Secret', 'default', 'payments-api-secrets', {
+    metadata: {
+      name: 'payments-api-secrets',
+      namespace: 'default',
+      creationTimestamp: '2025-03-11T04:15:00.000Z',
+      labels: {
+        'app.kubernetes.io/name': 'payments-api',
+        'app.kubernetes.io/component': 'backend'
+      }
+    },
+    type: 'Opaque',
+    data: {
+      username: '●●●●●●●●',
+      password: '●●●●●●●●',
+      token: '●●●●●●●●'
+    }
+  }),
+  resourceEntry('v1/Secret', 'kube-system', 'azure-provider-tls', {
+    metadata: {
+      name: 'azure-provider-tls',
+      namespace: 'kube-system',
+      creationTimestamp: '2025-03-10T20:00:00.000Z',
+      labels: {
+        'app.kubernetes.io/name': 'secrets-store-provider-azure'
+      }
+    },
+    type: 'kubernetes.io/tls',
+    data: {
+      'tls.crt': '●●●●●●●●',
+      'tls.key': '●●●●●●●●'
+    }
   })
 ];
 
@@ -715,6 +885,30 @@ const server = http.createServer(async (req, res) => {
       }
 
       return json(res, 200, resources);
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/v1/secrets') {
+      const namespace = url.searchParams.get('namespace');
+      let secrets = state.connectedContext ? secretFixtures : [];
+
+      if (namespace) {
+        secrets = secrets.filter((secret) => secret.namespace === namespace);
+      }
+
+      return json(res, 200, secrets);
+    }
+
+    if (req.method === 'GET' && url.pathname.startsWith('/api/v1/secrets/')) {
+      const [, , , , namespace, name] = url.pathname.split('/');
+      const secret = !state.connectedContext
+        ? null
+        : secretFixtures.find((entry) => entry.namespace === namespace && entry.name === name) ?? null;
+
+      if (!secret) {
+        return json(res, 404, { error: `Secret ${namespace}/${name} not found` });
+      }
+
+      return json(res, 200, secret);
     }
 
     if (req.method === 'GET' && url.pathname === '/api/v1/events') {

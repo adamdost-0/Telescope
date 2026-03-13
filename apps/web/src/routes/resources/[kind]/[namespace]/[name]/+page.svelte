@@ -1,7 +1,16 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { getResources, getEvents, getPods, rolloutRestart, rolloutStatus, applyResource, scaleResource } from '$lib/api';
+  import {
+    getEvents,
+    getPods,
+    getResources,
+    getSecret,
+    rolloutRestart,
+    rolloutStatus,
+    applyResource,
+    scaleResource
+  } from '$lib/api';
   import type { RolloutStatus } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import EventsTable from '$lib/components/EventsTable.svelte';
@@ -35,6 +44,7 @@
   let namespace = $derived(page.params.namespace);
   let resourceName = $derived(page.params.name);
   let kindInfo = $derived(KIND_MAP[kind]);
+  let isSecret = $derived(kind === 'secrets');
   let isWorkload = $derived(WORKLOAD_KINDS.has(kind));
   let isScalable = $derived(SCALABLE_KINDS.has(kind));
   let isRestartable = $derived(RESTARTABLE_KINDS.has(kind));
@@ -87,8 +97,9 @@
         error = `Unknown resource kind: "${kind}"`;
         return;
       }
-      const resources = await getResources(kindInfo.gvk, namespace);
-      const entry = resources.find((r: ResourceEntry) => r.name === resourceName);
+      const entry = isSecret
+        ? await getSecret(namespace, resourceName)
+        : (await getResources(kindInfo.gvk, namespace)).find((r: ResourceEntry) => r.name === resourceName);
       if (entry) {
         resource = JSON.parse(entry.content);
       } else {
@@ -763,13 +774,18 @@
 
     {:else if activeTab === 'yaml'}
       <div class="yaml-tab">
-        <div class="yaml-actions">
-          <button onclick={() => handleApply(true)} disabled={!yamlDirty || applying} class="action-btn">🧪 Dry Run</button>
-          <button onclick={() => handleApply(false)} disabled={!yamlDirty || applying} class="action-btn primary">✅ Apply</button>
-          <button onclick={resetYaml} disabled={!yamlDirty} class="action-btn">↩ Reset</button>
-          {#if applyMessage}<span class={applyError ? 'apply-error' : 'apply-success'}>{applyMessage}</span>{/if}
-        </div>
-        <YamlEditor content={yamlContent} onchange={(v) => editedYaml = v} />
+        {#if isSecret}
+          <p class="muted">Secret values are redacted by default. Editing is disabled to avoid applying masked data.</p>
+          <YamlEditor content={yamlContent} readonly={true} />
+        {:else}
+          <div class="yaml-actions">
+            <button onclick={() => handleApply(true)} disabled={!yamlDirty || applying} class="action-btn">🧪 Dry Run</button>
+            <button onclick={() => handleApply(false)} disabled={!yamlDirty || applying} class="action-btn primary">✅ Apply</button>
+            <button onclick={resetYaml} disabled={!yamlDirty} class="action-btn">↩ Reset</button>
+            {#if applyMessage}<span class={applyError ? 'apply-error' : 'apply-success'}>{applyMessage}</span>{/if}
+          </div>
+          <YamlEditor content={yamlContent} onchange={(v) => editedYaml = v} />
+        {/if}
       </div>
     {/if}
   {/if}

@@ -12,6 +12,7 @@ pub mod logs;
 pub mod metrics;
 pub mod namespace;
 pub mod portforward;
+pub mod secrets;
 pub mod watcher;
 
 pub use client::ClusterInfo;

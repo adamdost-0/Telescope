@@ -73,6 +73,8 @@ async fn main() {
         .route("/disconnect", post(routes::disconnect))
         .route("/connection-state", get(routes::connection_state))
         .route("/resources", get(routes::get_resources))
+        .route("/secrets", get(routes::list_secrets))
+        .route("/secrets/{namespace}/{name}", get(routes::get_secret))
         .route("/pods", get(routes::get_pods))
         .route("/events", get(routes::get_events))
         .route("/namespaces", get(routes::list_namespaces))

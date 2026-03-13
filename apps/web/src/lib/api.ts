@@ -79,6 +79,27 @@ async function webFallback<T>(command: string, args?: Record<string, unknown>): 
       const res = await fetch(`${base}/resources?${params}`);
       return (await res.json()) as T;
     }
+    case 'get_secrets': {
+      const params = new URLSearchParams();
+      if (args?.namespace) params.set('namespace', args.namespace as string);
+      const res = await fetch(`${base}/secrets?${params}`);
+      if (!res.ok) {
+        throw new Error(`Failed to load secrets (${res.status})`);
+      }
+      return (await res.json()) as T;
+    }
+    case 'get_secret': {
+      const res = await fetch(
+        `${base}/secrets/${encodeURIComponent(args?.namespace as string)}/${encodeURIComponent(args?.name as string)}`
+      );
+      if (res.status === 404) {
+        return null as T;
+      }
+      if (!res.ok) {
+        throw new Error(`Failed to load secret (${res.status})`);
+      }
+      return (await res.json()) as T;
+    }
     case 'get_events': {
       const params = new URLSearchParams();
       if (args?.namespace) params.set('namespace', args.namespace as string);
@@ -223,6 +244,24 @@ export async function getResources(gvk: string, namespace?: string): Promise<Res
     return await invoke<ResourceEntry[]>('get_resources', { gvk, namespace: namespace ?? null });
   } catch {
     return [];
+  }
+}
+
+/** Fetch secrets on demand without reading from the shared resource cache. */
+export async function getSecrets(namespace: string): Promise<ResourceEntry[]> {
+  try {
+    return await invoke<ResourceEntry[]>('get_secrets', { namespace });
+  } catch {
+    return [];
+  }
+}
+
+/** Fetch one secret on demand without reading from the shared resource cache. */
+export async function getSecret(namespace: string, name: string): Promise<ResourceEntry | null> {
+  try {
+    return await invoke<ResourceEntry | null>('get_secret', { namespace, name });
+  } catch {
+    return null;
   }
 }
 

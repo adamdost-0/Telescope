@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getPreference, setPreference } from '$lib/api';
+  import { version } from '$lib/version';
 
   let theme = $state('system');
   let productionPatterns = $state('prod\nproduction\nprd');
@@ -96,7 +97,7 @@
     <h2>About</h2>
     <dl>
       <dt>Version</dt>
-      <dd>0.0.1</dd>
+      <dd>{version}</dd>
       <dt>Project</dt>
       <dd><a href="https://github.com/AKSoftCode/Telescope" target="_blank" rel="noopener">GitHub</a></dd>
       <dt>License</dt>

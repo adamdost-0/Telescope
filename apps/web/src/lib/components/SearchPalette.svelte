@@ -17,7 +17,9 @@
     StatefulSet: '🗄️',
     DaemonSet: '🔄',
     Service: '🌐',
+    Ingress: '🚪',
     ConfigMap: '📋',
+    PersistentVolumeClaim: '💾',
     Job: '⚙️',
     CronJob: '🕐',
     Node: '🖥️',
@@ -58,8 +60,12 @@
         return `/resources/cronjobs/${ns}/${entry.name}`;
       case 'service':
         return `/resources/services/${ns}/${entry.name}`;
+      case 'ingress':
+        return `/resources/ingresses/${ns}/${entry.name}`;
       case 'configmap':
         return `/resources/configmaps/${ns}/${entry.name}`;
+      case 'persistentvolumeclaim':
+        return `/resources/pvcs/${ns}/${entry.name}`;
       default:
         return `/resources/${kind}/${ns}/${entry.name}`;
     }

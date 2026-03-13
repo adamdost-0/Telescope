@@ -330,6 +330,94 @@ pub async fn list_namespaces(State(state): State<Arc<HubState>>) -> ApiResult<Ve
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/v1/secrets?namespace=...
+// ---------------------------------------------------------------------------
+
+pub async fn list_secrets(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(params): Query<NamespaceQuery>,
+) -> ApiResult<Vec<ResourceEntry>> {
+    let namespace = match params.namespace.filter(|ns| !ns.is_empty()) {
+        Some(namespace) => namespace,
+        None => state.active_namespace.read().await.clone(),
+    };
+    let client = active_client_for_user(&state, &user).await?;
+    let result = telescope_engine::secrets::list_secrets(&client, &namespace).await;
+    let ctx_name = state
+        .active_context
+        .read()
+        .await
+        .clone()
+        .unwrap_or_default();
+
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: user.email.clone(),
+            context: ctx_name,
+            namespace: namespace.clone(),
+            action: "list_secrets".into(),
+            resource_type: "v1/Secret".into(),
+            resource_name: String::new(),
+            result: if result.is_ok() {
+                "success".into()
+            } else {
+                "failure".into()
+            },
+            detail: result.as_ref().err().map(|e| e.to_string()),
+        },
+    );
+
+    result
+        .map(Json)
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/secrets/:namespace/:name
+// ---------------------------------------------------------------------------
+
+pub async fn get_secret(
+    State(state): State<Arc<HubState>>,
+    Extension(user): Extension<AuthUser>,
+    Path((namespace, name)): Path<(String, String)>,
+) -> ApiResult<Option<ResourceEntry>> {
+    let client = active_client_for_user(&state, &user).await?;
+    let result = telescope_engine::secrets::get_secret(&client, &namespace, &name).await;
+    let ctx_name = state
+        .active_context
+        .read()
+        .await
+        .clone()
+        .unwrap_or_default();
+
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: user.email.clone(),
+            context: ctx_name,
+            namespace: namespace.clone(),
+            action: "get_secret".into(),
+            resource_type: "v1/Secret".into(),
+            resource_name: name.clone(),
+            result: if result.is_ok() {
+                "success".into()
+            } else {
+                "failure".into()
+            },
+            detail: result.as_ref().err().map(|e| e.to_string()),
+        },
+    );
+
+    result
+        .map(Json)
+        .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/v1/pods/:namespace/:name/logs?container=...&tail=...&previous=...
 // ---------------------------------------------------------------------------
 
@@ -514,6 +602,26 @@ async fn abort_watch(state: &HubState) {
         h.abort();
         info!("Previous watch task aborted");
     }
+}
+
+async fn active_client_for_user(
+    state: &HubState,
+    user: &AuthUser,
+) -> Result<kube::Client, (axum::http::StatusCode, Json<ErrorResponse>)> {
+    let context_name = state
+        .active_context
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| api_err(axum::http::StatusCode::BAD_REQUEST, "Not connected"))?;
+
+    telescope_engine::client::create_client_for_context_as_user(
+        &context_name,
+        &user.email,
+        &user.groups,
+    )
+    .await
+    .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 /// Update the shared connection state.

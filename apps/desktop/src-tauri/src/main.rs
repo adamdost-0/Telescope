@@ -240,6 +240,31 @@ fn get_resource(
         .map_err(|e| e.to_string())
 }
 
+/// List secrets in a namespace via a direct uncached Kubernetes API read.
+#[tauri::command]
+async fn get_secrets(
+    state: State<'_, AppState>,
+    namespace: String,
+) -> Result<Vec<ResourceEntry>, String> {
+    let client = active_client(&state).await?;
+    telescope_engine::secrets::list_secrets(&client, &namespace)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get one secret via a direct uncached Kubernetes API read.
+#[tauri::command]
+async fn get_secret(
+    state: State<'_, AppState>,
+    namespace: String,
+    name: String,
+) -> Result<Option<ResourceEntry>, String> {
+    let client = active_client(&state).await?;
+    telescope_engine::secrets::get_secret(&client, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// List Helm releases by parsing Helm release Secrets from Kubernetes.
 #[tauri::command]
 async fn list_helm_releases(
@@ -741,6 +766,18 @@ async fn abort_watch(state: &State<'_, AppState>) {
     }
 }
 
+async fn active_client(state: &State<'_, AppState>) -> Result<kube::Client, String> {
+    let context_name = state
+        .active_context
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| "Not connected".to_string())?;
+    telescope_engine::client::create_client_for_context(&context_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Update connection state and emit an event to the frontend.
 async fn set_connection_state(
     app: &AppHandle,
@@ -1103,6 +1140,8 @@ fn main() {
             search_resources,
             count_resources,
             get_resource,
+            get_secrets,
+            get_secret,
             list_namespaces,
             list_helm_releases,
             get_helm_release_history,
