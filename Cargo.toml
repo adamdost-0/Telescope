@@ -4,6 +4,7 @@ members = [
   "crates/core",
   "crates/engine",
   "crates/api",
+  "crates/azure",
   "apps/desktop/src-tauri",
 ]
 # CI defaults: avoid building platform-specific desktop dependencies on Linux.
@@ -12,6 +13,7 @@ default-members = [
   "crates/core",
   "crates/engine",
   "crates/api",
+  "crates/azure",
 ]
 
 [workspace.package]

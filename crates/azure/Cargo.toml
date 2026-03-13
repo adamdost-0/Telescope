@@ -1,0 +1,15 @@
+[package]
+name = "telescope-azure"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+azure_identity = "0.22"
+azure_core = "0.22"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+thiserror = "2"
