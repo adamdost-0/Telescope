@@ -46,7 +46,10 @@ mod tests {
     #[test]
     fn error_display_auth() {
         let err = AzureError::Auth("token expired".to_string());
-        assert_eq!(err.to_string(), "Azure authentication failed: token expired");
+        assert_eq!(
+            err.to_string(),
+            "Azure authentication failed: token expired"
+        );
     }
 
     #[test]
@@ -70,7 +73,8 @@ mod tests {
 
     #[test]
     fn error_response_deserialization() {
-        let json = r#"{"error":{"code":"ResourceNotFound","message":"The resource was not found"}}"#;
+        let json =
+            r#"{"error":{"code":"ResourceNotFound","message":"The resource was not found"}}"#;
         let resp: AzureErrorResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.error.code, "ResourceNotFound");
         assert_eq!(resp.error.message, "The resource was not found");

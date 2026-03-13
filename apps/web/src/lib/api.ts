@@ -11,6 +11,7 @@ import {
   type ConnectionState,
   type PodMetrics,
   type NodeMetricsData,
+  type AksIdentityInfo,
 } from './tauri-commands';
 
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -23,6 +24,9 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
     throw e;
   }
 }
+
+const AZURE_CLOUD_STORAGE_KEY = 'telescope-azure-cloud';
+const AZURE_CLOUD_SELECTION_STORAGE_KEY = 'telescope-azure-cloud-selection';
 
 /** Fetch counts for all major resource types. */
 export async function getResourceCounts(): Promise<[string, number][]> {
@@ -454,6 +458,53 @@ export async function getPreference(key: string): Promise<string | null> {
 /** Write a single user preference. */
 export async function setPreference(key: string, value: string): Promise<void> {
   await invoke<void>('set_preference', { key, value });
+}
+
+// ── AKS identity resolution ─────────────────────────────────────────────
+
+/** Resolve AKS resource identity (subscription, RG, cluster name) for the active context. */
+export async function resolveAksIdentity(): Promise<AksIdentityInfo | null> {
+  try {
+    return await invoke<AksIdentityInfo | null>('resolve_aks_identity');
+  } catch {
+    return null;
+  }
+}
+
+/** Get the effective Azure cloud, using desktop auto-detection when available. */
+export async function getAzureCloud(): Promise<string> {
+  try {
+    const cloud = await invoke<string>('get_azure_cloud');
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(AZURE_CLOUD_STORAGE_KEY, cloud);
+    }
+    return cloud;
+  } catch {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(AZURE_CLOUD_STORAGE_KEY) ?? 'Commercial';
+    }
+    return 'Commercial';
+  }
+}
+
+/** Persist the preferred Azure cloud selection. */
+export async function setAzureCloud(cloud: string): Promise<void> {
+  const isTauriDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(AZURE_CLOUD_SELECTION_STORAGE_KEY, cloud);
+    if (cloud !== 'auto') {
+      localStorage.setItem(AZURE_CLOUD_STORAGE_KEY, cloud);
+    }
+  }
+
+  try {
+    await invoke<void>('set_azure_cloud', { cloud });
+  } catch (error) {
+    if (isTauriDesktop || typeof localStorage === 'undefined') {
+      throw error;
+    }
+  }
 }
 
 // ── Node operations ──────────────────────────────────────────────────────

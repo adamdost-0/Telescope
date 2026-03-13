@@ -57,10 +57,7 @@ impl ArmClient {
         )
     }
 
-    async fn handle_response<T: DeserializeOwned>(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<T> {
+    async fn handle_response<T: DeserializeOwned>(&self, response: reqwest::Response) -> Result<T> {
         let status = response.status().as_u16();
         if status == 404 {
             return Err(AzureError::NotFound);
@@ -104,11 +101,7 @@ impl ArmClient {
         self.handle_response(response).await
     }
 
-    pub async fn put<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        body: &impl Serialize,
-    ) -> Result<T> {
+    pub async fn put<T: DeserializeOwned>(&self, path: &str, body: &impl Serialize) -> Result<T> {
         let token = self.get_token().await?;
         let url = self.url(path);
         tracing::debug!("ARM PUT {}", url);

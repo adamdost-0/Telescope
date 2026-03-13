@@ -49,6 +49,16 @@ export interface ClusterInfo {
   exec_plugin: string | null;
   is_aks: boolean;
   auth_hint: string | null;
+  subscription_id: string | null;
+  resource_group: string | null;
+  azure_resource_id: string | null;
+}
+
+export interface AksIdentityInfo {
+  subscription_id: string;
+  resource_group: string;
+  cluster_name: string;
+  arm_resource_id: string;
 }
 
 export interface ContainerMetrics {

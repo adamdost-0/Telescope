@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use futures::{AsyncBufReadExt, TryStreamExt};
 use tauri::{AppHandle, Emitter, State};
+use telescope_azure::AzureCloud;
 use tokio::sync::{Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -83,9 +84,70 @@ async fn get_cluster_info(
     let client = telescope_engine::client::create_client_for_context(&context_name)
         .await
         .map_err(|e| e.to_string())?;
-    telescope_engine::client::get_cluster_info(&client, &context_name)
+    let mut info = telescope_engine::client::get_cluster_info(&client, &context_name)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Attempt AKS identity resolution when connected to an AKS cluster.
+    if info.is_aks {
+        let preferred_id = {
+            let store_guard = state.store.lock().map_err(|e| e.to_string())?;
+            telescope_azure::resolve_aks_identity_from_preferences(Some(&store_guard))
+        };
+
+        if let Some(id) =
+            telescope_azure::resolve_aks_identity(&info.server_url, preferred_id).await
+        {
+            info.azure_resource_id = Some(id.arm_path());
+            info.subscription_id = Some(id.subscription_id);
+            info.resource_group = Some(id.resource_group);
+        }
+    }
+
+    Ok(info)
+}
+
+/// Resolved AKS identity information returned to the frontend.
+#[derive(serde::Serialize)]
+struct AksIdentityInfo {
+    subscription_id: String,
+    resource_group: String,
+    cluster_name: String,
+    arm_resource_id: String,
+}
+
+/// Resolve AKS identity (subscription, RG, cluster name) for the active context.
+#[tauri::command]
+async fn resolve_aks_identity(
+    state: State<'_, AppState>,
+) -> Result<Option<AksIdentityInfo>, String> {
+    let ctx = state.active_context.read().await.clone();
+    let context_name = ctx.ok_or_else(|| "Not connected".to_string())?;
+    let client = telescope_engine::client::create_client_for_context(&context_name)
+        .await
+        .map_err(|e| e.to_string())?;
+    let info = telescope_engine::client::get_cluster_info(&client, &context_name)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !info.is_aks {
+        return Ok(None);
+    }
+
+    let preferred_id = {
+        let store_guard = state.store.lock().map_err(|e| e.to_string())?;
+        telescope_azure::resolve_aks_identity_from_preferences(Some(&store_guard))
+    };
+
+    match telescope_azure::resolve_aks_identity(&info.server_url, preferred_id).await {
+        Some(id) => Ok(Some(AksIdentityInfo {
+            arm_resource_id: id.arm_path(),
+            subscription_id: id.subscription_id,
+            resource_group: id.resource_group,
+            cluster_name: id.cluster_name,
+        })),
+        None => Ok(None),
+    }
 }
 
 /// List available Kubernetes contexts from kubeconfig.
@@ -984,6 +1046,46 @@ async fn abort_watch(state: &State<'_, AppState>) {
     }
 }
 
+fn parse_azure_cloud(value: &str) -> Option<AzureCloud> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "commercial" => Some(AzureCloud::Commercial),
+        "usgovernment" | "us-government" | "us_government" => Some(AzureCloud::UsGovernment),
+        "usgovsecret" | "us-gov-secret" | "us_gov_secret" => Some(AzureCloud::UsGovSecret),
+        "usgovtopsecret" | "us-gov-top-secret" | "us_gov_top_secret" => {
+            Some(AzureCloud::UsGovTopSecret)
+        }
+        _ => None,
+    }
+}
+
+fn azure_cloud_name(cloud: AzureCloud) -> &'static str {
+    match cloud {
+        AzureCloud::Commercial => "Commercial",
+        AzureCloud::UsGovernment => "UsGovernment",
+        AzureCloud::UsGovSecret => "UsGovSecret",
+        AzureCloud::UsGovTopSecret => "UsGovTopSecret",
+    }
+}
+
+async fn detect_active_azure_cloud(state: &State<'_, AppState>) -> Result<AzureCloud, String> {
+    let context_name = if let Some(context_name) = state.active_context.read().await.clone() {
+        context_name
+    } else {
+        telescope_engine::kubeconfig::active_context().map_err(|e| e.to_string())?
+    };
+
+    let server_url = telescope_engine::kubeconfig::list_contexts()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|ctx| ctx.name == context_name)
+        .and_then(|ctx| ctx.cluster_server);
+
+    Ok(server_url
+        .as_deref()
+        .map(AzureCloud::detect_from_url)
+        .unwrap_or_default())
+}
+
 async fn active_client(state: &State<'_, AppState>) -> Result<kube::Client, String> {
     let context_name = state
         .active_context
@@ -1554,6 +1656,43 @@ fn set_preference(state: State<'_, AppState>, key: String, value: String) -> Res
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn get_azure_cloud(state: State<'_, AppState>) -> Result<String, String> {
+    let preference = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        store
+            .get_preference("azure_cloud")
+            .map_err(|e| e.to_string())?
+    };
+
+    if let Some(value) = preference {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("auto") {
+            let cloud = parse_azure_cloud(trimmed)
+                .ok_or_else(|| format!("Invalid azure_cloud preference: {}", trimmed))?;
+            return Ok(azure_cloud_name(cloud).to_string());
+        }
+    }
+
+    Ok(azure_cloud_name(detect_active_azure_cloud(&state).await?).to_string())
+}
+
+#[tauri::command]
+async fn set_azure_cloud(state: State<'_, AppState>, cloud: String) -> Result<(), String> {
+    let normalized = if cloud.trim().is_empty() || cloud.eq_ignore_ascii_case("auto") {
+        "auto".to_string()
+    } else {
+        let cloud = parse_azure_cloud(&cloud)
+            .ok_or_else(|| format!("Unsupported Azure cloud: {}", cloud))?;
+        azure_cloud_name(cloud).to_string()
+    };
+
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store
+        .set_preference("azure_cloud", &normalized)
+        .map_err(|e| e.to_string())
+}
+
 fn main() {
     tracing_subscriber::fmt::init();
     eprintln!("[telescope] Starting Telescope desktop app");
@@ -1611,6 +1750,7 @@ fn main() {
             active_context,
             get_connection_state,
             get_cluster_info,
+            resolve_aks_identity,
             get_pods,
             get_resources,
             get_events,
@@ -1656,6 +1796,8 @@ fn main() {
             list_crds,
             get_preference,
             set_preference,
+            get_azure_cloud,
+            set_azure_cloud,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");

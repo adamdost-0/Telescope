@@ -21,6 +21,12 @@ pub struct ClusterInfo {
     pub is_aks: bool,
     /// Human-readable auth hint for the UI (e.g. "Authenticated via Azure Entra ID").
     pub auth_hint: Option<String>,
+    /// Azure subscription ID (populated for AKS clusters when resolved).
+    pub subscription_id: Option<String>,
+    /// Azure resource group (populated for AKS clusters when resolved).
+    pub resource_group: Option<String>,
+    /// Full ARM resource ID (populated for AKS clusters when resolved).
+    pub azure_resource_id: Option<String>,
 }
 
 /// Retrieve cluster version info from the API server.
@@ -91,6 +97,9 @@ fn build_info(
         exec_plugin,
         is_aks,
         auth_hint,
+        subscription_id: None,
+        resource_group: None,
+        azure_resource_id: None,
     }
 }
 
@@ -146,6 +155,8 @@ fn extract_auth_meta(
 /// Returns true when the URL matches an AKS managed cluster endpoint.
 fn is_aks_url(url: &str) -> bool {
     url.contains(".azmk8s.io")
+        || url.contains(".azmk8s.us")
+        || url.contains(".cx.aks.containerservice.azure.us")
 }
 
 /// Create a Kubernetes client from the default kubeconfig.

@@ -3,6 +3,7 @@
   import { getResourceCounts, getPods, getEvents, activeContext, getClusterInfo, getPodMetrics } from '$lib/api';
   import { getAutoRefreshIntervalMs } from '$lib/preferences';
   import { selectedContext, selectedNamespace, isConnected, clusterServerUrl, isAks } from '$lib/stores';
+  import { getAzureCloud } from '$lib/api';
   import { parseAksUrl, getAzurePortalUrl } from '$lib/azure-utils';
   import AksAddons from '$lib/components/AksAddons.svelte';
   import ErrorMessage from '$lib/components/ErrorMessage.svelte';
@@ -192,12 +193,12 @@
     Unknown: '#757575',
   };
 
-  function openInPortal() {
+  async function openInPortal() {
     const url = clusterInfo?.server_url || $clusterServerUrl;
     if (!url) return;
     const info = parseAksUrl(url);
     if (!info) return;
-    const portalUrl = getAzurePortalUrl(info);
+    const portalUrl = getAzurePortalUrl(info, await getAzureCloud());
     if (portalUrl) {
       window.open(portalUrl, '_blank', 'noopener');
     }

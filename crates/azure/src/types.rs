@@ -11,6 +11,22 @@ pub enum AzureCloud {
 }
 
 impl AzureCloud {
+    pub fn detect_from_url(server_url: &str) -> Self {
+        if server_url.contains(".azmk8s.io") {
+            Self::Commercial
+        } else if server_url.contains(".azmk8s.us")
+            || server_url.contains(".cx.aks.containerservice.azure.us")
+        {
+            Self::UsGovernment
+        } else if server_url.contains(".scloud") {
+            Self::UsGovSecret
+        } else if server_url.contains(".eaglex.ic.gov") {
+            Self::UsGovTopSecret
+        } else {
+            Self::Commercial
+        }
+    }
+
     pub fn arm_endpoint(&self) -> &str {
         match self {
             Self::Commercial => "https://management.azure.com",
@@ -117,8 +133,14 @@ mod tests {
 
     #[test]
     fn cloud_portal_urls() {
-        assert_eq!(AzureCloud::Commercial.portal_url(), "https://portal.azure.com");
-        assert_eq!(AzureCloud::UsGovernment.portal_url(), "https://portal.azure.us");
+        assert_eq!(
+            AzureCloud::Commercial.portal_url(),
+            "https://portal.azure.com"
+        );
+        assert_eq!(
+            AzureCloud::UsGovernment.portal_url(),
+            "https://portal.azure.us"
+        );
     }
 
     #[test]
@@ -136,6 +158,26 @@ mod tests {
     #[test]
     fn default_cloud_is_commercial() {
         assert_eq!(AzureCloud::default(), AzureCloud::Commercial);
+    }
+
+    #[test]
+    fn detect_cloud_from_aks_url() {
+        assert_eq!(
+            AzureCloud::detect_from_url("https://myaks.hcp.eastus.azmk8s.io:443"),
+            AzureCloud::Commercial
+        );
+        assert_eq!(
+            AzureCloud::detect_from_url("https://myaks.hcp.usgovvirginia.azmk8s.us:443"),
+            AzureCloud::UsGovernment
+        );
+        assert_eq!(
+            AzureCloud::detect_from_url("https://cluster.cx.aks.containerservice.azure.us"),
+            AzureCloud::UsGovernment
+        );
+        assert_eq!(
+            AzureCloud::detect_from_url("https://example.invalid"),
+            AzureCloud::Commercial
+        );
     }
 
     #[test]
@@ -158,7 +200,9 @@ mod tests {
             resource_group: "rg-prod".to_string(),
             cluster_name: "aks-cluster".to_string(),
         };
-        assert!(id.agent_pool_path("nodepool1").ends_with("/agentPools/nodepool1"));
+        assert!(id
+            .agent_pool_path("nodepool1")
+            .ends_with("/agentPools/nodepool1"));
     }
 
     #[test]
@@ -168,7 +212,9 @@ mod tests {
             resource_group: "rg-prod".to_string(),
             cluster_name: "aks-cluster".to_string(),
         };
-        assert!(id.upgrade_profile_path().ends_with("/upgradeProfiles/default"));
+        assert!(id
+            .upgrade_profile_path()
+            .ends_with("/upgradeProfiles/default"));
     }
 
     #[test]
@@ -178,7 +224,9 @@ mod tests {
             resource_group: "rg-prod".to_string(),
             cluster_name: "aks-cluster".to_string(),
         };
-        assert!(id.maintenance_config_path().ends_with("/maintenanceConfigurations"));
+        assert!(id
+            .maintenance_config_path()
+            .ends_with("/maintenanceConfigurations"));
     }
 
     #[test]

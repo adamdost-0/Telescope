@@ -6,6 +6,10 @@ describe('isAksCluster', () => {
     expect(isAksCluster('https://myaks-dns-abc123.hcp.eastus2.azmk8s.io:443')).toBe(true);
   });
 
+  it('returns true for Azure Government AKS URL', () => {
+    expect(isAksCluster('https://myaks.hcp.usgovvirginia.azmk8s.us')).toBe(true);
+  });
+
   it('returns true without port', () => {
     expect(isAksCluster('https://myaks.hcp.westeurope.azmk8s.io')).toBe(true);
   });
@@ -43,6 +47,16 @@ describe('parseAksUrl', () => {
     expect(result).not.toBeNull();
     expect(result!.region).toBe('westus');
   });
+
+  it('extracts cluster name and region from Azure Government AKS URL', () => {
+    const result = parseAksUrl('https://mygovaks.hcp.usgovvirginia.azmk8s.us:443');
+    expect(result).toEqual({
+      subscriptionId: '',
+      resourceGroup: '',
+      clusterName: 'mygovaks',
+      region: 'usgovvirginia',
+    });
+  });
 });
 
 describe('getAzurePortalUrl', () => {
@@ -55,6 +69,21 @@ describe('getAzurePortalUrl', () => {
     });
     expect(url).toBe(
       'https://portal.azure.com/#resource/subscriptions/sub-123/resourceGroups/rg-prod/providers/Microsoft.ContainerService/managedClusters/my-cluster/overview',
+    );
+  });
+
+  it('returns Azure Government portal URL when requested', () => {
+    const url = getAzurePortalUrl(
+      {
+        subscriptionId: 'sub-123',
+        resourceGroup: 'rg-prod',
+        clusterName: 'my-cluster',
+        region: 'usgovvirginia',
+      },
+      'UsGovernment',
+    );
+    expect(url).toBe(
+      'https://portal.azure.us/#resource/subscriptions/sub-123/resourceGroups/rg-prod/providers/Microsoft.ContainerService/managedClusters/my-cluster/overview',
     );
   });
 
