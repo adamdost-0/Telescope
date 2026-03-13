@@ -11,7 +11,7 @@
 | **Memory (idle)** | ~100MB | ~500MB | ~30MB |
 | **Technology** | Rust + Tauri | Electron | Go TUI |
 | **AKS Integration** | ✅ Native | ❌ None | ❌ None |
-| **GUI** | ✅ Desktop + Web | ✅ Desktop | ❌ Terminal |
+| **GUI** | ✅ Desktop | ✅ Desktop | ❌ Terminal |
 | **Open Source** | ✅ MIT | ❌ Proprietary | ✅ Apache 2.0 |
 | **Helm** | ✅ Built-in | ✅ Extension | ❌ No |
 | **Metrics** | ✅ Built-in | ✅ Built-in | ✅ Built-in |
@@ -21,7 +21,7 @@
 ### Cluster connection and navigation
 - 🔌 **Full cluster connection and context management** — Discover kubeconfig contexts, connect/disconnect, track connection state, and switch namespaces
 - 🔎 **Search and settings** — Search cached resources quickly and manage user-facing preferences from the UI
-- 🧾 **Audit logging** — Record key Hub-side actions for traceability in web mode
+- 🧾 **Audit logging** — Record key local actions for traceability in the desktop app
 
 ### Workloads, networking, and configuration
 - 📦 **Comprehensive workload management** — Browse and manage Pods, Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs
@@ -35,10 +35,9 @@
 - ⛵ **Helm release management** — List releases, inspect history/values, and support Helm workflows
 - 📊 **Node management and metrics** — Inspect nodes plus pod and node metrics for cluster health
 
-### Desktop and web delivery
-- 🖥️ **Desktop mode** — Native Tauri app using Rust backend commands over IPC
-- 🌍 **Web mode** — Browser deployment backed by Telescope Hub REST/WebSocket services
-- 🔁 **Shared frontend** — One SvelteKit UI adapted to desktop and browser environments
+### Desktop experience
+- 🖥️ **Native Tauri app** — Desktop delivery using Rust backend commands over IPC
+- 🔁 **Shared frontend** — `apps/web` contains the SvelteKit UI that is packaged into the desktop app
 
 ### AKS-first experience
 - 🔑 **Auth Detection** — Identifies exec/token/certificate auth, kubelogin guidance
@@ -50,9 +49,8 @@
 
 ### Architecture
 - **Rust Engine** — kube-rs client, watchers, actions, logs, exec, port-forwarding, Helm, metrics, and CRD support
-- **Tauri Desktop** — Native WebView shell for the shared frontend
-- **Hub Server** — Axum REST/WebSocket backend for browser deployments
-- **SvelteKit Frontend** — Shared UI across desktop and web modes
+- **Tauri Desktop** — Native WebView shell for the packaged frontend
+- **SvelteKit Frontend** — `apps/web` provides the UI bundled into the desktop application
 
 ## Quick Start
 
@@ -65,7 +63,7 @@ Get the latest release from [GitHub Releases](https://github.com/adamdost-0/Tele
 git clone https://github.com/adamdost-0/Telescope.git
 cd Telescope
 pnpm install
-pnpm -C apps/desktop dev    # Development mode
+pnpm -C apps/desktop dev     # Development mode
 pnpm -C apps/desktop bundle  # Release build
 ```
 
@@ -90,9 +88,9 @@ cargo fmt --all -- --check
 cargo clippy --workspace --exclude telescope-desktop -- -D warnings
 cargo test --workspace --exclude telescope-desktop --all-features
 
-# Web
-pnpm -C apps/web test        # Unit tests
-pnpm -C apps/web build       # Production build
+# Frontend
+pnpm -C apps/web test         # Unit tests
+pnpm -C apps/web build        # Production build for desktop packaging
 pnpm -C apps/web e2e          # E2E tests (needs Playwright)
 
 # Desktop
@@ -111,14 +109,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed diagrams.
 ## Roadmap
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the broader milestone plan.
 
-Today Telescope already ships both **desktop (Tauri)** and **web (Hub-backed)** deployment modes with broad Kubernetes coverage for day-to-day cluster operations.
+Today Telescope ships as a **desktop-first Tauri application** with broad Kubernetes coverage for day-to-day cluster operations.
 
 Current priorities:
 
-- **Desktop/web parity** — close remaining gaps where browser mode still defers some write operations to the desktop/Tauri path
-- **Hub hardening** — strengthen authentication, authorization, and multi-user deployment readiness
-- **More live workflows** — continue expanding streaming updates, WebSocket usage, and operational feedback loops
-- **UX polish and testing** — keep improving performance, usability, and coverage across Rust, web, and desktop flows
+- **Desktop depth** — keep expanding advanced workflows such as interactive exec, broader mutation coverage, and richer port-forward management
+- **Desktop hardening** — strengthen security, auditability, and native packaging quality across supported platforms
+- **More live workflows** — continue expanding streaming updates and operational feedback loops
+- **UX polish and testing** — keep improving performance, usability, and coverage across Rust, frontend, and desktop flows
 - **Extensibility over time** — leave room for future integrations and plugin-style capabilities without blocking the current core IDE experience
 
 ## License

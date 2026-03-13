@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import { getPodLogs, listContainers, startLogStream } from '$lib/api';
-  import { isTauri } from '$lib/tauri-commands';
 
   let { namespace, pod }: { namespace: string; pod: string } = $props();
 
@@ -51,7 +50,7 @@
       logs = result;
       await scrollToBottom();
 
-      if (isTauri() && !showPrevious) {
+      if (!showPrevious) {
         await startStreaming();
       }
     } catch (e) {

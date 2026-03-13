@@ -95,7 +95,7 @@ What CI actually enforces (vs. what's aspirational):
 | JavaScript linting | ⚠️ Partial | `pnpm lint` runs but many scripts are no-ops |
 | Desktop builds | ✅ Yes | On Windows/macOS only |
 | Tagged release builds | ✅ Yes | `release.yml` runs on `v*` tags |
-| Hub deployment | ❌ No | No deployment pipeline yet |
+| Application deployment | ❌ No | No deployment pipeline yet |
 | Security scanning | ❌ No | No Dependabot, CodeQL, or audit checks |
 
 ## Concurrency
@@ -116,10 +116,9 @@ High-priority CI gaps:
 2. **Security scanning:** No Dependabot, `cargo audit`, or CodeQL
 3. **Code coverage:** No coverage reporting (Codecov, Coveralls, etc.)
 4. **Release automation:** Tagged desktop release builds exist; broader release/versioning policy still needs discipline
-5. **Deployment pipelines:** No CD for `apps/hub` or `apps/web`
-6. **Docker image publishing:** `apps/hub` Dockerfile exists but not published
-7. **Changelog automation:** No release notes generation
-8. **Linux desktop builds:** Excluded due to system deps (could use Docker)
+5. **Deployment pipelines:** No CD workflow for application/web deployment yet
+6. **Changelog automation:** No release notes generation
+7. **Linux desktop builds:** Excluded due to system deps (could use Docker)
 
 ## Adding a New Check
 
@@ -182,7 +181,7 @@ Total: ~10-15 minutes for full CI pass (jobs run in parallel).
 Planned but not implemented:
 
 - **Nightly builds:** Scheduled workflow for continuous integration
-- **Deployment workflow:** CD pipeline for `apps/hub` and `apps/web`
+- **Deployment workflow:** CD pipeline for future hosted components or web publishing
 - **Benchmark tracking:** Performance regression detection
 - **Multi-cluster E2E:** Test against real K8s clusters (GKE, AKS, EKS)
 

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getConnectionState } from '$lib/api';
-  import { isTauri } from '$lib/tauri-commands';
   import { connectionState } from '$lib/stores';
   import type { ConnectionState } from '$lib/tauri-commands';
 
@@ -17,28 +16,12 @@
     const initial = await getConnectionState();
     updateState(initial);
 
-    if (isTauri()) {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        const unlisten = await listen<ConnectionState>('connection-state-changed', (event) => {
-          updateState(event.payload);
-        });
-        cleanup = unlisten;
-      } catch {
-        startPolling();
-      }
-    } else {
-      startPolling();
-    }
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await listen<ConnectionState>('connection-state-changed', (event) => {
+      updateState(event.payload);
+    });
+    cleanup = unlisten;
   });
-
-  function startPolling() {
-    const timer = setInterval(async () => {
-      const state = await getConnectionState();
-      updateState(state);
-    }, 2000);
-    cleanup = () => clearInterval(timer);
-  }
 
   onDestroy(() => {
     cleanup?.();

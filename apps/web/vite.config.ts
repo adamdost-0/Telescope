@@ -3,11 +3,6 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [sveltekit()],
-  server: {
-    proxy: process.env.PUBLIC_ENGINE_HTTP_BASE
-      ? { '/api': { target: process.env.PUBLIC_ENGINE_HTTP_BASE, changeOrigin: true } }
-      : undefined
-  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],

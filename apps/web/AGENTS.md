@@ -74,12 +74,11 @@ pnpm -C apps/web lint
 - Stub `/api/clusters` endpoint with hardcoded data
 - Basic cluster/namespace UI components
 - Vitest unit tests for core functions
-- Playwright E2E tests against a stub server
+- Playwright E2E smoke coverage for standalone frontend pages
 
 **What's NOT real yet:**
-- No live connection to `apps/hub` or Rust engine
+- No live web backend connection; desktop remains the most complete path
 - `src/lib/engine.ts` is a fetch wrapper with no real engine integration
-- E2E tests use `tools/devtest/stub-server.mjs` for deterministic stub data
 - No shared component library (`packages/ui` is empty)
 
 ## Architecture
@@ -88,8 +87,8 @@ pnpm -C apps/web lint
 
 `apps/web/src/routes/api/` contains SvelteKit server routes:
 
-- `/api/clusters` — Returns stub cluster data when `PUBLIC_ENGINE_HTTP_BASE` is unset
-- Future endpoints will proxy to `apps/hub` or embed Rust engine via WASM
+- `/api/clusters` — Returns stub cluster data for the standalone frontend
+- Future endpoints may embed Rust engine functionality via WASM or another local bridge
 
 ### Client-Side Engine Abstraction
 
@@ -121,14 +120,8 @@ The `fetchFn` parameter enables dependency injection for testing (pass a mock fe
 
 ### E2E Tests (Playwright)
 
-- Test against a stub server (`tools/devtest/stub-server.mjs`)
-- Deterministic fake data (no live K8s cluster required)
+- Test standalone frontend pages that do not require Hub/browser-mode API emulation
 - CI runs E2E in a separate job after web tests pass
-
-**Stub server behavior:**
-- Returns fixed cluster/namespace data
-- Predictable for snapshot testing
-- Does NOT connect to hub or engine
 
 ## Desktop Integration
 
@@ -141,8 +134,7 @@ Build flow:
 
 ## Environment Variables
 
-- `PUBLIC_ENGINE_HTTP_BASE` — Base URL for hub server (if set, routes proxy to it)
-- When unset, `/api/clusters` returns stub data
+- No environment variables are required for local frontend testing
 
 ## CI Enforcement
 

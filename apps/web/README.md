@@ -1,28 +1,18 @@
-# Telescope Web
+# Telescope Desktop Frontend
 
-`apps/web` is the shared SvelteKit frontend for Telescope. The same app powers:
-
-- the **desktop client** packaged by Tauri, and
-- the **browser/web client** served against `apps/hub`.
+`apps/web` is the SvelteKit frontend packaged into the Telescope desktop application.
 
 ## What it does
 
 This app provides the main Kubernetes IDE UI for cluster connection, resource browsing, workload management, logs, exec, port-forwarding, Helm, CRDs, metrics, search, and settings.
 
-## Desktop vs. web mode
+## Desktop runtime
 
-The split between desktop and browser mode is handled in [`src/lib/api.ts`](src/lib/api.ts).
+The desktop integration lives in [`src/lib/api.ts`](src/lib/api.ts).
 
-- **Desktop / Tauri mode**
-  - `api.ts` checks `isTauri()`.
-  - When running inside Tauri, it dynamically imports `@tauri-apps/api/core` and uses `invoke(...)` to call Rust commands over Tauri IPC.
-  - This is the most complete path today and talks directly to the Rust backend.
-
-- **Web / browser mode**
-  - The same exported API functions fall back to HTTP requests against Telescope Hub under `/api/v1`.
-  - `HUB_URL` is resolved from `window.__TELESCOPE_HUB_URL__`, `PUBLIC_ENGINE_HTTP_BASE`, or `http://localhost:3001`.
-  - Read-oriented operations such as contexts, resources, pods, events, namespaces, logs, Helm releases, metrics, CRDs, search, and audit-backed state use Hub endpoints.
-  - Some write operations are still desktop-first and currently return no-op/placeholder behavior in the web fallback until Hub parity is completed.
+- `api.ts` checks `isTauri()`.
+- When running inside Tauri, it dynamically imports `@tauri-apps/api/core` and uses `invoke(...)` to call Rust commands over Tauri IPC.
+- This path talks directly to the Rust backend used by the desktop app.
 
 ## Development
 
@@ -53,7 +43,7 @@ The app uses `@sveltejs/adapter-static` with an `index.html` fallback. Desktop p
 
 - `src/routes/` — SvelteKit pages for overview, pods, workloads, services, ingresses, config, Helm, CRDs, nodes, events, settings, and detail screens
 - `src/lib/components/` — reusable Svelte UI components such as tables, dialogs, headers, log viewers, and exec/search helpers
-- `src/lib/api.ts` — shared frontend API facade that switches between Tauri IPC and Hub HTTP
+- `src/lib/api.ts` — frontend API facade for Tauri IPC
 - `src/lib/stores.ts` — shared Svelte stores for selected context, namespace, connection state, and cluster metadata
 
 ## Testing
@@ -64,4 +54,3 @@ The app uses `@sveltejs/adapter-static` with an `index.html` fallback. Desktop p
 ## Related apps
 
 - [`../desktop`](../desktop) packages this frontend into the Tauri desktop app.
-- [`../hub`](../hub) provides the HTTP/WebSocket backend used in browser/web mode.

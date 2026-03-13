@@ -30,7 +30,7 @@ cargo clippy --workspace --exclude telescope-desktop --all-targets --all-feature
 cargo test --workspace --exclude telescope-desktop --all-features
 ```
 
-### Web app
+### Frontend app
 ```bash
 pnpm -C apps/web dev
 pnpm -C apps/web test
@@ -44,7 +44,7 @@ pnpm -C apps/desktop bundle
 ```
 
 ### Practical notes
-- Desktop and web share the `apps/web` frontend. Make UI changes there unless the work is truly Tauri-specific.
+- Desktop changes to the UI should usually happen in `apps/web`.
 - `apps/desktop` packages the built `apps/web` output for the native app.
 - Prefer repo-defined commands and existing CI workflows over ad hoc scripts.
 
@@ -56,9 +56,8 @@ pnpm -C apps/desktop bundle
 - `crates/api` - thin facade over `engine` and `core`
 
 ### pnpm workspace
-- `apps/web` - shared SvelteKit frontend used by desktop and browser mode
-- `apps/desktop` - Tauri desktop shell that packages the web frontend
-- `apps/hub` - Axum HTTP/WebSocket service for browser/web mode
+- `apps/web` - SvelteKit frontend packaged into the desktop app
+- `apps/desktop` - Tauri desktop shell that packages the frontend
 
 ## Pull Request Process
 - Open PRs with the repository PR template in `.github/pull_request_template.md`.

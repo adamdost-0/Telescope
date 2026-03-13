@@ -5,7 +5,7 @@ This document describes the implemented architecture of Telescope v0.5.0.
 ## Goals
 
 - Avoid Electron; keep resident memory low.
-- One shared Kubernetes engine powering desktop and web.
+- One shared Kubernetes engine powering the desktop application.
 - Watch-driven, on-demand data flow; no "watch the whole cluster" by default.
 - Secure handling of kubeconfig/tokens/secrets.
 
@@ -70,7 +70,7 @@ graph TB
 
 **Desktop (`apps/desktop`)** — Tauri 2 shell exposing 25 IPC commands across six groups: context/connection (6), namespace (4), resource queries (6), logs (3), actions (5), exec/portforward (2). State is held in `AppState` (SQLite store + connection state + watch handle).
 
-**Web (`apps/web`)** — SvelteKit 2 frontend (Svelte 5 runes). 18 components, 22 routes, Svelte writable/derived stores for context, namespace, and connection state. `api.ts` wraps all Tauri command invocations.
+**Frontend (`apps/web`)** — SvelteKit 2 frontend (Svelte 5 runes). 18 components, 22 routes, Svelte writable/derived stores for context, namespace, and connection state. `api.ts` wraps Tauri command invocations for the desktop shell.
 
 **API (`crates/api`)** — Thin re-export façade over engine + core.
 
@@ -257,7 +257,7 @@ CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
 
 - 🔲 OS keychain envelope encryption for stored tokens
 - 🔲 Secret value masking in UI (values currently visible in raw JSON)
-- 🔲 Audit log for destructive operations
+- 🔲 Audit log coverage for every destructive operation
 
 ## AKS-Specific
 
@@ -330,7 +330,5 @@ CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
 
 > ⚠️ The following sections describe **target architecture** that is not yet built.
 
-- **Web Hub** — Multi-user deployment with OIDC authentication, allowing teams to share a single Engine instance.
-- **gRPC API / WS Gateway** — Structured API for the web client to connect to a remote Engine.
 - **WASM Plugin System** — Capability-based plugins (wasmtime) with permissions manifest and strict host API.
 - **LRU/TTL Eviction** — Hard caps on caches (Events/Pods/log lines) with burst coalescing and backpressure.

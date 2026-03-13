@@ -1,13 +1,13 @@
 # Telescope — Roadmap to Lens Parity
 
-> **Goal:** deliver an open-source Kubernetes IDE with strong desktop ergonomics, growing browser/Hub support, and AKS-aware workflows.
+> **Goal:** deliver an open-source Kubernetes IDE with strong desktop ergonomics and AKS-aware workflows.
 > Track progress with ✅ (shipped), 🚧 (partially shipped / substantial alpha), and 🔲 (planned).
 
-## Current Status: substantial alpha (~65–70% Lens parity in desktop/Tauri, lower in browser/Hub mode)
+## Current Status: substantial alpha (~65–70% Lens parity in desktop/Tauri)
 
-Telescope today goes well beyond the early read-only v0.0.1 shape. The current codebase supports real cluster connection and context switching, namespace management, a cluster overview dashboard, node inventory/detail pages, broad built-in resource browsing, pod logs, non-interactive exec, basic pod port-forwarding, create/apply/delete/scale/restart flows, Helm release list/detail/history/values/rollback, CRD definition browsing plus instance listing, metrics-server integration, a search palette, theme/settings UI, and JSONL audit logging in Hub mode.
+Telescope today goes well beyond the early read-only v0.0.1 shape. The current codebase supports real cluster connection and context switching, namespace management, a cluster overview dashboard, node inventory/detail pages, broad built-in resource browsing, pod logs, non-interactive exec, basic pod port-forwarding, create/apply/delete/scale/restart flows, Helm release list/detail/history/values/rollback, CRD definition browsing plus instance listing, metrics-server integration, a search palette, theme/settings UI, and local audit logging.
 
-The main remaining gap is **feature parity between desktop/Tauri and browser/Hub mode**. Many write flows and richer interactions still exist only through the desktop/Tauri API path or are intentionally basic in the current implementation.
+The main remaining gaps are richer desktop workflows such as interactive exec, broader mutation coverage, and continued UX polish around advanced operations.
 
 ---
 
@@ -15,11 +15,11 @@ The main remaining gap is **feature parity between desktop/Tauri and browser/Hub
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Monorepo: Rust workspace (`core` / `engine` / `api`) plus desktop, web, and hub apps | ✅ |
-| 2 | Tauri desktop shell packaging the shared `apps/web` frontend | ✅ |
-| 3 | SvelteKit web client with shared UI/routes | ✅ |
-| 4 | CI for Rust, web tests/E2E, and desktop builds | ✅ |
-| 5 | Deterministic stubbed browser test data | ✅ |
+| 1 | Monorepo: Rust workspace (`core` / `engine` / `api`) plus desktop and frontend apps | ✅ |
+| 2 | Tauri desktop shell packaging the `apps/web` frontend | ✅ |
+| 3 | SvelteKit frontend used for the desktop UI | ✅ |
+| 4 | CI for Rust, frontend tests/E2E, and desktop builds | ✅ |
+| 5 | Deterministic test fixtures for frontend coverage | ✅ |
 
 ---
 
@@ -53,8 +53,8 @@ The main remaining gap is **feature parity between desktop/Tauri and browser/Hub
 | # | Item | Current state | Status |
 |---|------|---------------|--------|
 | 1 | Exec terminal | Non-interactive command execution exists from the pod detail page; full interactive TTY/xterm experience is still planned. | 🚧 |
-| 2 | Port forwarding | Pod port-forward dialog and engine forwarder exist; active-forward management, saved profiles, and browser/Hub parity are still missing. | 🚧 |
-| 3 | YAML edit + apply | Dry-run/apply exists for supported namespaced resource kinds. Coverage is real, but not universal across every kind and not fully wired through Hub mode. | 🚧 |
+| 2 | Port forwarding | Pod port-forward dialog and engine forwarder exist; active-forward management and saved profiles are still missing. | 🚧 |
+| 3 | YAML edit + apply | Dry-run/apply exists for supported namespaced resource kinds. Coverage is real, but not universal across every kind. | 🚧 |
 | 4 | Delete resource | Engine delete support exists for many built-in kinds and the pod detail page exposes delete UI. Generic delete coverage is still incomplete. | 🚧 |
 | 5 | Scale workloads | Deployment/StatefulSet scaling is implemented in engine and UI. | ✅ |
 | 6 | Rollout actions | Rollout restart/status exists for Deployment/StatefulSet/DaemonSet workloads. Full history/rollback UX for workloads is still planned. | 🚧 |
@@ -107,22 +107,21 @@ The main remaining gap is **feature parity between desktop/Tauri and browser/Hub
 | 5 | Keyboard shortcuts / help | Implemented. | ✅ |
 | 6 | Theme support | Dark/light theme support and toggle exist. | ✅ |
 | 7 | Breadcrumb navigation | Implemented. | ✅ |
-| 8 | Settings / preferences | Settings page exists, but browser/Hub preference persistence is still partial. | 🚧 |
+| 8 | Settings / preferences | Settings page exists, but preference persistence still has room to grow. | 🚧 |
 | 9 | Context favorites / pinning | Planned. | 🔲 |
 | 10 | Tabbed workspace / hotbar | Planned. | 🔲 |
 
 ---
 
-## 🚧 M7 — Web Client + Hub Mode (PARTIALLY IMPLEMENTED)
+## 🔲 M7 — Desktop Hardening + Workflow Depth
 
 | # | Item | Current state | Status |
 |---|------|---------------|--------|
-| 1 | Hub service | Axum-based Hub with REST API, SQLite-backed cache, watcher startup, and Dockerfile exists. | ✅ |
-| 2 | Browser/web mode | Shared web UI can talk to Hub for core read flows, but many write flows are still deferred. | 🚧 |
-| 3 | OIDC authentication | Auth routes and middleware exist, but login/callback are placeholders and JWTs are not cryptographically validated yet. | 🚧 |
-| 4 | Access controls | Basic cluster-access hook and user impersonation path exist; real policy/authorization is still planned. | 🚧 |
-| 5 | Audit logging | JSONL audit log plus `/api/v1/audit` endpoint exist, with partial action coverage. | 🚧 |
-| 6 | WebSockets / live multi-user workflows | WebSocket support is still skeletal. | 🔲 |
+| 1 | Interactive exec | Current exec remains non-interactive; full terminal UX is still planned. | 🚧 |
+| 2 | Port-forward management | Per-pod forwarding exists; broader active-session management is still planned. | 🚧 |
+| 3 | Audit coverage | Local audit logging exists, but coverage is still partial across the UI surface. | 🚧 |
+| 4 | Packaging hardening | Native packaging works; signing, notarization, and installer polish remain environment-specific work. | 🚧 |
+| 5 | Native-platform ergonomics | Additional desktop integration, shortcuts, and native UX improvements remain planned. | 🔲 |
 
 ---
 
@@ -146,16 +145,15 @@ Still planned:
 | M4 | AKS-aware workflows | Differentiator more than parity; partial today | 🚧 |
 | M5 | Helm + metrics | ~65–70% in desktop/Tauri mode | 🚧 |
 | M6 | Search + CRDs + advanced UX | pushes polish and breadth further, still partial | 🚧 |
-| M7 | Browser/Hub parity + auth/audit | major remaining gap | 🚧 |
+| M7 | Desktop hardening + advanced workflows | major remaining gap | 🚧 |
 | M8 | Plugins | future extensibility layer | 🔲 |
 
 ---
 
 ## v1.0 Readiness Checklist
 
-- [ ] Browser/Hub write-path parity for core workflows
-- [ ] Production-grade OIDC/JWT validation and real authorization model
 - [ ] Interactive exec and more complete port-forward UX
+- [ ] Stronger desktop security and audit coverage
 - [ ] In-app Helm upgrade/diff support
 - [ ] Broader generic CRD detail/edit experience
 - [ ] More complete E2E coverage for real user workflows

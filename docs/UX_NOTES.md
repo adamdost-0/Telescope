@@ -1,6 +1,6 @@
 # Telescope — UX Notes
 
-> **Status: Current implementation snapshot** — The route inventory below reflects the actual `apps/web/src/routes/` tree today. Desktop/Tauri exposes the broadest feature set; browser/Hub mode reuses the same UI but still has partial parity for several write operations.
+> **Status: Current implementation snapshot** — The route inventory below reflects the actual `apps/web/src/routes/` tree today. The Tauri desktop app is the supported runtime, and the packaged frontend is the primary user experience.
 
 ## Navigation
 - Left rail: Overview • Pods • Deployments • StatefulSets • DaemonSets • Jobs • CronJobs • Services • Ingresses • ConfigMaps • Secrets • PVCs • Nodes • Events • Helm • CRDs • Create • Settings

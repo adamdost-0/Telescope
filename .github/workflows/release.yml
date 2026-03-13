@@ -48,7 +48,6 @@ jobs:
           # Stamp Cargo.toml crate versions
           for manifest in \
             apps/desktop/src-tauri/Cargo.toml \
-            apps/hub/Cargo.toml \
             crates/core/Cargo.toml \
             crates/engine/Cargo.toml \
             crates/api/Cargo.toml; do

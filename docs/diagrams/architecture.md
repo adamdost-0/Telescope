@@ -1,26 +1,20 @@
 # Telescope Architecture Diagrams
 
-These standalone diagrams summarize the current Telescope architecture across desktop and web modes. They are grounded in the current code layout in `apps/web`, `apps/desktop`, `apps/hub`, `crates/engine`, and `crates/core`.
+These standalone diagrams summarize the current Telescope desktop architecture. They are grounded in the current code layout in `apps/web`, `apps/desktop`, `crates/engine`, and `crates/core`.
 
 ## 1. System Context Diagram
 
-This diagram shows the two primary user entry points: the Tauri desktop application and the browser-based web experience. Both runtime paths ultimately rely on the shared Rust engine and core crates to reach the Kubernetes API.
+This diagram shows the primary user entry point: the Tauri desktop application, which packages the frontend and connects to the shared Rust engine to reach the Kubernetes API.
 
 ```mermaid
 flowchart TB
     userDesktop["User"]
-    userWeb["User"]
     k8s["Kubernetes API"]
 
-    subgraph desktopMode["Desktop mode"]
+    subgraph desktopMode["Desktop application"]
         desktopApp["Desktop App<br/>Tauri v2 shell"]
-        rustBackend["Rust Backend<br/>apps/desktop/src-tauri"]
-    end
-
-    subgraph webMode["Web mode"]
-        browser["Browser"]
         webUi["SvelteKit Frontend<br/>apps/web"]
-        hub["Axum Hub<br/>apps/hub"]
+        rustBackend["Rust Backend<br/>apps/desktop/src-tauri"]
     end
 
     subgraph sharedRust["Shared Rust crates"]
@@ -28,14 +22,10 @@ flowchart TB
         core["crates/core<br/>connection state · ResourceStore · ResourceEntry"]
     end
 
-    userDesktop --> desktopApp --> rustBackend
+    userDesktop --> desktopApp --> webUi
+    desktopApp --> rustBackend
     rustBackend --> engine
     rustBackend --> core
-
-    userWeb --> browser --> webUi --> hub
-    hub --> engine
-    hub --> core
-
     engine --> core
     engine --> k8s
 ```
@@ -46,7 +36,7 @@ This diagram breaks the repository into the main application and crate boundarie
 
 ```mermaid
 flowchart LR
-    subgraph web["apps/web · shared SvelteKit frontend"]
+    subgraph web["apps/web · desktop frontend"]
         routes["routes/"]
         components["lib/components/"]
         api["lib/api.ts"]
@@ -67,20 +57,6 @@ flowchart LR
     subgraph desktop["apps/desktop · Tauri shell"]
         prepare["scripts/prepare-frontend.mjs<br/>build + copy apps/web"]
         tauriMain["src-tauri/src/main.rs<br/>commands + AppState"]
-    end
-
-    subgraph hubApp["apps/hub · Axum service"]
-        hubMain["main.rs<br/>router + bootstrap"]
-        hubRoutes["routes.rs<br/>HTTP handlers"]
-        hubAuth["auth.rs<br/>auth scaffolding"]
-        hubWs["ws.rs<br/>WebSocket entrypoint"]
-        hubState["state.rs<br/>HubState + store handle"]
-
-        hubMain --> hubRoutes
-        hubMain --> hubAuth
-        hubMain --> hubWs
-        hubRoutes --> hubState
-        hubWs --> hubState
     end
 
     subgraph engineCrate["crates/engine"]
@@ -118,25 +94,17 @@ flowchart LR
 
     prepare -. packages .-> webBuild
     api -. desktop IPC .-> tauriMain
-    api -. web HTTP / WS .-> hubRoutes
 
     tauriMain --> client
     tauriMain --> kubeconfig
     tauriMain --> resourceStore
     tauriMain --> connection
-
-    hubRoutes --> client
-    hubRoutes --> resourceStore
-    hubRoutes --> connection
-    hubAuth --> hubRoutes
-    hubState --> resourceStore
-    connection --> hubState
     watcher --> resourceStore
 ```
 
 ## 3. Data Flow Diagram
 
-This diagram shows how a typical user action travels from the shared UI through either the desktop IPC path or the hub HTTP path, and how watcher-driven synchronization keeps cached resource data current.
+This diagram shows how a typical user action travels from the packaged frontend through the Tauri IPC path, and how watcher-driven synchronization keeps cached resource data current.
 
 ```mermaid
 sequenceDiagram
@@ -144,7 +112,6 @@ sequenceDiagram
     participant UI as apps/web UI
     participant API as lib/api.ts
     participant Desktop as Tauri IPC
-    participant Hub as Axum Hub
     participant Engine as engine function
     participant Kube as kube-rs
     participant Store as ResourceStore
@@ -152,29 +119,16 @@ sequenceDiagram
 
     User->>UI: Trigger action in the interface
     UI->>API: Call frontend helper
-
-    alt Desktop mode
-        API->>Desktop: invoke(command, args)
-        Desktop->>Engine: Run Tauri command handler
-    else Web mode
-        API->>Hub: HTTP or WebSocket request
-        Hub->>Engine: Run route handler
-    end
+    API->>Desktop: invoke(command, args)
+    Desktop->>Engine: Run Tauri command handler
 
     Engine->>Kube: Execute list / get / action / watch
     Kube->>K8s: Kubernetes client request
     K8s-->>Kube: Objects, status, or stream events
     Kube-->>Engine: Typed response
     Engine->>Store: upsert / delete ResourceEntry
-
-    alt Desktop response
-        Engine-->>Desktop: Result or event
-        Desktop-->>API: IPC payload
-    else Web response
-        Engine-->>Hub: JSON or WS payload
-        Hub-->>API: HTTP / WS payload
-    end
-
+    Engine-->>Desktop: Result or event
+    Desktop-->>API: IPC payload
     API-->>UI: Update stores and components
 
     rect rgb(235, 245, 255)
@@ -192,24 +146,9 @@ sequenceDiagram
     end
 ```
 
-## 4. Desktop vs Web Mode Comparison
+## 4. Desktop Deployment Architecture
 
-This side-by-side comparison highlights where the two runtime modes differ in transport, storage location, engine placement, and currently available feature surface.
-
-```mermaid
-flowchart LR
-    subgraph desktopCompare["Desktop mode"]
-        d1["Transport<br/>Tauri IPC"] --> d2["Storage<br/>local SQLite ResourceStore"] --> d3["Execution<br/>direct local engine access"] --> d4["Feature surface<br/>full command set and desktop-first features"]
-    end
-
-    subgraph webCompare["Web mode"]
-        w1["Transport<br/>HTTP + WebSocket to Hub"] --> w2["Storage<br/>hub-side SQLite ResourceStore"] --> w3["Execution<br/>server-side engine in apps/hub"] --> w4["Feature surface<br/>full CRUD, Helm, exec, port-forward, metrics; log streaming still TODO"]
-    end
-```
-
-## 5. Deployment Architecture
-
-This diagram shows the two deployment shapes supported today: a local desktop binary running on a user workstation and a browser-based deployment backed by the hub service running in Docker or Kubernetes.
+This diagram shows the supported deployment shape today: a local desktop binary running on a user workstation with access to local kubeconfig.
 
 ```mermaid
 flowchart LR
@@ -219,10 +158,5 @@ flowchart LR
         machine["User machine"] --> tauriBinary["Tauri binary"] --> kubeconfig["Local kubeconfig"]
     end
 
-    subgraph webDeploy["Web deployment"]
-        browserClient["Browser"] --> hubRuntime["Hub service<br/>Docker or Kubernetes"] --> hubCreds["Hub kubeconfig or ServiceAccount"]
-    end
-
     kubeconfig --> aks
-    hubCreds --> aks
 ```
