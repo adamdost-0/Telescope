@@ -14,6 +14,9 @@ import {
   type AksIdentityInfo,
   type AksNodePool,
   type AksClusterDetail,
+  type AksUpgradeProfile,
+  type AksMaintenanceConfig,
+  type PoolUpgradeProfile,
 } from './tauri-commands';
 
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -482,12 +485,98 @@ export async function listAksNodePools(): Promise<AksNodePool[]> {
   }
 }
 
+/** Scale an AKS node pool to a target node count. */
+export async function scaleAksNodePool(poolName: string, count: number): Promise<AksNodePool> {
+  return invoke<AksNodePool>('scale_aks_node_pool', { poolName, count });
+}
+
+/** Update autoscaler settings on an AKS node pool. */
+export async function updateAksAutoscaler(
+  poolName: string,
+  enabled: boolean,
+  min: number | null,
+  max: number | null,
+): Promise<AksNodePool> {
+  return invoke<AksNodePool>('update_aks_autoscaler', { poolName, enabled, min, max });
+}
+
+/** Create node pool config for the create API. */
+export interface CreateNodePoolConfig {
+  name: string;
+  vmSize: string;
+  count: number;
+  osType?: string;
+  mode?: string;
+  orchestratorVersion?: string;
+  enableAutoScaling?: boolean;
+  minCount?: number;
+  maxCount?: number;
+  availabilityZones?: string[];
+  maxPods?: number;
+  nodeLabels?: Record<string, string>;
+  nodeTaints?: string[];
+}
+
+/** Create a new AKS node pool via the Azure ARM API. */
+export async function createAksNodePool(config: CreateNodePoolConfig): Promise<AksNodePool> {
+  return invoke<AksNodePool>('create_aks_node_pool', { config });
+}
+
+/** Delete an AKS node pool. */
+export async function deleteAksNodePool(poolName: string): Promise<void> {
+  return invoke<void>('delete_aks_node_pool', { poolName });
+}
+
 /** Fetch comprehensive AKS cluster details from the Azure ARM API. */
 export async function getAksClusterDetail(): Promise<AksClusterDetail | null> {
   try {
     return await invoke<AksClusterDetail | null>('get_aks_cluster_detail');
   } catch {
     return null;
+  }
+}
+
+/** Start the active AKS cluster via Azure ARM. */
+export async function startAksCluster(): Promise<void> {
+  await invoke<void>('start_aks_cluster');
+}
+
+/** Stop the active AKS cluster via Azure ARM. */
+export async function stopAksCluster(): Promise<void> {
+  await invoke<void>('stop_aks_cluster');
+}
+
+/** Fetch available control plane upgrades for the active AKS cluster. */
+export async function getAksUpgradeProfile(): Promise<AksUpgradeProfile> {
+  return invoke<AksUpgradeProfile>('get_aks_upgrade_profile');
+}
+
+/** Trigger a control plane upgrade for the active AKS cluster. */
+export async function upgradeAksCluster(targetVersion: string): Promise<void> {
+  await invoke<void>('upgrade_aks_cluster', { targetVersion });
+}
+
+/** Fetch available upgrades for an AKS node pool. */
+export async function getPoolUpgradeProfile(pool: string): Promise<PoolUpgradeProfile> {
+  return invoke<PoolUpgradeProfile>('get_pool_upgrade_profile', { pool });
+}
+
+/** Upgrade an AKS node pool Kubernetes version. */
+export async function upgradePoolVersion(pool: string, version: string): Promise<void> {
+  await invoke<void>('upgrade_pool_version', { pool, version });
+}
+
+/** Upgrade an AKS node pool node image. */
+export async function upgradePoolNodeImage(pool: string): Promise<void> {
+  await invoke<void>('upgrade_pool_node_image', { pool });
+}
+
+/** Fetch AKS maintenance configurations from the Azure ARM API. */
+export async function listAksMaintenanceConfigs(): Promise<AksMaintenanceConfig[]> {
+  try {
+    return await invoke<AksMaintenanceConfig[]>('list_aks_maintenance_configs');
+  } catch {
+    return [];
   }
 }
 

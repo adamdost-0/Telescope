@@ -4,7 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use futures::{AsyncBufReadExt, TryStreamExt};
 use tauri::{AppHandle, Emitter, State};
-use telescope_azure::{AksNodePool, ArmClient, AzureCloud};
+use telescope_azure::{
+    AksNodePool, ArmClient, AzureCloud, CreateNodePoolRequest, MaintenanceConfig,
+    PoolUpgradeProfile, UpgradeProfile,
+};
 use tokio::sync::{Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -135,14 +138,247 @@ async fn resolve_aks_identity(
 /// List AKS node pools from the Azure ARM API for the active cluster.
 #[tauri::command]
 async fn list_aks_node_pools(state: State<'_, AppState>) -> Result<Vec<AksNodePool>, String> {
-    let resource_id = resolve_active_aks_resource_id(&state)
-        .await?
-        .ok_or_else(|| "Azure node pool data requires an AKS cluster".to_string())?;
-    let cloud = configured_azure_cloud(&state).await?;
-    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    let (client, resource_id) = active_aks_arm_client(&state).await?;
     telescope_azure::list_node_pools(&client, &resource_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn start_aks_cluster(state: State<'_, AppState>) -> Result<(), String> {
+    let (client, resource_id) = active_aks_arm_client(&state).await?;
+    telescope_azure::start_cluster(&client, &resource_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn stop_aks_cluster(state: State<'_, AppState>) -> Result<(), String> {
+    let (client, resource_id) = active_aks_arm_client(&state).await?;
+    telescope_azure::stop_cluster(&client, &resource_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_aks_upgrade_profile(state: State<'_, AppState>) -> Result<UpgradeProfile, String> {
+    let (client, resource_id) = active_aks_arm_client(&state).await?;
+    telescope_azure::get_upgrade_profile(&client, &resource_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn upgrade_aks_cluster(
+    state: State<'_, AppState>,
+    target_version: String,
+) -> Result<(), String> {
+    let (client, resource_id) = active_aks_arm_client(&state).await?;
+    telescope_azure::upgrade_cluster(&client, &resource_id, &target_version)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_pool_upgrade_profile(
+    state: State<'_, AppState>,
+    pool: String,
+) -> Result<PoolUpgradeProfile, String> {
+    let (client, resource_id) = active_aks_arm_client(&state).await?;
+    telescope_azure::get_pool_upgrade_profile(&client, &resource_id, &pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn upgrade_pool_version(
+    state: State<'_, AppState>,
+    pool: String,
+    version: String,
+) -> Result<(), String> {
+    let (client, resource_id) = active_aks_arm_client(&state).await?;
+    telescope_azure::upgrade_pool_version(&client, &resource_id, &pool, &version)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn upgrade_pool_node_image(state: State<'_, AppState>, pool: String) -> Result<(), String> {
+    let (client, resource_id) = active_aks_arm_client(&state).await?;
+    telescope_azure::upgrade_pool_node_image(&client, &resource_id, &pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Frontend-facing config struct for creating a new AKS node pool.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateNodePoolConfig {
+    pub name: String,
+    pub vm_size: String,
+    pub count: i32,
+    pub os_type: Option<String>,
+    pub mode: Option<String>,
+    pub orchestrator_version: Option<String>,
+    pub enable_auto_scaling: Option<bool>,
+    pub min_count: Option<i32>,
+    pub max_count: Option<i32>,
+    pub availability_zones: Option<Vec<String>>,
+    pub max_pods: Option<i32>,
+    pub node_labels: Option<std::collections::HashMap<String, String>>,
+    pub node_taints: Option<Vec<String>>,
+}
+
+/// Scale an AKS node pool to a target count via the Azure ARM API.
+#[tauri::command]
+async fn scale_aks_node_pool(
+    state: State<'_, AppState>,
+    pool_name: String,
+    count: i32,
+) -> Result<AksNodePool, String> {
+    let resource_id = resolve_active_aks_resource_id(&state)
+        .await?
+        .ok_or_else(|| "Scaling node pools requires an AKS cluster".to_string())?;
+    let cloud = configured_azure_cloud(&state).await?;
+    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    let outcome = telescope_azure::scale_node_pool(&client, &resource_id, &pool_name, count).await;
+
+    let result_str = if outcome.is_ok() { "success" } else { "failure" };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state.active_context.read().await.clone().unwrap_or_default(),
+            namespace: String::new(),
+            action: "scale_aks_node_pool".into(),
+            resource_type: "AksNodePool".into(),
+            resource_name: pool_name.clone(),
+            result: result_str.into(),
+            detail: Some(format!("count={}", count)),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
+/// Update autoscaler settings on an AKS node pool.
+#[tauri::command]
+async fn update_aks_autoscaler(
+    state: State<'_, AppState>,
+    pool_name: String,
+    enabled: bool,
+    min: Option<i32>,
+    max: Option<i32>,
+) -> Result<AksNodePool, String> {
+    let resource_id = resolve_active_aks_resource_id(&state)
+        .await?
+        .ok_or_else(|| "Updating autoscaler requires an AKS cluster".to_string())?;
+    let cloud = configured_azure_cloud(&state).await?;
+    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    let outcome =
+        telescope_azure::update_autoscaler(&client, &resource_id, &pool_name, enabled, min, max)
+            .await;
+
+    let result_str = if outcome.is_ok() { "success" } else { "failure" };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state.active_context.read().await.clone().unwrap_or_default(),
+            namespace: String::new(),
+            action: "update_aks_autoscaler".into(),
+            resource_type: "AksNodePool".into(),
+            resource_name: pool_name.clone(),
+            result: result_str.into(),
+            detail: Some(format!(
+                "enabled={} min={:?} max={:?}",
+                enabled, min, max
+            )),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
+/// Create a new AKS node pool via the Azure ARM API.
+#[tauri::command]
+async fn create_aks_node_pool(
+    state: State<'_, AppState>,
+    config: CreateNodePoolConfig,
+) -> Result<AksNodePool, String> {
+    let resource_id = resolve_active_aks_resource_id(&state)
+        .await?
+        .ok_or_else(|| "Creating node pools requires an AKS cluster".to_string())?;
+    let cloud = configured_azure_cloud(&state).await?;
+    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    let request = CreateNodePoolRequest {
+        name: config.name.clone(),
+        vm_size: config.vm_size,
+        count: config.count,
+        os_type: config.os_type,
+        mode: config.mode,
+        orchestrator_version: config.orchestrator_version,
+        enable_auto_scaling: config.enable_auto_scaling,
+        min_count: config.min_count,
+        max_count: config.max_count,
+        availability_zones: config.availability_zones,
+        max_pods: config.max_pods,
+        node_labels: config.node_labels,
+        node_taints: config.node_taints,
+    };
+    let outcome = telescope_azure::create_node_pool(&client, &resource_id, &request).await;
+
+    let result_str = if outcome.is_ok() { "success" } else { "failure" };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state.active_context.read().await.clone().unwrap_or_default(),
+            namespace: String::new(),
+            action: "create_aks_node_pool".into(),
+            resource_type: "AksNodePool".into(),
+            resource_name: config.name.clone(),
+            result: result_str.into(),
+            detail: Some(format!(
+                "vmSize={} count={}",
+                request.vm_size, request.count
+            )),
+        },
+    );
+    outcome.map_err(|e| e.to_string())
+}
+
+/// Delete an AKS node pool via the Azure ARM API.
+#[tauri::command]
+async fn delete_aks_node_pool(
+    state: State<'_, AppState>,
+    pool_name: String,
+) -> Result<(), String> {
+    let resource_id = resolve_active_aks_resource_id(&state)
+        .await?
+        .ok_or_else(|| "Deleting node pools requires an AKS cluster".to_string())?;
+    let cloud = configured_azure_cloud(&state).await?;
+    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    let outcome =
+        telescope_azure::delete_node_pool(&client, &resource_id, &pool_name).await;
+
+    let result_str = if outcome.is_ok() { "success" } else { "failure" };
+    telescope_engine::audit::log_audit(
+        &state.audit_log_path,
+        &AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            actor: "desktop-user@local".into(),
+            context: state.active_context.read().await.clone().unwrap_or_default(),
+            namespace: String::new(),
+            action: "delete_aks_node_pool".into(),
+            resource_type: "AksNodePool".into(),
+            resource_name: pool_name.clone(),
+            result: result_str.into(),
+            detail: None,
+        },
+    );
+    outcome.map_err(|e| e.to_string())
 }
 
 /// List available Kubernetes contexts from kubeconfig.
@@ -1124,6 +1360,17 @@ async fn configured_azure_cloud(state: &State<'_, AppState>) -> Result<AzureClou
     detect_active_azure_cloud(state).await
 }
 
+async fn active_aks_arm_client(
+    state: &State<'_, AppState>,
+) -> Result<(ArmClient, telescope_azure::AksResourceId), String> {
+    let resource_id = resolve_active_aks_resource_id(state)
+        .await?
+        .ok_or_else(|| "This action requires an AKS cluster".to_string())?;
+    let cloud = configured_azure_cloud(state).await?;
+    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    Ok((client, resource_id))
+}
+
 async fn active_client(state: &State<'_, AppState>) -> Result<kube::Client, String> {
     let context_name = state
         .active_context
@@ -1560,6 +1807,21 @@ async fn remove_node_taint(
     outcome.map_err(|e| e.to_string())
 }
 
+/// Fetch maintenance configurations for an AKS cluster.
+#[tauri::command]
+async fn list_aks_maintenance_configs(
+    state: State<'_, AppState>,
+) -> Result<Vec<MaintenanceConfig>, String> {
+    let resource_id = resolve_active_aks_resource_id(&state)
+        .await?
+        .ok_or_else(|| "Maintenance config requires an AKS cluster".to_string())?;
+    let cloud = detect_active_azure_cloud(&state).await?;
+    let arm_client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    telescope_azure::list_maintenance_configs(&arm_client, &resource_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Container exec
 // ---------------------------------------------------------------------------
@@ -1725,7 +1987,7 @@ async fn get_aks_cluster_detail(
         };
 
     // Determine Azure cloud and create ARM client.
-    let cloud = detect_active_azure_cloud(&state).await?;
+    let cloud = configured_azure_cloud(&state).await?;
     let arm_client = telescope_azure::ArmClient::new(cloud).map_err(|e| e.to_string())?;
 
     match telescope_azure::aks::get_cluster(&arm_client, &resource_id).await {
@@ -1817,6 +2079,17 @@ fn main() {
             get_cluster_info,
             resolve_aks_identity,
             list_aks_node_pools,
+            start_aks_cluster,
+            stop_aks_cluster,
+            get_aks_upgrade_profile,
+            upgrade_aks_cluster,
+            get_pool_upgrade_profile,
+            upgrade_pool_version,
+            upgrade_pool_node_image,
+            scale_aks_node_pool,
+            update_aks_autoscaler,
+            create_aks_node_pool,
+            delete_aks_node_pool,
             get_pods,
             get_resources,
             get_events,
@@ -1865,6 +2138,7 @@ fn main() {
             get_azure_cloud,
             set_azure_cloud,
             get_aks_cluster_detail,
+            list_aks_maintenance_configs,
         ])
         .setup(|_app| {
             eprintln!("[telescope] Tauri setup complete, window should be loading frontend");

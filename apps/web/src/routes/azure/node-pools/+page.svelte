@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { listAksNodePools } from '$lib/api';
+  import {
+    listAksNodePools,
+    scaleAksNodePool,
+    updateAksAutoscaler,
+    createAksNodePool,
+    deleteAksNodePool,
+    type CreateNodePoolConfig,
+  } from '$lib/api';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import { getAutoRefreshIntervalMs } from '$lib/preferences';
@@ -20,6 +27,80 @@
   let timestampTimer: ReturnType<typeof setInterval> | null = null;
   let expandedPools: Record<string, boolean> = $state({});
   let destroyed = false;
+
+  // ── Operation state ──────────────────────────────────────────────────
+  let operationInProgress = $state(false);
+  let operationError: string | null = $state(null);
+  let operationSuccess: string | null = $state(null);
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ── Scale dialog ─────────────────────────────────────────────────────
+  let showScaleDialog = $state(false);
+  let scalePoolName = $state('');
+  let scaleCurrentCount = $state(0);
+  let scaleTargetCount = $state(0);
+  let scaleIsSystem = $state(false);
+
+  // ── Autoscaler dialog ────────────────────────────────────────────────
+  let showAutoscalerDialog = $state(false);
+  let autoscalerPoolName = $state('');
+  let autoscalerEnabled = $state(false);
+  let autoscalerMin = $state(1);
+  let autoscalerMax = $state(5);
+
+  // ── Create dialog ────────────────────────────────────────────────────
+  let showCreateDialog = $state(false);
+  let createName = $state('');
+  let createVmSize = $state('Standard_DS2_v2');
+  let createCount = $state(3);
+  let createOsType = $state('Linux');
+  let createMode = $state('User');
+  let createK8sVersion = $state('');
+  let createAutoScaling = $state(false);
+  let createMinCount = $state(1);
+  let createMaxCount = $state(5);
+  let createZones = $state('');
+  let createMaxPods = $state(110);
+  let createLabelsRaw = $state('');
+  let createTaintsRaw = $state('');
+
+  // ── Delete dialog ────────────────────────────────────────────────────
+  let showDeleteDialog = $state(false);
+  let deletePoolName = $state('');
+  let deletePoolMode = $state('');
+  let deletePoolCount = $state(0);
+  let deleteConfirmText = $state('');
+
+  // Common VM SKUs for the dropdown
+  const commonVmSizes = [
+    'Standard_DS2_v2',
+    'Standard_D4s_v5',
+    'Standard_D8s_v5',
+    'Standard_D16s_v5',
+    'Standard_E4s_v5',
+    'Standard_E8s_v5',
+    'Standard_F4s_v2',
+    'Standard_F8s_v2',
+    'Standard_NC6s_v3',
+    'Standard_NC12s_v3',
+    'Standard_B2s',
+    'Standard_B4ms',
+  ];
+
+  function showToast(msg: string, isError = false) {
+    if (isError) {
+      operationError = msg;
+      operationSuccess = null;
+    } else {
+      operationSuccess = msg;
+      operationError = null;
+    }
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      operationError = null;
+      operationSuccess = null;
+    }, 6000);
+  }
 
   function formatTimestamp(): string {
     if (!lastUpdated) return '';
@@ -60,6 +141,11 @@
     }
     if (normalized === 'failed' || normalized === 'error') return 'danger';
     return 'neutral';
+  }
+
+  function isLastSystemPool(poolName: string): boolean {
+    const systemPools = pools.filter((p) => p.mode?.toLowerCase() === 'system');
+    return systemPools.length === 1 && systemPools[0].name === poolName;
   }
 
   let filteredPools = $derived.by(() => {
@@ -110,6 +196,185 @@
     }
   }
 
+  // ── Scale ────────────────────────────────────────────────────────────
+
+  function openScaleDialog(pool: AksNodePool) {
+    scalePoolName = pool.name;
+    scaleCurrentCount = pool.count ?? 0;
+    scaleTargetCount = pool.count ?? 1;
+    scaleIsSystem = pool.mode?.toLowerCase() === 'system';
+    showScaleDialog = true;
+  }
+
+  async function submitScale() {
+    if (scaleIsSystem && scaleTargetCount < 1) {
+      showToast('System pools require at least 1 node.', true);
+      return;
+    }
+    operationInProgress = true;
+    try {
+      await scaleAksNodePool(scalePoolName, scaleTargetCount);
+      showScaleDialog = false;
+      showToast(`Scaling ${scalePoolName} to ${scaleTargetCount} nodes…`);
+      await loadPools(true);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Scale operation failed', true);
+    } finally {
+      operationInProgress = false;
+    }
+  }
+
+  // ── Autoscaler ───────────────────────────────────────────────────────
+
+  function openAutoscalerDialog(pool: AksNodePool) {
+    autoscalerPoolName = pool.name;
+    autoscalerEnabled = pool.enable_auto_scaling ?? false;
+    autoscalerMin = pool.min_count ?? 1;
+    autoscalerMax = pool.max_count ?? 5;
+    showAutoscalerDialog = true;
+  }
+
+  async function submitAutoscaler() {
+    operationInProgress = true;
+    try {
+      await updateAksAutoscaler(
+        autoscalerPoolName,
+        autoscalerEnabled,
+        autoscalerEnabled ? autoscalerMin : null,
+        autoscalerEnabled ? autoscalerMax : null,
+      );
+      showAutoscalerDialog = false;
+      showToast(
+        autoscalerEnabled
+          ? `Autoscaler enabled on ${autoscalerPoolName} (${autoscalerMin}–${autoscalerMax})`
+          : `Autoscaler disabled on ${autoscalerPoolName}`,
+      );
+      await loadPools(true);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Autoscaler update failed', true);
+    } finally {
+      operationInProgress = false;
+    }
+  }
+
+  // ── Create ───────────────────────────────────────────────────────────
+
+  function openCreateDialog() {
+    createName = '';
+    createVmSize = 'Standard_DS2_v2';
+    createCount = 3;
+    createOsType = 'Linux';
+    createMode = 'User';
+    createK8sVersion = '';
+    createAutoScaling = false;
+    createMinCount = 1;
+    createMaxCount = 5;
+    createZones = '';
+    createMaxPods = 110;
+    createLabelsRaw = '';
+    createTaintsRaw = '';
+    showCreateDialog = true;
+  }
+
+  function parseLabels(raw: string): Record<string, string> | undefined {
+    if (!raw.trim()) return undefined;
+    const labels: Record<string, string> = {};
+    for (const pair of raw.split(',')) {
+      const [key, ...rest] = pair.split('=');
+      if (key?.trim()) labels[key.trim()] = rest.join('=').trim();
+    }
+    return Object.keys(labels).length ? labels : undefined;
+  }
+
+  function parseTaints(raw: string): string[] | undefined {
+    if (!raw.trim()) return undefined;
+    const taints = raw
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    return taints.length ? taints : undefined;
+  }
+
+  function parseZones(raw: string): string[] | undefined {
+    if (!raw.trim()) return undefined;
+    const zones = raw
+      .split(',')
+      .map((z) => z.trim())
+      .filter(Boolean);
+    return zones.length ? zones : undefined;
+  }
+
+  let createNameValid = $derived(/^[a-z][a-z0-9]{0,11}$/.test(createName));
+
+  async function submitCreate() {
+    if (!createNameValid) {
+      showToast('Pool name must be lowercase alphanumeric, 1–12 chars, starting with a letter.', true);
+      return;
+    }
+    if (pools.some((p) => p.name === createName)) {
+      showToast(`A pool named "${createName}" already exists.`, true);
+      return;
+    }
+    operationInProgress = true;
+    try {
+      const config: CreateNodePoolConfig = {
+        name: createName,
+        vmSize: createVmSize,
+        count: createCount,
+        osType: createOsType,
+        mode: createMode,
+        orchestratorVersion: createK8sVersion || undefined,
+        enableAutoScaling: createAutoScaling || undefined,
+        minCount: createAutoScaling ? createMinCount : undefined,
+        maxCount: createAutoScaling ? createMaxCount : undefined,
+        availabilityZones: parseZones(createZones),
+        maxPods: createMaxPods || undefined,
+        nodeLabels: parseLabels(createLabelsRaw),
+        nodeTaints: parseTaints(createTaintsRaw),
+      };
+      await createAksNodePool(config);
+      showCreateDialog = false;
+      showToast(`Creating node pool "${createName}"…`);
+      await loadPools(true);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Create operation failed', true);
+    } finally {
+      operationInProgress = false;
+    }
+  }
+
+  // ── Delete ───────────────────────────────────────────────────────────
+
+  function openDeleteDialog(pool: AksNodePool) {
+    if (isLastSystemPool(pool.name)) {
+      showToast('Cannot delete the last system pool.', true);
+      return;
+    }
+    deletePoolName = pool.name;
+    deletePoolMode = pool.mode ?? 'User';
+    deletePoolCount = pool.count ?? 0;
+    deleteConfirmText = '';
+    showDeleteDialog = true;
+  }
+
+  async function submitDelete() {
+    if (deleteConfirmText !== deletePoolName) {
+      showToast('Type the pool name to confirm deletion.', true);
+      return;
+    }
+    operationInProgress = true;
+    try {
+      await deleteAksNodePool(deletePoolName);
+      showDeleteDialog = false;
+      showToast(`Deleting node pool "${deletePoolName}"…`);
+      await loadPools(true);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Delete operation failed', true);
+    } finally {
+      operationInProgress = false;
+    }
+  }
+
   $effect(() => {
     void $isConnected;
     void $isAks;
@@ -134,10 +399,19 @@
     destroyed = true;
     if (refreshTimer) clearInterval(refreshTimer);
     if (timestampTimer) clearInterval(timestampTimer);
+    if (toastTimer) clearTimeout(toastTimer);
   });
 </script>
 
 <div class="resource-page">
+  <!-- Toast notifications -->
+  {#if operationError}
+    <div class="toast toast-error" role="alert">{operationError}</div>
+  {/if}
+  {#if operationSuccess}
+    <div class="toast toast-success" role="status">{operationSuccess}</div>
+  {/if}
+
   <header>
     <div>
       <h1>{PAGE_TITLE}</h1>
@@ -147,6 +421,9 @@
       {#if lastUpdatedText}
         <span class="last-updated">{lastUpdatedText}</span>
       {/if}
+      <button type="button" class="btn-primary" onclick={openCreateDialog} disabled={!$isConnected || !$isAks || loading}>
+        + Create Pool
+      </button>
       <button type="button" onclick={() => loadPools(true)} disabled={refreshing} class:spinning={refreshing}>
         <span class="refresh-icon">↻</span>
         Refresh
@@ -197,6 +474,7 @@
               <th>OS</th>
               <th>Zones</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -224,10 +502,27 @@
                     {formatStatus(pool)}
                   </span>
                 </td>
+                <td class="actions-cell">
+                  <button type="button" class="btn-sm" onclick={() => openScaleDialog(pool)} disabled={operationInProgress} title="Scale node count">
+                    Scale
+                  </button>
+                  <button type="button" class="btn-sm" onclick={() => openAutoscalerDialog(pool)} disabled={operationInProgress} title="Configure autoscaler">
+                    Autoscaler
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-sm btn-danger"
+                    onclick={() => openDeleteDialog(pool)}
+                    disabled={operationInProgress || isLastSystemPool(pool.name)}
+                    title={isLastSystemPool(pool.name) ? 'Cannot delete the last system pool' : 'Delete pool'}
+                  >
+                    Delete
+                  </button>
+                </td>
               </tr>
               {#if expandedPools[pool.name]}
                 <tr class="details-row">
-                  <td colspan="10">
+                  <td colspan="11">
                     <div class="details-grid">
                       <div><span class="details-label">OS Disk</span><span>{pool.os_disk_size_gb ?? '—'} GiB</span></div>
                       <div><span class="details-label">Max Pods</span><span>{pool.max_pods ?? '—'}</span></div>
@@ -246,6 +541,166 @@
     {/if}
   {/if}
 </div>
+
+<!-- ── Scale Dialog ────────────────────────────────────────────────────── -->
+{#if showScaleDialog}
+  <div class="dialog-backdrop" onclick={() => (showScaleDialog = false)} role="presentation">
+    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Scale Node Pool">
+      <h2>Scale Node Pool: {scalePoolName}</h2>
+      <p class="dialog-subtitle">Current count: <strong>{scaleCurrentCount}</strong></p>
+      <label class="dialog-field">
+        <span>Target count</span>
+        <input type="number" bind:value={scaleTargetCount} min={scaleIsSystem ? 1 : 0} max="1000" />
+      </label>
+      {#if scaleIsSystem && scaleTargetCount < 1}
+        <p class="field-error">System pools require at least 1 node.</p>
+      {/if}
+      <div class="dialog-actions">
+        <button type="button" onclick={() => (showScaleDialog = false)}>Cancel</button>
+        <button type="button" class="btn-primary" onclick={submitScale} disabled={operationInProgress || (scaleIsSystem && scaleTargetCount < 1)}>
+          {operationInProgress ? 'Scaling…' : 'Scale'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- ── Autoscaler Dialog ───────────────────────────────────────────────── -->
+{#if showAutoscalerDialog}
+  <div class="dialog-backdrop" onclick={() => (showAutoscalerDialog = false)} role="presentation">
+    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Configure Autoscaler">
+      <h2>Autoscaler: {autoscalerPoolName}</h2>
+      <label class="dialog-field toggle-field">
+        <span>Enable autoscaler</span>
+        <input type="checkbox" bind:checked={autoscalerEnabled} />
+      </label>
+      {#if autoscalerEnabled}
+        <label class="dialog-field">
+          <span>Min count</span>
+          <input type="number" bind:value={autoscalerMin} min="1" max="1000" />
+        </label>
+        <label class="dialog-field">
+          <span>Max count</span>
+          <input type="number" bind:value={autoscalerMax} min="1" max="1000" />
+        </label>
+      {/if}
+      <div class="dialog-actions">
+        <button type="button" onclick={() => (showAutoscalerDialog = false)}>Cancel</button>
+        <button type="button" class="btn-primary" onclick={submitAutoscaler} disabled={operationInProgress}>
+          {operationInProgress ? 'Updating…' : 'Apply'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- ── Create Dialog ───────────────────────────────────────────────────── -->
+{#if showCreateDialog}
+  <div class="dialog-backdrop" onclick={() => (showCreateDialog = false)} role="presentation">
+    <div class="dialog dialog-wide" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Create Node Pool">
+      <h2>Create Node Pool</h2>
+      <div class="dialog-form-grid">
+        <label class="dialog-field">
+          <span>Pool name <small>(a-z0-9, max 12 chars)</small></span>
+          <input type="text" bind:value={createName} maxlength="12" placeholder="mypool" />
+          {#if createName && !createNameValid}
+            <span class="field-error">Must be lowercase alphanumeric, start with a letter, 1–12 chars.</span>
+          {/if}
+        </label>
+        <label class="dialog-field">
+          <span>VM size</span>
+          <select bind:value={createVmSize}>
+            {#each commonVmSizes as size}
+              <option value={size}>{size}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="dialog-field">
+          <span>Node count</span>
+          <input type="number" bind:value={createCount} min="1" max="1000" />
+        </label>
+        <label class="dialog-field">
+          <span>OS type</span>
+          <select bind:value={createOsType}>
+            <option value="Linux">Linux</option>
+            <option value="Windows">Windows</option>
+          </select>
+        </label>
+        <label class="dialog-field">
+          <span>Mode</span>
+          <select bind:value={createMode}>
+            <option value="User">User</option>
+            <option value="System">System</option>
+          </select>
+        </label>
+        <label class="dialog-field">
+          <span>K8s version <small>(optional)</small></span>
+          <input type="text" bind:value={createK8sVersion} placeholder="e.g. 1.29.2" />
+        </label>
+        <label class="dialog-field toggle-field">
+          <span>Enable autoscaler</span>
+          <input type="checkbox" bind:checked={createAutoScaling} />
+        </label>
+        {#if createAutoScaling}
+          <label class="dialog-field">
+            <span>Min count</span>
+            <input type="number" bind:value={createMinCount} min="1" max="1000" />
+          </label>
+          <label class="dialog-field">
+            <span>Max count</span>
+            <input type="number" bind:value={createMaxCount} min="1" max="1000" />
+          </label>
+        {/if}
+        <label class="dialog-field">
+          <span>Availability zones <small>(comma-separated, e.g. 1,2,3)</small></span>
+          <input type="text" bind:value={createZones} placeholder="1,2,3" />
+        </label>
+        <label class="dialog-field">
+          <span>Max pods per node</span>
+          <input type="number" bind:value={createMaxPods} min="10" max="250" />
+        </label>
+        <label class="dialog-field full-width">
+          <span>Labels <small>(key=value, comma-separated)</small></span>
+          <input type="text" bind:value={createLabelsRaw} placeholder="env=staging,team=platform" />
+        </label>
+        <label class="dialog-field full-width">
+          <span>Taints <small>(key=value:effect, comma-separated)</small></span>
+          <input type="text" bind:value={createTaintsRaw} placeholder="gpu=true:NoSchedule" />
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" onclick={() => (showCreateDialog = false)}>Cancel</button>
+        <button type="button" class="btn-primary" onclick={submitCreate} disabled={operationInProgress || !createNameValid}>
+          {operationInProgress ? 'Creating…' : 'Create Pool'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- ── Delete Dialog ───────────────────────────────────────────────────── -->
+{#if showDeleteDialog}
+  <div class="dialog-backdrop" onclick={() => (showDeleteDialog = false)} role="presentation">
+    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Delete Node Pool">
+      <h2>Delete Node Pool</h2>
+      <div class="delete-warning">
+        <p>⚠️ This will permanently remove pool <strong>{deletePoolName}</strong>.</p>
+        <p>Mode: <strong>{deletePoolMode}</strong> · Nodes: <strong>{deletePoolCount}</strong></p>
+        <p class="hint">All nodes and workloads on this pool will be removed.</p>
+      </div>
+      <label class="dialog-field">
+        <span>Type <strong>{deletePoolName}</strong> to confirm</span>
+        <input type="text" bind:value={deleteConfirmText} placeholder={deletePoolName} />
+      </label>
+      <div class="dialog-actions">
+        <button type="button" onclick={() => (showDeleteDialog = false)}>Cancel</button>
+        <button type="button" class="btn-danger" onclick={submitDelete} disabled={operationInProgress || deleteConfirmText !== deletePoolName}>
+          {operationInProgress ? 'Deleting…' : 'Delete Pool'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .resource-page {
@@ -303,6 +758,28 @@
   button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: #1a73e8;
+  }
+
+  .btn-sm {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-danger {
+    background: #c62828;
+  }
+  .btn-danger:hover {
+    background: #b71c1c;
+  }
+
+  .actions-cell {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
   }
 
   .refresh-icon {
@@ -441,5 +918,125 @@
 
   .break {
     overflow-wrap: anywhere;
+  }
+
+  /* ── Toast ──────────────────────────────────────────────────────────── */
+  .toast {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 10000;
+    padding: 0.75rem 1.25rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    max-width: 420px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  }
+  .toast-success {
+    background: #1b5e20;
+    color: #c8e6c9;
+    border: 1px solid #388e3c;
+  }
+  .toast-error {
+    background: #b71c1c;
+    color: #ffcdd2;
+    border: 1px solid #e53935;
+  }
+
+  /* ── Dialog ─────────────────────────────────────────────────────────── */
+  .dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .dialog {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 1.5rem;
+    min-width: 360px;
+    max-width: 480px;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .dialog-wide {
+    min-width: 440px;
+    max-width: 600px;
+  }
+  .dialog h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1.15rem;
+  }
+  .dialog-subtitle {
+    color: #9e9e9e;
+    margin: 0 0 0.75rem;
+    font-size: 0.875rem;
+  }
+  .dialog-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 0.75rem;
+  }
+  .dialog-field span {
+    font-size: 0.8rem;
+    color: #9e9e9e;
+  }
+  .dialog-field input,
+  .dialog-field select {
+    background: #0d1117;
+    color: #e0e0e0;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.875rem;
+  }
+  .dialog-field input:focus,
+  .dialog-field select:focus {
+    outline: none;
+    border-color: #1a73e8;
+  }
+  .toggle-field {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .toggle-field input[type='checkbox'] {
+    width: 1rem;
+    height: 1rem;
+  }
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+  .dialog-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 1rem;
+  }
+  .full-width {
+    grid-column: 1 / -1;
+  }
+  .field-error {
+    color: #ef5350;
+    font-size: 0.78rem;
+    margin: 0;
+  }
+  .delete-warning {
+    background: rgba(198, 40, 40, 0.12);
+    border: 1px solid rgba(198, 40, 40, 0.35);
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .delete-warning p {
+    margin: 0.25rem 0;
   }
 </style>
