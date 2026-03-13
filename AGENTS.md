@@ -9,14 +9,14 @@ When AI agents work in this repository, trust sources in this order:
 3. **`.github/copilot-instructions.md`** — global invariants and project context
 4. **Documentation in `docs/`** — aspirational architecture and design targets
 
-**Key rule:** When docs contradict code or CI, the code wins. Documentation in `docs/` describes the **target architecture**, not always the current implementation.
+**Key rule:** When docs contradict code or CI, the code wins. `docs/` describes the **target architecture**, not always the current implementation.
 
 ## Path Ownership and Specialist Routing
 
-Route work to the right specialist based on path and task type:
+Route work to the right specialist based on path and task type. Consult `SKILLS.md` for agent capability profiles.
 
 | Path Pattern | Specialist | Guidance File |
-|--------------|-----------|---------------|
+|---|---|---|
 | `crates/**` | Rust (core/engine/api) | `crates/AGENTS.md` |
 | `apps/web/**` | SvelteKit (Svelte 5) | `apps/web/AGENTS.md` |
 | `apps/desktop/**` | Tauri 2 desktop | `apps/desktop/AGENTS.md` |
@@ -25,26 +25,34 @@ Route work to the right specialist based on path and task type:
 | `docs/**` | Architecture docs | `docs/AGENTS.md` |
 | Root config files | General context | (this file) |
 
-## Aspirational vs. Current Reality
+## Current Implementation Reality
 
-Many documents in `docs/` describe the **target** system, not the current scaffold:
+Telescope is a functioning Kubernetes IDE — not a scaffold. Key components are all real:
 
-- `docs/ARCHITECTURE.md`, `docs/PRD.md`, `docs/ROADMAP.md` — describe vision and goals
-- `docs/TESTING.md`, `docs/SECURITY.md` — partially aspirational; not all practices are enforced yet
-- `docs/SMOKE_TEST.md`, `docs/TEST_PLAN.md` — planned testing approach, not all implemented
+- **`crates/core`** — `ResourceStore` (SQLite via rusqlite), `ResourceEntry`, `ConnectionState`, `ResourceWatcher`
+- **`crates/engine`** — Full kube-rs integration: watchers, log streaming, exec, port-forward, secrets, Helm, metrics, CRDs, actions (scale, delete, apply, rollout)
+- **`apps/hub`** — Axum 0.8 HTTP server at port 3001 with 15+ REST endpoints under `/api/v1/`, WebSocket, OIDC scaffolding
+- **`apps/web`** — SvelteKit 2/Svelte 5 UI with 20+ pages, 20+ components, a unified `api.ts` facade, and full Playwright E2E coverage
+- **`apps/desktop`** — Tauri 2 desktop shell with 35+ IPC commands fully backed by the engine crates
 
-**Current state (v0.0.1):**
-- Rust crates have real implementations but limited functionality
-- `apps/hub` is a working Axum server with partial OIDC scaffolding (dev-only, not production-ready)
-- `apps/web` is a functional SvelteKit app with stub data and E2E tests
-- `apps/desktop` packages the built `apps/web` frontend via Tauri 2
-- CI enforces: Rust fmt/clippy/test (excluding desktop on Linux), web tests + E2E, desktop builds on Win/macOS
+**Desktop is the most complete client.** Hub/web mode supports all read operations but defers most write operations (exec, port-forward, log streaming, scale, delete, apply, Helm rollback) — see `apps/web/src/lib/api.ts` `webFallback` for the authoritative gap list.
 
-**What's NOT yet real:**
-- Production-grade authentication in hub (OIDC is scaffolded, no signature validation)
-- gRPC or advanced engine features
-- `packages/ui` shared component library (currently empty)
-- Full feature parity between web and hub
+**What's NOT yet production-ready:**
+- OIDC authentication in hub (scaffolded, no JWT signature validation)
+- `packages/ui` shared component library (empty placeholder)
+- Hub CD pipeline / Helm chart / Kubernetes manifests
+- Linux desktop CI builds (GTK/WebKit deps excluded)
+
+## Core Architecture: ResourceStore + ResourceWatcher
+
+Both desktop and hub share this same pattern:
+
+1. `ResourceStore` (SQLite via `rusqlite`) holds all cached Kubernetes resources as JSON blobs keyed by `(gvk, namespace, name)`.
+2. `ResourceWatcher` (kube-rs watch streams) runs background tasks, writes to `ResourceStore`, and emits `ConnectionState` events.
+3. On connect: watchers start for 13 standard GVKs (Pod, Event, Node, Deployment, StatefulSet, DaemonSet, ReplicaSet, Service, ConfigMap, Job, CronJob, Ingress, PVC).
+4. On disconnect/reconnect: the store is cleared and watchers restart.
+
+Secrets are NOT cached in the store — they are fetched on-demand directly from the Kubernetes API.
 
 ## Cross-Cutting Commands
 
@@ -58,65 +66,79 @@ cargo test --workspace --exclude telescope-desktop --all-features
 **Web (SvelteKit):**
 ```bash
 pnpm -C apps/web test              # Vitest unit tests
-pnpm -C apps/web e2e               # Playwright E2E
-pnpm -C apps/web dev               # Dev server
-pnpm -C apps/web build             # Production build
+pnpm -C apps/web e2e               # Playwright E2E (spins up Vite dev + stub server)
+pnpm -C apps/web dev               # Dev server (port 5173)
+pnpm -C apps/web build             # Production static build
 ```
 
 **Desktop (Tauri):**
 ```bash
 pnpm -C apps/desktop build         # Debug build
-pnpm -C apps/desktop bundle        # Release bundle
+pnpm -C apps/desktop bundle        # Release bundle (installer)
+pnpm -C apps/desktop tauri dev     # Dev mode with hot reload
 ```
 
 **Hub (Axum server):**
 ```bash
-cargo run -p telescope-hub         # Run locally
-cargo test -p telescope-hub        # Run tests
+cargo run -p telescope-hub         # Run locally (port 3001)
+cargo test -p telescope-hub        # Run unit tests
+```
+
+**Engine integration (k3d required):**
+```bash
+cargo test -p telescope-engine --test integration_k3d -- --nocapture
 ```
 
 **Workspace-wide:**
 ```bash
-pnpm -r --if-present test          # Run all package tests
-pnpm install                       # Install/sync all dependencies
+pnpm install                       # Install/sync all pnpm dependencies
+pnpm -r --if-present test          # Run test script in all pnpm packages
 ```
 
 ## Desktop Frontend Build Flow
 
-**Important:** `apps/desktop` does NOT maintain its own frontend. It consumes the built `apps/web` output:
+**Important:** `apps/desktop` does NOT maintain its own frontend source. It consumes the built `apps/web` output:
 
 1. `apps/desktop/scripts/prepare-frontend.mjs` runs `pnpm run build` in `apps/web`
 2. Copies `apps/web/build/` to `apps/desktop/dist/`
-3. Tauri packages `dist/` as the desktop frontend
+3. Tauri config points `frontendDist` to `./dist`
 
-Changes to the desktop UI must be made in `apps/web`, not in desktop-specific files.
+**All UI changes must be made in `apps/web`**, not in desktop-specific files.
+
+## CI Workflows Summary
+
+| Workflow | Trigger | What It Does |
+|---|---|---|
+| `ci.yml` | PR / push to main | Rust fmt+clippy+test, web tests+build, web E2E, desktop debug build (Win/macOS) |
+| `integration.yml` | Push to main (engine/core paths), manual | Real k3d cluster engine integration tests |
+| `build-desktop.yml` | Push to main (crates/apps paths), manual | Full release desktop bundle + artifact upload |
+| `release.yml` | Push `v*` tag | Stamps versions, release bundle, GitHub Release |
 
 ## Nested Guidance Files
 
-For detailed context on each area, consult the nested `AGENTS.md` files:
-
-- **`crates/AGENTS.md`** — Rust workspace: core types, engine, API layer
-- **`apps/web/AGENTS.md`** — SvelteKit web client: Svelte 5 patterns, routing, testing
-- **`apps/desktop/AGENTS.md`** — Tauri desktop app: packaging, platform specifics
-- **`apps/hub/AGENTS.md`** — Axum HTTP server: API routes, auth scaffolding, deployment
-- **`.github/workflows/AGENTS.md`** — CI pipelines: what's enforced, how to extend
-- **`docs/AGENTS.md`** — Documentation maintenance: what's aspirational, what's current
+- **`crates/AGENTS.md`** — Rust workspace: core types, engine modules, ResourceStore/Watcher architecture
+- **`apps/web/AGENTS.md`** — SvelteKit web client: Svelte 5 patterns, api.ts facade, routing, testing
+- **`apps/desktop/AGENTS.md`** — Tauri desktop: Tauri command list, AppState, IPC patterns
+- **`apps/hub/AGENTS.md`** — Axum hub server: exact API routes, env vars, auth, SQLite, audit
+- **`.github/workflows/AGENTS.md`** — CI pipelines: what's enforced, workflows, how to extend
+- **`docs/AGENTS.md`** — Documentation: what's aspirational vs. current
+- **`SKILLS.md`** — Agent capability profiles for Copilot task routing
 
 ## Working in This Repo
 
-1. **Check CI first:** `.github/workflows/ci.yml` defines what's actually enforced
-2. **Run local validations:** `cargo fmt && cargo clippy && cargo test` for Rust; `pnpm -C apps/web test && pnpm -C apps/web e2e` for web
-3. **Respect the scaffold state:** This is v0.0.1 — many advanced features are planned but not built
-4. **Update nested AGENTS.md files** when making structural changes to a subsystem
-5. **Keep docs aspirational:** `docs/` can describe future architecture, but mark unimplemented features clearly
-6. **After a completed, validated change set:** commit it, push the branch upstream, then create and push a release tag matching `v*` so `.github/workflows/release.yml` runs
+1. **Check CI first:** `.github/workflows/ci.yml` defines what's enforced on every PR
+2. **Run local validations before and after changes:**
+   - Rust: `cargo fmt --all && cargo clippy ... && cargo test ...`
+   - Web: `pnpm -C apps/web test && pnpm -C apps/web build`
+3. **Desktop UI changes go in `apps/web`, not `apps/desktop`**
+4. **Hub and desktop share engine crates** — changes to `crates/engine` affect both clients
+5. **Write ops in hub mode are not fully implemented** — check `webFallback()` in `api.ts` before claiming feature parity
+6. **Update nested AGENTS.md** when making structural changes to a subsystem
+7. **After a completed, validated change set:** push the branch, then create and push a `v*` release tag to trigger `release.yml`
 
 ## Release Tagging Policy
 
-- Release automation is triggered by Git tags that match `v*` via `.github/workflows/release.yml`.
-- Unless the user specifies a version, use the next sensible SemVer-style tag in the existing sequence.
-- Current default behavior for agent-delivered changes:
-  1. finish the code/doc change,
-  2. run the relevant existing validations,
-  3. commit and push upstream,
-  4. create and push the next `v*` release tag to trigger a fresh build/release run.
+- `release.yml` triggers on any pushed tag matching `v*`.
+- The workflow stamps `RELEASE_VERSION` into all Cargo manifests and `tauri.conf.json`, then builds and publishes Windows/macOS release artifacts.
+- Unless specified by the user, continue the existing SemVer-style tag sequence.
+- Agent delivery order: finish → validate → push branch → push `v*` tag.
