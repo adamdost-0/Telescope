@@ -69,24 +69,9 @@
       ]
     },
     {
-      title: 'Security',
-      items: [
-        { label: 'Roles', href: '/resources/roles', icon: '🛡️' },
-        { label: 'Bindings', href: '/resources/rolebindings', icon: '🔗' },
-        { label: 'Service Accounts', href: '/resources/serviceaccounts', icon: '👤' },
-        { label: 'Webhooks', href: '/resources/webhooks', icon: '🪝' },
-      ]
-    },
-    {
       title: 'Helm',
       items: [
         { label: 'Releases', href: '/helm', icon: '⎈' },
-      ]
-    },
-    {
-      title: 'Azure',
-      items: [
-        { label: 'Node Pools', href: '/azure/node-pools', icon: '☁️' },
       ]
     },
     {

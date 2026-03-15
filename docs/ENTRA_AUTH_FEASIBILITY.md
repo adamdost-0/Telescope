@@ -1,33 +1,20 @@
 # Entra ID Authentication Feasibility
 
-> **Status:** Feasibility investigation for Telescope desktop and hub/web modes.
-> This document reflects the current codebase, not the aspirational state described elsewhere in `docs/`.
+> **Status:** Desktop-only feasibility investigation for Telescope.
+> Scope: the shared Svelte frontend in `apps/web` is packaged into the Tauri shell, and frontend/backend calls go through Tauri IPC `invoke()`.
 
 ## 1. Executive Summary
 
-Telescope does **not** currently implement native Entra ID authentication.
+Telescope is now a desktop-only Tauri application. The current product can detect AKS and `kubelogin`-style kubeconfig auth, but it cannot start a native Entra ID sign-in, store Entra tokens securely, or refresh desktop-managed credentials when an AKS exec token has expired.
 
-- **Hub/web mode** only has OIDC scaffolding in `apps/hub/src/auth.rs`: `/auth/login` and `/auth/callback` return `501 Not Implemented`, JWT payloads are decoded **without** signature validation, there is no JWKS discovery, and there is no session or refresh-token lifecycle.
-- **Desktop mode** relies on kubeconfig auth only. `crates/engine/src/client.rs` and `crates/engine/src/kubeconfig.rs` detect exec/token/certificate auth and surface AKS/kubelogin hints, but `apps/desktop/src-tauri/src/main.rs` has no Entra login commands, no token storage, and no refresh path.
-- **Web mode** cannot participate in an authenticated hub session today because `apps/web/src/lib/api.ts` issues plain `fetch()` calls with no `Authorization` header and no `credentials: 'include'` handling.
+A desktop-native Entra auth subsystem is feasible and should live inside `apps/desktop/src-tauri`. The best long-term design is a **hybrid** approach:
 
-### Recommendation
+1. **Primary:** Authorization Code + PKCE using the system browser and a localhost loopback callback.
+2. **Fallback:** Device Code Flow for locked-down or headless environments.
+3. **Storage:** OS credential storage via the `keyring` crate, not plain SQLite.
+4. **Desktop contract:** the UI calls new Tauri commands such as `entra_login`, `entra_logout`, `entra_refresh`, and `entra_status`.
 
-Adopt **Option C: Hybrid**.
-
-1. Use **Authorization Code + PKCE** as the primary flow for both runtimes.
-   - **Desktop:** launch the system browser from Tauri, receive the callback on a **localhost loopback listener**.
-   - **Hub/web:** perform a standard OIDC redirect to hub routes and keep browser auth **hub-mediated** with secure session cookies.
-2. Add **Device Code Flow** as the fallback for headless, SSH, locked-down, or loopback-blocked environments.
-3. **Do not replace kubelogin in phase 1.** Preserve the existing kubeconfig exec path for Kubernetes API access, and add native Entra auth first for Telescope-managed identity, token-expiry UX, and future ARM-backed features.
-4. Use **separate Entra app registrations**:
-   - **Hub:** confidential web app
-   - **Desktop:** public/native client
-5. Prefer **no browser-side MSAL dependency in phase 1**. The web UI should stay thin and let the hub own tokens, cookies, validation, and refresh.
-
-This is feasible, but it is not a small change. A production-ready implementation spans hub middleware, web fetch/session handling, Tauri auth commands, secure token storage, Entra app registration, and explicit failure handling for expiry, group-claim overage, and cross-origin cookie policy.
-
----
+This work should **coexist with the current kubeconfig + kubelogin path at first**. The initial goal is not to rip out kubeconfig auth; it is to give Telescope a native Entra-aware sign-in and refresh experience inside the desktop app.
 
 ## 2. Current State / Gap Analysis
 
@@ -35,600 +22,333 @@ This is feasible, but it is not a small change. A production-ready implementatio
 
 | Area | Current implementation | Evidence | Gap |
 |---|---|---|---|
-| Hub auth | OIDC config loader, bearer header parsing, unverified JWT payload decode, placeholder `/auth/logout` and `/auth/me` | `apps/hub/src/auth.rs`, `apps/hub/src/main.rs` | No real login/callback flow, no JWKS, no issuer/audience/expiry validation, no refresh, no session management |
-| Hub route protection | `/api/v1/*` is wrapped in `auth_middleware`; `/auth/me` is also wrapped | `apps/hub/src/main.rs` | Middleware trusts decoded claims rather than verified identity |
-| Hub impersonation | Route handlers can already create kube clients with impersonation headers | `apps/hub/src/routes.rs`, `crates/engine/src/client.rs` | Useful foundation, but only safe once identity is verified and impersonation RBAC is validated |
-| Hub WebSocket | Placeholder echo socket | `apps/hub/src/ws.rs` | No auth on upgrade, no token/session expiry handling |
-| Desktop auth | Tauri commands call engine/core directly | `apps/desktop/src-tauri/src/main.rs` | No Entra login, no token cache, no identity status, no refresh logic |
-| Desktop capabilities | Only core window/event permissions | `apps/desktop/src-tauri/capabilities/default.json` | No opener/deep-link style capability configuration yet |
-| Engine auth awareness | Detects `exec`, `token`, `certificate`; detects AKS URLs and kubelogin exec plugin; exposes `auth_hint` | `crates/engine/src/client.rs`, `crates/engine/src/kubeconfig.rs` | Detection only; no native Entra login or refresh orchestration |
-| Web API facade | Tauri IPC for desktop, HTTP fallback for browser | `apps/web/src/lib/api.ts` | No auth-aware request wrapper, no bearer/header injection, no cookie/session mode, no 401 refresh behavior |
-| Web auth UX | Generic auth-expiry and kubelogin hints | `apps/web/src/lib/error-suggestions.ts`, `apps/web/src/lib/components/ContextSwitcher.svelte` | No identity state, no login/logout UI, no Entra-specific remediation |
-| Azure-specific UI | AKS URL parsing and identity/add-on display | `apps/web/src/lib/azure-utils.ts`, `apps/web/src/lib/components/AzureIdentitySection.svelte` | Helpful context only; no Azure sign-in or ARM token model |
-| Dependencies | No `oauth2`, `openidconnect`, `azure-identity`, `keyring`, `@azure/msal-browser` | `apps/hub/Cargo.toml`, `apps/desktop/src-tauri/Cargo.toml`, `crates/engine/Cargo.toml`, `apps/web/package.json` | The auth stack must be added from scratch |
+| Frontend transport | `apps/web/src/lib/api.ts` is a Tauri-only wrapper around dynamic `@tauri-apps/api/core` `invoke()` calls | `apps/web/src/lib/api.ts` | No auth-specific IPC contract, no identity status store, no sign-in/out actions |
+| AKS auth awareness | The engine reads kubeconfig auth metadata, detects `exec` / `token` / `certificate`, recognizes AKS endpoints, and surfaces a kubelogin hint | `crates/engine/src/client.rs` | Detection only; no native Entra token acquisition, validation, refresh, or persistence |
+| Desktop command surface | `apps/desktop/src-tauri/src/main.rs` registers cluster, resource, Azure, and preference commands | `apps/desktop/src-tauri/src/main.rs` | No `entra_login`, `entra_logout`, `entra_refresh`, or `entra_status` commands |
+| Desktop permissions | The default capability set only grants core window and event permissions | `apps/desktop/src-tauri/capabilities/default.json` | No browser-launch permission for opening the Entra authorize URL |
+| Desktop dependencies | The Tauri crate depends on core runtime, Kubernetes, Azure, and serialization crates | `apps/desktop/src-tauri/Cargo.toml` | No `oauth2`, `openidconnect`, `jsonwebtoken`, or `keyring` dependencies |
+| Secure token storage | No desktop token persistence mechanism is present | `apps/desktop/src-tauri/Cargo.toml`, `apps/desktop/src-tauri/src/main.rs` | No OS keyring integration and no refresh-token custody model |
+| Auth UI state | The shared frontend has no Entra account store, sign-in UI, sign-out action, or token-expiry indicator | `apps/web/src/lib/api.ts`, `apps/web/src/routes`, `apps/web/src/lib/components` | The desktop UI cannot show identity or trigger re-auth flows |
 
-### 2.2 Why Entra token expiry causes failures today
+### 2.2 Why expired AKS auth is still a desktop problem
 
-The current code explains why Entra expiry turns into weak or silent failure modes:
+Today the desktop app depends on kubeconfig-authenticated clients. When the selected AKS context uses `kubelogin`, the engine can tell the UI that the context is AKS-backed and exec-authenticated, but Telescope still has no native way to do any of the following inside the app:
 
-1. **Desktop has no Telescope-managed token lifecycle.**
-   - The engine builds Kubernetes clients from kubeconfig and exec plugins.
-   - If the active AKS context depends on `kubelogin`, the renewal path is entirely external to Telescope.
-   - Telescope can detect that the cluster is using exec auth (`auth_type == "exec"`) and can show a kubelogin hint, but it cannot proactively refresh, count down expiry, or distinguish Kubernetes token failure from future ARM token failure.
+- start an Entra sign-in flow,
+- remember an authenticated desktop identity,
+- refresh a desktop-managed token before it expires,
+- show whether the user is signed in,
+- recover gracefully when Entra-backed operations need user interaction.
 
-2. **Hub can only decode, not verify.**
-   - `apps/hub/src/auth.rs` currently treats any bearer token with a decodable JWT payload as identity.
-   - There is no `.well-known/openid-configuration` discovery, no JWKS fetch, and no `exp`, `aud`, `iss`, `nbf`, `nonce`, or `azp` enforcement.
+That gap matters even if kubeconfig remains the source of truth for Kubernetes API access in early phases. Native desktop auth is still valuable for user guidance, future Azure management actions, and proactive re-auth instead of leaving the user to recover outside Telescope.
 
-3. **Web mode has no authenticated transport.**
-   - `apps/web/src/lib/api.ts` makes `fetch()` calls directly to `${HUB_URL}/api/v1/*` without `Authorization` or `credentials`.
-   - Even if the hub had real OIDC, the browser-side API layer could not attach a session or token consistently.
+### 2.3 Concrete desktop-only conclusions from the current code
 
-4. **Future ARM-backed features need a different token audience.**
-   - The roadmap in `docs/ROADMAP.md` calls out AKS add-on status and Entra awareness.
-   - ARM calls require Azure Resource Manager delegated permissions and refresh handling.
-   - Those tokens are **not** the same as the kubeconfig exec flow that powers today’s Kubernetes calls.
+- `apps/web/src/lib/api.ts` already gives Telescope the right integration seam: add auth commands to the Tauri backend and call them through `invoke()`.
+- `crates/engine/src/client.rs` already gives Telescope the right detection seam: when AKS + `kubelogin` are detected, the UI can surface Entra-specific guidance and prompt for native sign-in.
+- `apps/desktop/src-tauri/src/main.rs` is missing the auth command surface entirely.
+- `apps/desktop/src-tauri/capabilities/default.json` is too minimal for interactive sign-in because the app cannot yet open the system browser.
+- `apps/desktop/src-tauri/Cargo.toml` confirms the auth stack has not been added yet.
 
-### 2.3 Code excerpts that illustrate the gap
-
-```rust
-// apps/hub/src/auth.rs
-pub async fn login() -> impl IntoResponse {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        "OIDC login not yet configured. Set OIDC_ENABLED=true with issuer/client config.",
-    )
-}
-```
-
-```rust
-// apps/hub/src/auth.rs
-// TODO: Validate JWT signature, expiry, and audience once a real
-// OIDC provider is configured. For now we only decode the payload claims.
-```
-
-```ts
-// apps/web/src/lib/api.ts
-const res = await fetch(`${base}/contexts`);
-```
-
-The current implementation is enough to prove feasibility, but not enough to safely authenticate users.
-
----
-
-## 3. Authentication Flow Options
+## 3. Authentication Options
 
 ### 3.1 Option Summary
 
-| Option | User experience | Implementation effort | Operational risk | Fit for Telescope |
-|---|---|---:|---:|---|
-| **A. Device Code Flow** | Functional but clunky; user copies a code into a browser | Low | Low | Good fallback, weak primary UX for hub/web |
-| **B. Authorization Code + PKCE** | Best interactive UX; familiar “Sign in with Entra” | Medium | Medium | Best primary flow for both runtimes |
-| **C. Hybrid** | Best overall coverage | Highest | Medium | **Recommended** |
+| Option | UX | Complexity | Strengths | Weaknesses | Fit |
+|---|---|---:|---|---|---|
+| **A. Device Code Flow** | Functional, explicit, works without callback plumbing | Low | Reliable in restricted environments | Slower and less polished | Good fallback |
+| **B. Interactive Browser Login (Auth Code + PKCE)** | Best interactive experience | Medium | Familiar sign-in, better for day-to-day use | Requires loopback callback handling | Best default |
+| **C. Hybrid** | Best overall coverage | Medium-high | Lets Telescope prefer PKCE and fall back to device code | More moving parts | **Recommended** |
 
 ### 3.2 Option A: Device Code Flow
 
-**Protocol:** OAuth 2.0 Device Authorization Grant ([RFC 8628](https://www.rfc-editor.org/rfc/rfc8628))
+**Desktop flow:** the Tauri backend requests a device code from Entra, returns the `user_code` and verification URL to the UI, the user completes sign-in in a separate browser session, and the backend polls until tokens are issued or the request expires.
 
-#### How it works
+#### Why it fits Telescope
 
-1. Telescope requests a `device_code` from Entra.
-2. Entra returns:
-   - `device_code`
-   - `user_code`
+- Works well when localhost callbacks are blocked.
+- Maps cleanly onto a Tauri desktop command model.
+- Avoids loopback server setup in the first implementation.
+- Matches environments where users already expect CLI-style Azure sign-in recovery.
+
+#### Implementation outline
+
+1. Add `oauth2` to the desktop crate.
+2. Implement a Rust auth module that starts the device-code grant.
+3. Expose a Tauri command that returns:
    - `verification_uri`
-   - polling interval
-3. Telescope displays the code and URL.
-4. The user completes authentication in a browser.
-5. Telescope polls the token endpoint until it receives tokens or an error.
-
-#### User experience
-
-- **Desktop:** good fallback when loopback listeners or deep links are blocked.
-- **Hub/web:** less natural because the user is already in a browser.
-- **Remote/headless:** strongest option.
+   - `user_code`
+   - `expires_in`
+   - `interval`
+4. Poll from Rust, not from the UI, so retry timing and cancellation remain centralized.
+5. Persist the resulting refresh token in the OS keyring.
+6. Return normalized identity and expiry metadata to the Svelte store.
 
 #### Pros
 
-- No redirect URI required.
-- No localhost listener or custom protocol needed.
-- Easy to implement server-side and desktop-side.
-- Matches existing AKS/kubelogin mental model (`kubelogin convert-kubeconfig -l devicecode` in `docs/AKS_QUICKSTART.md`).
+- Simplest path to a working desktop sign-in.
+- Strong fallback for headless, remote, or policy-constrained environments.
+- No deep-link or loopback listener required.
 
 #### Cons
 
-- Context switch: users must leave the app flow and manually enter a code.
-- Polling introduces delay and more status handling.
-- Poor primary UX for browser/hub mode.
-- Still requires secure token storage and refresh once tokens are issued.
-
-#### Implementation path
-
-- **Rust:** use `oauth2` device authorization support.
-- **Desktop:** add a Tauri command that returns `{ verificationUri, userCode, expiresIn, interval }`, then poll via Rust and push status into the UI.
-- **Hub/web:** expose `/auth/device-code` and a status endpoint or server-sent event stream; render the code in the browser page.
-- **Token storage:** desktop keyring; hub server-side cookie/session.
-
-```rust
-use oauth2::{DeviceAuthorizationUrl, Scope};
-
-// sketch only
-let details = client
-    .exchange_device_code()
-    .add_scope(Scope::new("openid".into()))
-    .add_scope(Scope::new("profile".into()))
-    .add_scope(Scope::new("email".into()))
-    .request_async(&http_client)
-    .await?;
-```
-
-#### Entra app registration requirements
-
-- Register a **public client**.
-- Enable **device code flow**.
-- Request delegated scopes such as `openid`, `profile`, `email`, `offline_access`, and any ARM or Graph scopes actually needed.
-
-#### Feasibility verdict
-
-**Feasible and recommended as fallback**, but not recommended as Telescope’s primary sign-in experience.
-
----
+- More friction for everyday sign-in.
+- The user must switch to the browser and manually enter a code.
+- Polling and timeout states need good UX copy.
 
 ### 3.3 Option B: Interactive Browser Login (Authorization Code + PKCE)
 
-**Protocol:** OAuth 2.0 Authorization Code Grant with PKCE ([RFC 7636](https://www.rfc-editor.org/rfc/rfc7636))
+**Desktop flow:** a "Sign in with Entra" action in the UI calls `entra_login`; Rust generates `state`, `nonce`, `code_verifier`, and `code_challenge`; Rust launches the system browser with `tauri-plugin-opener`; Entra redirects to `http://localhost:{port}/callback`; the Rust backend exchanges the code for tokens, validates the ID token, stores secrets in the OS keyring, and updates desktop auth state.
 
-#### How it works
+#### Why it fits Telescope
 
-1. Telescope generates `state`, `nonce`, `code_verifier`, and `code_challenge`.
-2. Telescope redirects or opens the system browser to Entra’s authorize endpoint.
-3. The user signs in and completes MFA/conditional access.
-4. Entra redirects back with an authorization code.
-5. Telescope exchanges the code + verifier for tokens.
-6. Telescope validates the returned ID token and stores refresh/session state securely.
+- Best sign-in UX for a desktop app.
+- Supports a visible account model and clear re-auth prompts.
+- Gives Telescope a clean foundation for future proactive refresh.
+- Keeps all token handling in Rust instead of the UI runtime.
 
-#### User experience
+#### Implementation outline
 
-- **Hub/web:** best experience; standard browser redirect.
-- **Desktop:** good experience if the app can launch the system browser and receive the callback reliably.
+1. Add `openidconnect` for discovery, PKCE, nonce handling, and ID token validation.
+2. Add `oauth2` for token exchange and refresh support.
+3. Add `tauri-plugin-opener` so the app can launch the system browser.
+4. Start a localhost loopback listener in Rust on an allowed callback port.
+5. Validate `state`, `nonce`, issuer, audience, and expiry before storing anything.
+6. Save refresh tokens to the OS keyring and keep short-lived access tokens in memory when practical.
 
 #### Pros
 
-- Familiar sign-in pattern.
-- Supports silent refresh or proactive refresh after the initial login.
-- Best fit for web sessions and a branded sign-in button.
-- Aligns with hub-mediated cookies and minimal browser-side state.
+- Best daily-user experience.
+- Natural fit for a desktop sign-in button and account indicator.
+- Easier to explain to users than device-code-only auth.
 
 #### Cons
 
-- Redirect URI management is more involved.
-- Desktop needs a callback strategy.
-- More moving parts: PKCE, state, nonce, cookie policy, callback errors.
-
-#### Desktop callback choice
-
-| Choice | Pros | Cons | Recommendation |
-|---|---|---|---|
-| **Loopback localhost** (`http://127.0.0.1:18000/auth/callback`) | Cross-platform, no OS URI registration, works well with Tauri Rust backend | Fixed ports must be pre-registered; some endpoint security tools block listeners | **Recommended for phase 1** |
-| **Custom protocol** (`telescope://auth/callback`) | Clean UX, no local port | Requires OS registration, Tauri deep-link setup, and more packaging complexity | Good future enhancement, not the easiest first step |
-
-#### Implementation path
-
-- **Rust (hub):** prefer `openidconnect` for discovery, issuer metadata, nonce, ID token validation, and PKCE.
-- **Desktop:** use `tauri-plugin-opener` to open the system browser; receive the callback on a localhost listener bound to a **fixed, pre-registered port range**; validate state before exchange.
-- **Hub/web:** standard `/auth/login` -> `/auth/callback` flow, then set secure cookies.
-
-```rust
-use openidconnect::{
-    AuthorizationCode, CsrfToken, Nonce, PkceCodeChallenge, Scope,
-};
-
-// sketch only
-let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-let (auth_url, csrf_state, nonce) = client
-    .authorize_url(CsrfToken::new_random, Nonce::new_random)
-    .add_scope(Scope::new("openid".into()))
-    .add_scope(Scope::new("profile".into()))
-    .add_scope(Scope::new("email".into()))
-    .set_pkce_challenge(pkce_challenge)
-    .url();
-```
-
-#### Entra app registration requirements
-
-- **Hub:** confidential web app registration, redirect URI such as `https://hub.example.com/auth/callback` and dev URI such as `http://localhost:3001/auth/callback`.
-- **Desktop:** public/native client registration with loopback redirect URIs such as `http://127.0.0.1:18000/auth/callback` through a small fixed port range.
-- PKCE required for public/native flow.
-
-#### Feasibility verdict
-
-**Feasible and recommended as the primary interactive flow.**
-
----
+- Requires loopback callback plumbing and local port management.
+- Needs careful handling of callback races, cancellation, and duplicate requests.
+- Some endpoint security tooling may restrict localhost listeners.
 
 ### 3.4 Option C: Hybrid (Recommended)
 
-Use **interactive browser login as the default** and **device code as the fallback**.
+Use **PKCE as the primary flow** and **device code as the fallback**.
 
-#### Why this is the best fit
+This gives Telescope the best balance of usability and reliability:
 
-- Preserves a first-class UX for both desktop and web users.
-- Covers locked-down and remote environments without redesign.
-- Lets Telescope keep the web client thin and secure while still serving desktop users well.
-- Aligns with the repo’s current split runtime model:
-  - desktop = native Rust/Tauri runtime
-  - web = browser UI backed by Axum hub
-
-#### Recommended design decisions
-
-- **Separate Entra app registrations** for hub and desktop.
-- **Hub-managed sessions** for browser/web mode.
-- **OS keyring** for desktop refresh-token custody.
-- **Explicit kubelogin coexistence** in early phases.
-- **Shared validation logic** (JWKS, claims normalization, expiry checks) implemented in Rust and reused where possible.
-
----
+- everyday use gets the smoothest sign-in path,
+- restricted environments still have a viable fallback,
+- the desktop app can ship incrementally without blocking on every edge case up front.
 
 ## 4. Implementation Requirements
 
 ### 4.1 New Rust dependencies
 
-| Dependency | Where | Why |
-|---|---|---|
-| `oauth2` | `apps/hub`, `apps/desktop/src-tauri` | Device code flow, token exchange primitives |
-| `openidconnect` | `apps/hub` and likely desktop auth module as well | Discovery, nonce, PKCE, ID token validation, issuer metadata |
-| `jsonwebtoken` | `apps/hub` or shared auth module | Useful if Telescope validates access/session JWTs directly or emits its own signed tokens; otherwise `openidconnect` may cover ID token validation |
-| `keyring` | `apps/desktop/src-tauri` | Secure OS-native token storage |
-| `tauri-plugin-opener` | `apps/desktop` | Launch system browser for interactive login |
-| `cookie` / `tower-sessions` / equivalent | `apps/hub` | Secure session cookie handling and refresh/session middleware |
-| `reqwest` | direct dependency where auth code uses HTTP | Already present transitively today, but should be declared directly if auth code uses it |
-| `secrecy` | direct dependency where token structs are added | Already available transitively via kube-client, but should be declared directly if refresh/access tokens are wrapped and redacted |
-
-> **Recommendation:** prefer direct dependency declarations for auth code even if a crate is already available transitively. Auth/security code should not rely on incidental transitive APIs.
-
-### 4.2 New JavaScript dependencies
-
-#### Recommended phase 1 choice: **no new browser-side auth library**
-
-Because `apps/web` should remain **hub-mediated**, phase 1 does **not** need `@azure/msal-browser`.
-
-- The hub performs the OIDC dance.
-- The browser only needs to know whether the user is signed in and whether it should include cookies.
-- This keeps tokens out of browser-managed storage and avoids split token logic between Rust and TypeScript.
-
-#### When `@azure/msal-browser` would make sense
-
-Only add it if Telescope later supports a **pure SPA mode** that talks directly to Azure without the hub. That is a different security model and is not required for the recommended design.
-
-### 4.3 Hub changes
-
-#### Required endpoints
-
-| Endpoint | Purpose |
+| Dependency | Purpose |
 |---|---|
-| `GET /auth/login` | Start Authorization Code + PKCE flow and redirect to Entra |
-| `GET /auth/callback` | Validate `state`, exchange code, validate token, establish session |
-| `POST /auth/refresh` | Refresh access token or renew Telescope session before expiry |
-| `POST /auth/device-code` | Start device code flow for fallback scenarios |
-| `GET /auth/me` | Return normalized identity and expiry metadata |
-| `POST /auth/logout` | Revoke/clear local session and logout from Telescope |
+| `oauth2` | Device code grant, refresh-token exchange, common OAuth primitives |
+| `openidconnect` | Discovery, PKCE flow, nonce handling, ID token validation |
+| `jsonwebtoken` | Supplemental JWT parsing/validation where Telescope needs explicit claim handling outside the `openidconnect` helpers |
+| `keyring` | OS-native storage for refresh tokens and related secret material |
 
-#### Required auth services
+### 4.2 New Tauri plugins and capability updates
 
-- Entra metadata discovery via `/.well-known/openid-configuration`
-- JWKS retrieval and cache invalidation
-- ID token validation (`iss`, `aud`, `exp`, `nbf`, `nonce`, signature)
-- Access/refresh token refresh orchestration
-- Normalized claim extraction: email/UPN, display name, object ID, tenant ID, groups/app roles
-- Group overage handling if `_claim_names` / `_claim_sources` appears
-- Session middleware and cookie policy
-- WebSocket upgrade auth (`/ws` must not stay anonymous)
-- Explicit preflight validation that the hub’s cluster identity can use Kubernetes impersonation where required
+| Item | Requirement |
+|---|---|
+| `tauri-plugin-opener` | Launch the system browser for interactive sign-in |
+| `tauri-plugin-deep-link` | Optional future enhancement if Telescope later prefers app-link callbacks over loopback |
+| `apps/desktop/src-tauri/capabilities/default.json` | Add the opener permissions needed to launch the Entra authorization URL |
 
-#### Recommended session model
-
-For v1, prefer **hub-managed secure cookies** or another restart-safe session mechanism over volatile in-memory state.
-
-- **Preferred deployment:** same-origin web + hub deployment with `HttpOnly`, `Secure`, and appropriate `SameSite` policy.
-- **If cross-origin is required:** use `SameSite=None; Secure` plus an explicit `CORS_ALLOWED_ORIGINS` allowlist and `credentials: true` behavior.
-- Do **not** keep PKCE bootstrap state only in volatile in-memory storage.
-
-#### Hub sketch
-
-```rust
-// sketch only
-async fn auth_callback(/* ... */) -> Result<impl IntoResponse, AuthError> {
-    // 1. Validate state from signed cookie or durable server-side store
-    // 2. Exchange code + code_verifier with Entra token endpoint
-    // 3. Validate ID token using issuer metadata + JWKS
-    // 4. Normalize claims -> AuthUser { email, name, groups, oid, tid }
-    // 5. Set session cookie and redirect back to app
-}
-```
-
-### 4.4 Desktop changes
-
-#### Required Tauri commands
+### 4.3 New desktop auth commands
 
 | Command | Purpose |
 |---|---|
-| `auth_login_interactive` | Start browser-based login |
-| `auth_login_device_code` | Start device-code fallback |
-| `auth_status` | Return current identity, expiry, and auth source |
-| `auth_refresh` | Refresh tokens proactively or reactively |
-| `auth_logout` | Clear keyring/session state |
+| `entra_login` | Start sign-in; choose PKCE by default and device code when needed |
+| `entra_logout` | Clear in-memory auth state and remove stored credentials from the OS keyring |
+| `entra_refresh` | Refresh tokens before expiry or in response to an auth challenge |
+| `entra_status` | Return signed-in state, account metadata, auth method, and expiry information |
 
-#### Required desktop behavior
-
-- Add `tauri-plugin-opener` to launch the browser.
-- Bind a localhost callback listener on a **small fixed port range** registered in Entra.
-- Store refresh tokens in the OS keyring.
-- Keep the access token in memory where practical; avoid writing plaintext tokens to disk.
-- Surface the signed-in Entra identity and expiry countdown in the shared web UI used by the desktop app.
-- Preserve existing kubeconfig/kubelogin behavior as a fallback.
+A practical first return shape for `entra_status` is:
 
 ```rust
-#[tauri::command]
-async fn auth_login_interactive() -> Result<AuthStatus, String> {
-    // 1. Start loopback listener on 127.0.0.1:18000..18009
-    // 2. Generate PKCE + state + nonce
-    // 3. Open system browser
-    // 4. Receive callback and exchange code
-    // 5. Persist refresh token in keyring
-    // 6. Return normalized AuthStatus to the UI
-    todo!()
+struct EntraStatus {
+    signed_in: bool,
+    method: Option<String>,
+    account_label: Option<String>,
+    expires_at: Option<String>,
+    tenant_id: Option<String>,
 }
 ```
 
-#### Important nuance: kubelogin coexistence
+### 4.4 Desktop auth module responsibilities
 
-For desktop, native Entra auth should **supplement**, not immediately replace, the current kubeconfig exec flow.
+The Rust backend needs a dedicated auth module, for example under `apps/desktop/src-tauri/src/auth/`, responsible for:
 
-- **Phase 1:** keep `kubelogin` as the path that `kube-rs` already understands.
-- **Phase 2+:** decide whether Telescope should mint and inject its own Kubernetes bearer token for AKS or continue delegating Kubernetes auth to kubeconfig while using native Entra auth for ARM calls and identity UX.
+- Entra metadata discovery,
+- PKCE generation and callback correlation,
+- device-code grant startup and polling,
+- ID token validation,
+- refresh-token exchange,
+- keyring read/write/delete operations,
+- normalized auth state returned to the UI,
+- translating auth failures into stable desktop command errors.
 
-That distinction matters because the token audience for Kubernetes access is different from Graph or ARM access.
+### 4.5 Frontend integration requirements
 
-### 4.5 Web changes
+The shared Svelte frontend should add:
 
-#### Required UI changes
+- an auth state store for current identity, auth method, loading state, and expiry,
+- a login action that calls `invoke('entra_login')`,
+- a logout action that calls `invoke('entra_logout')`,
+- a token status indicator in the desktop UI,
+- re-auth prompts when AKS/kubelogin detection suggests the current context needs Entra interaction.
 
-- Add a shared auth state store for identity, expiry, loading, and error state.
-- Add login/logout controls.
-- Add “session expired / re-auth required” messaging.
-- Update error suggestions in `apps/web/src/lib/error-suggestions.ts` for Entra-specific failures (MFA required, tenant mismatch, expired refresh token, loopback blocked, Graph group overage).
+The frontend should stay thin: it renders state and invokes desktop commands, while token acquisition and storage remain in Rust.
 
-#### Required API changes
+### 4.6 Entra app registration requirements
 
-`apps/web/src/lib/api.ts` should move to a centralized auth-aware wrapper.
+Telescope needs a **public/native client** registration configured for desktop use.
 
-- **Hub/web mode (recommended):** use `credentials: 'include'` for cookie-backed sessions.
-- **Bearer-token mode (optional / future / remote API cases):** attach `Authorization: Bearer ...`.
-- Add a single 401-handling path that attempts refresh once, then redirects to login or shows a re-auth prompt.
+Required baseline:
 
-```ts
-async function authFetch(input: string, init: RequestInit = {}) {
-  const headers = new Headers(init.headers ?? {});
-  const token = getAccessTokenIfBearerMode();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+- Redirect URI pattern: `http://localhost:{port}/callback`
+- PKCE enabled for authorization code flow
+- Device code flow enabled
+- Delegated permissions for at least:
+  - `openid`
+  - `profile`
+  - `email`
+  - `offline_access`
+  - any Azure management scope Telescope needs for user-driven operations
 
-  const res = await fetch(input, {
-    ...init,
-    headers,
-    credentials: 'include',
-  });
+Open registration decisions:
 
-  if (res.status === 401) {
-    await maybeRefreshSession();
-  }
+- fixed callback port vs approved small port range,
+- single-tenant vs multi-tenant distribution,
+- which Azure scopes are needed in the first production milestone.
 
-  return res;
-}
+### 4.7 Token storage model
+
+**Requirement:** store long-lived secrets in the OS credential store through `keyring`.
+
+Recommended model:
+
+- refresh token: OS keyring,
+- ID token: optional, only if needed for cached profile display,
+- access token: memory-first, refreshed when needed,
+- plain SQLite storage for Entra secrets: **not allowed**.
+
+### 4.8 Kubeconfig coexistence model
+
+In the first rollout, Telescope should treat native Entra auth as a desktop capability that complements the existing kubeconfig path.
+
+- `crates/engine/src/client.rs` continues building Kubernetes clients from kubeconfig.
+- AKS and `kubelogin` detection remains useful for UX and remediation.
+- Native Entra auth can power desktop identity, future Azure management operations, and token-expiry recovery UX.
+- A later phase can decide whether Telescope should bridge native auth into Kubernetes credential renewal more directly.
+
+## 5. Desktop-Only Architecture Diagram
+
+```mermaid
+flowchart LR
+    UI[Svelte UI in apps/web\npackaged by Tauri] -->|invoke('entra_login')| IPC[Tauri IPC]
+    IPC --> AUTH[Rust auth module\napps/desktop/src-tauri/src/auth]
+    AUTH -->|open system browser\nor start device-code flow| ENTRA[Microsoft Entra ID]
+    ENTRA -->|tokens + claims| AUTH
+    AUTH --> KEYRING[OS Keyring]
+    AUTH --> STATE[Desktop auth state]
+    STATE --> UI
+    AUTH -. AKS/kubelogin guidance .-> ENGINE[crates/engine/src/client.rs]
 ```
 
-### 4.6 Entra app registration
+### Key architectural boundaries
 
-#### Recommended registration model
+- The UI never owns refresh tokens.
+- The Rust backend owns OAuth/OpenID Connect logic.
+- OS keyring storage is the long-term secret store.
+- The existing kubeconfig path remains separate until Telescope intentionally changes it.
 
-| Registration | Platform type | Redirects | Secret | Notes |
-|---|---|---|---|---|
-| **Telescope Hub** | Web / confidential client | `https://hub.example.com/auth/callback`, `http://localhost:3001/auth/callback` | **Yes** | Used for browser OIDC and hub-managed sessions |
-| **Telescope Desktop** | Public/native client | `http://127.0.0.1:18000/auth/callback` ... fixed port range; device code enabled | **No** | Used by Tauri desktop with PKCE and device code |
+## 6. Phased Rollout
 
-#### Required delegated permissions
+### Phase 1: Device Code
 
-Minimum baseline:
+Ship the smallest complete desktop auth slice first.
 
-- `openid`
-- `profile`
-- `email`
-- `offline_access`
-- `User.Read`
+Deliverables:
 
-Potentially required depending on final design:
+- `oauth2` integration for device code,
+- `keyring` integration,
+- `entra_login` using device code,
+- `entra_status` and `entra_logout`,
+- basic sign-in UI and token status indicator.
 
-- ARM delegated permission(s) for Azure Resource Manager if Telescope makes ARM calls on behalf of the user
-- Additional Graph permission(s) if group overage must be resolved via Graph rather than app roles
+Exit criteria:
 
-#### Tenant model
+- a user can complete Entra sign-in from Telescope without leaving the desktop auth flow unmanaged,
+- refresh tokens are stored in the OS keyring,
+- the UI can show signed-in state and expiry.
 
-Open question:
+### Phase 2: PKCE
 
-- **Single-tenant:** simpler configuration and support story
-- **Multi-tenant / organizations:** friendlier for OSS distribution, but more validation and tenant-boundary work
+Add the preferred interactive experience.
 
-### 4.7 Security considerations
+Deliverables:
 
-- Require **PKCE** for all public/native authorization code flows.
-- Validate **state** and **nonce** every time.
-- Validate JWT **signature**, **issuer**, **audience**, **expiry**, and **not-before**.
-- Keep browser tokens out of `localStorage` and `sessionStorage`.
-- Use **OS keyring** for desktop refresh tokens.
-- Use **HTTP-only secure cookies** or an equivalent server-owned session model for browser mode.
-- Tighten hub CORS; `CorsLayer::permissive()` is not compatible with a production cookie-based auth model.
-- Authenticate WebSocket upgrades and disconnect stale sessions.
-- Enrich audit/tracing with stable identity fields such as tenant ID (`tid`) and object ID (`oid`) without logging raw tokens.
+- `openidconnect` + PKCE flow,
+- `tauri-plugin-opener`,
+- localhost callback listener,
+- `entra_login` defaulting to PKCE with device code as fallback,
+- better UI messaging for callback errors and cancellation.
 
----
+Exit criteria:
 
-## 5. Architecture Diagram (text-based)
+- clicking "Sign in with Entra" launches the system browser,
+- the desktop app completes the loopback callback and stores credentials securely,
+- the fallback path still works when interactive login cannot complete.
 
-### 5.1 Web / hub mode
+### Phase 3: Silent Refresh
 
-```text
-┌────────────┐
-│ Web UI     │  apps/web/src/lib/api.ts
-│ (browser)  │  credentials: include
-└─────┬──────┘
-      │ GET /auth/login
-      v
-┌────────────┐      discovery/JWKS      ┌──────────────────────────────┐
-│ Axum Hub   │ ───────────────────────► │ Entra ID / Microsoft Entra   │
-│ auth.rs    │ ◄─────────────────────── │ authorize + token + JWKS     │
-│ main.rs    │                          └──────────────────────────────┘
-│ routes.rs  │
-└─────┬──────┘
-      │ validated AuthUser + session cookie
-      │
-      v
-┌────────────┐
-│ Hub routes │ ──► create_client_for_context_as_user(...) ──► Kubernetes API
-└────────────┘
-```
+Make the desktop auth model durable for repeated use.
 
-### 5.2 Desktop mode
+Deliverables:
 
-```text
-┌────────────┐
-│ Shared UI   │  apps/web packaged by Tauri
-└─────┬──────┘
-      │ invoke('auth_login_interactive')
-      v
-┌──────────────────────┐
-│ Tauri backend        │ apps/desktop/src-tauri/src/main.rs + new auth module
-│ - PKCE generation    │
-│ - opener plugin      │
-│ - localhost callback │
-│ - keyring storage    │
-└─────┬────────────────┘
-      │ browser redirect / device code fallback
-      v
-┌──────────────────────────────┐
-│ Entra ID / Microsoft Entra   │
-└──────────────────────────────┘
-      │ validated tokens / identity
-      v
-┌──────────────────────────────┐
-│ Desktop auth state           │
-│ - Entra identity             │
-│ - expiry countdown           │
-│ - ARM-capable token cache    │
-└─────┬────────────────────────┘
-      │
-      ├─► Telescope UI status + re-auth
-      └─► engine/kube path (preserve kubelogin fallback initially)
-```
+- proactive refresh before expiry,
+- `entra_refresh`,
+- startup restoration from the OS keyring,
+- expiry countdown and re-auth prompts,
+- better handling for revoked refresh tokens or policy-driven reauthentication.
 
-### 5.3 ARM vs Kubernetes token boundary
+Exit criteria:
 
-```text
-Entra interactive login
-        │
-        ├─► Kubernetes token path (today: kubeconfig exec/kubelogin)
-        │
-        └─► ARM/Graph token path (future Telescope-managed tokens)
-```
-
-This separation is important. A successful Entra login for ARM operations does **not** automatically mean Telescope should replace the existing Kubernetes exec-plugin path on day one.
-
----
-
-## 6. Scope and Complexity Assessment
-
-### 6.1 Option sizing
-
-| Scope | Main work | Estimated scope | Complexity |
-|---|---|---:|---|
-| **Device code only** | Hub/device code endpoints, desktop polling UI, keyring/session work | ~1–2 sprints | Lowest |
-| **Interactive browser only** | Hub OIDC redirect, callback handling, cookies, desktop loopback + opener, keyring, UI state | ~2–3 sprints | Medium |
-| **Full hybrid** | Everything above plus device-code fallback and more test coverage | ~3–4 sprints | Highest |
-
-### 6.2 Recommended phased approach
-
-#### Phase 0 — shared auth foundation
-
-- Normalize claim mapping (`preferred_username`, `name`, `groups`, `oid`, `tid`).
-- Define a shared auth status shape for UI and Rust.
-- Decide app registration split and redirect URIs.
-
-#### Phase 1 — desktop interactive auth (recommended first if prioritizing current users)
-
-- Add `tauri-plugin-opener` and localhost callback handling.
-- Add `keyring`-backed desktop token storage.
-- Add auth status UI and expiry messaging.
-- Preserve kubelogin as fallback.
-
-#### Phase 2 — hub/web interactive auth
-
-- Implement `/auth/login`, `/auth/callback`, `/auth/refresh`.
-- Add JWKS validation, secure cookie/session handling, WebSocket auth, and tightened CORS.
-- Update `api.ts` to use auth-aware fetch and cookie/session mode.
-
-#### Phase 3 — device code fallback and hardening
-
-- Add `/auth/device-code` and desktop fallback command.
-- Handle group overage and Graph/app-role strategy.
-- Add richer error handling, tracing, and retry/backoff.
-
-#### Phase 4 — ARM integration and convergence
-
-- Add the ARM-specific scope and refresh behavior required by AKS management features.
-- Decide whether to keep Kubernetes auth delegated to kubeconfig or move more AKS token handling into Telescope.
-
-> If multi-user hub mode becomes the immediate priority, phases 1 and 2 can be swapped. The recommended flow design still stands either way.
-
----
+- users do not need to sign in on every app restart,
+- desktop auth state survives normal restarts,
+- expired or revoked sessions degrade gracefully.
 
 ## 7. Risks and Open Questions
 
-| Topic | Why it matters | Recommendation / open question |
+| Topic | Why it matters | Notes |
 |---|---|---|
-| **Tenant model** | Affects issuer validation, support burden, and OSS onboarding | Decide whether v1 is single-tenant or multi-tenant (`organizations`) |
-| **Separate app registrations** | Hub and desktop have different trust boundaries | Recommended: yes |
-| **Group overage** | Large Entra tenants may not emit full `groups` in tokens | Decide between Graph lookup, app roles, or documented limitation |
-| **Kubernetes vs ARM token scope** | Replacing kubelogin is not the same as acquiring ARM tokens | Keep kubelogin initially; treat ARM auth as a parallel concern |
-| **Cookie origin policy** | Same-origin vs split-origin affects `SameSite` and CORS | Prefer same-origin deployment for v1; otherwise require `SameSite=None; Secure` |
-| **Hub session durability** | Restart-safe auth bootstrap and cookie/session choices matter operationally | Do not depend on volatile-only state for callback correlation |
-| **Linux keyring availability** | Some Linux environments do not provide Secret Service | Decide whether to require a keyring or implement an encrypted fallback store |
-| **WebSocket auth** | `/ws` is currently anonymous | Add authenticated upgrade, idle/session expiry handling, and quota limits |
-| **Impersonation RBAC** | Verified user identity is not enough if the hub cannot impersonate | Add explicit startup/runtime validation and clear operator guidance |
-| **Conditional Access / MFA** | Entra policy may require browser UX, claims challenge handling, or re-auth | Include CA/MFA-specific error surfaces in the UX and troubleshooting docs |
+| Loopback callback ports | Interactive login depends on a localhost callback that must be permitted and registered | Decide whether to use one fixed port or a small approved range |
+| Linux keyring availability | Some desktop environments do not expose a working credential store by default | Decide whether lack of keyring support is blocking or needs an encrypted fallback |
+| Tenant model | Affects issuer validation, support scope, and app registration defaults | Decide whether the first release is single-tenant or multi-tenant |
+| Scope selection | Azure management features may need more than baseline OpenID scopes | Keep first release narrow and add scopes only when a desktop feature requires them |
+| Kubeconfig integration depth | Native Entra auth and kubeconfig auth are related but not identical | Decide later whether native auth should stay advisory or participate in credential renewal |
+| Refresh token revocation | Users may hit tenant policies, MFA step-up, or revoked grants | The UI needs clear re-auth messaging and safe logout behavior |
+| Deep-link support | Loopback is a good default, but app links may become attractive later | Keep `tauri-plugin-deep-link` optional until loopback is proven insufficient |
 
----
+## 8. Recommendation
 
-## Closing Recommendation
+Proceed with **Option C: Hybrid**.
 
-Telescope should implement Entra ID auth as a **hybrid model** built around **Authorization Code + PKCE**, with **Device Code** as fallback.
+- Build the desktop auth module in Rust.
+- Store secrets in the OS keyring.
+- Ship device code first if the team wants the fastest path to a complete flow.
+- Make PKCE the default interactive experience once loopback callback handling is ready.
+- Keep the current kubeconfig + `kubelogin` path in place until the desktop auth subsystem is proven and the Kubernetes credential handoff story is explicitly designed.
 
-The most important architecture decisions are:
+This plan is fully compatible with the current desktop-only repo shape and with the code that exists today in:
 
-1. **Hub/web stays hub-mediated** with server-owned sessions.
-2. **Desktop uses native Rust auth commands** with browser launch and keyring storage.
-3. **Hub and desktop use separate Entra app registrations.**
-4. **Kubelogin remains supported** while native Entra auth is introduced.
-5. **ARM token management is a first-class design concern**, because the current kubeconfig exec path does not solve future ARM-backed features.
-
-That approach is technically feasible with the current repo shape and aligns with the code already present in:
-
-- `apps/hub/src/auth.rs`
-- `apps/hub/src/main.rs`
-- `apps/hub/src/routes.rs`
-- `crates/engine/src/client.rs`
-- `crates/engine/src/kubeconfig.rs`
 - `apps/web/src/lib/api.ts`
-- `apps/web/src/lib/error-suggestions.ts`
-- `apps/web/src/lib/azure-utils.ts`
 - `apps/desktop/src-tauri/src/main.rs`
+- `apps/desktop/src-tauri/Cargo.toml`
 - `apps/desktop/src-tauri/capabilities/default.json`
+- `crates/engine/src/client.rs`
 
-It is a substantial cross-runtime authentication project, but it is a practical one.
