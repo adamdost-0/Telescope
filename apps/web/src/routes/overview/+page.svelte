@@ -849,6 +849,11 @@
       </div>
     {/if}
 
+    <!-- AKS Add-ons -->
+    {#if clusterInfo?.is_aks || $isAks}
+      <AksAddons armAddonProfiles={aksDetail?.addonProfiles ?? null} />
+    {/if}
+
     <!-- Resource counts grid -->
     <section aria-label="Resource counts">
       <h2>Resources</h2>
@@ -884,11 +889,6 @@
         </div>
       {/if}
     </section>
-
-    <!-- AKS Add-ons -->
-    {#if clusterInfo?.is_aks || $isAks}
-      <AksAddons armAddonProfiles={aksDetail?.addonProfiles ?? null} />
-    {/if}
 
     <!-- Pod phase breakdown -->
     {#if totalPods > 0}

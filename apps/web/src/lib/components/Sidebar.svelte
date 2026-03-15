@@ -1,13 +1,15 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { isConnected } from '$lib/stores';
+  import { getAzurePortalUrl, parseAksUrl } from '$lib/azure-utils';
+  import { clusterServerUrl, isAks, isConnected } from '$lib/stores';
 
   let collapsed = $state(false);
 
   interface NavItem {
     label: string;
-    href: string;
+    href: string | null;
     icon: string;
+    external?: boolean;
   }
 
   interface NavSection {
@@ -15,7 +17,7 @@
     items: NavItem[];
   }
 
-  const sections: NavSection[] = [
+  const baseSections: NavSection[] = [
     {
       title: 'Cluster',
       items: [
@@ -101,13 +103,52 @@
     },
   ];
 
-  function isActive(href: string): boolean {
-    if (href === '/overview') return page.url.pathname === '/overview';
-    return page.url.pathname.startsWith(href);
+  const portalUrl = $derived.by(() => {
+    const serverUrl = $clusterServerUrl;
+    if (!serverUrl) return null;
+
+    const aksInfo = parseAksUrl(serverUrl);
+    return aksInfo ? getAzurePortalUrl(aksInfo) : null;
+  });
+
+  const sections = $derived.by((): NavSection[] => {
+    if (!$isAks || !$isConnected) {
+      return baseSections;
+    }
+
+    const azureSection: NavSection = {
+      title: 'Azure',
+      items: [
+        { label: 'Node Pools', href: '/nodes', icon: '☁️' },
+        { label: 'AKS Add-ons', href: '/overview', icon: '🔌' },
+        { label: 'Portal', href: portalUrl, icon: '🌐', external: true },
+      ]
+    };
+
+    return [baseSections[0], azureSection, ...baseSections.slice(1)];
+  });
+
+  function isActive(item: NavItem): boolean {
+    if (item.external || !item.href) return false;
+    if (item.href === '/overview') return page.url.pathname === '/overview';
+    return page.url.pathname.startsWith(item.href);
   }
 
-  function isDisabled(href: string): boolean {
-    return !$isConnected && href !== '/' && href !== '/overview' && href !== '/settings';
+  function isDisabled(item: NavItem): boolean {
+    if (item.external) return !$isConnected || !item.href;
+    if (!item.href) return true;
+    return !$isConnected && item.href !== '/' && item.href !== '/overview' && item.href !== '/settings';
+  }
+
+  function getItemTitle(item: NavItem, iconOnly = false): string | undefined {
+    if (isDisabled(item)) {
+      if (item.external && !item.href) {
+        return iconOnly ? `${item.label} — Azure Portal link unavailable` : 'Azure Portal link unavailable';
+      }
+      return iconOnly ? `${item.label} — connect to a cluster first` : 'Connect to a cluster first';
+    }
+
+    return iconOnly ? item.label : undefined;
   }
 </script>
 
@@ -123,8 +164,18 @@
           <h3 class="section-title">{section.title}</h3>
           <ul>
             {#each section.items as item}
+              {@const disabled = isDisabled(item)}
               <li>
-                <a href={item.href} class:active={isActive(item.href)} class:disabled={isDisabled(item.href)} title={isDisabled(item.href) ? 'Connect to a cluster first' : undefined} aria-disabled={isDisabled(item.href)} tabindex={isDisabled(item.href) ? -1 : undefined}>
+                <a
+                  href={item.href ?? undefined}
+                  target={item.external ? '_blank' : undefined}
+                  rel={item.external ? 'noopener noreferrer' : undefined}
+                  class:active={isActive(item)}
+                  class:disabled={disabled}
+                  title={getItemTitle(item)}
+                  aria-disabled={disabled}
+                  tabindex={disabled ? -1 : undefined}
+                >
                   <span class="icon">{item.icon}</span>
                   <span class="label">{item.label}</span>
                 </a>
@@ -138,7 +189,18 @@
     <nav aria-label="Resource navigation (collapsed)">
       {#each sections as section}
         {#each section.items as item}
-          <a href={item.href} class="icon-only" class:active={isActive(item.href)} class:disabled={isDisabled(item.href)} title={isDisabled(item.href) ? `${item.label} — connect to a cluster first` : item.label} aria-disabled={isDisabled(item.href)} tabindex={isDisabled(item.href) ? -1 : undefined}>
+          {@const disabled = isDisabled(item)}
+          <a
+            href={item.href ?? undefined}
+            class="icon-only"
+            target={item.external ? '_blank' : undefined}
+            rel={item.external ? 'noopener noreferrer' : undefined}
+            class:active={isActive(item)}
+            class:disabled={disabled}
+            title={getItemTitle(item, true)}
+            aria-disabled={disabled}
+            tabindex={disabled ? -1 : undefined}
+          >
             {item.icon}
           </a>
         {/each}
