@@ -147,7 +147,6 @@ pub struct AksClusterDetail {
     pub network_profile: Option<AksNetworkProfile>,
     pub api_server_access_profile: Option<AksApiServerAccessProfile>,
     pub identity: Option<AksIdentityProfile>,
-    pub addon_profiles: Option<serde_json::Map<String, serde_json::Value>>,
     pub identity_profile: Option<AksIdentityProfileMap>,
     pub auto_upgrade_profile: Option<AksAutoUpgradeProfile>,
     pub oidc_issuer_profile: Option<AksOidcIssuerProfile>,

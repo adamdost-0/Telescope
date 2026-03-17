@@ -5,7 +5,6 @@
     disconnect,
     getAksClusterDetail,
     getAksUpgradeProfile,
-    getAzureCloud,
     getClusterInfo,
     getEvents,
     getPodMetrics,
@@ -19,8 +18,6 @@
   } from '$lib/api';
   import { getAutoRefreshIntervalMs } from '$lib/preferences';
   import { selectedContext, selectedNamespace, isConnected, isAks } from '$lib/stores';
-  import { PORTAL_BLADES, getAzurePortalUrl } from '$lib/azure-utils';
-  import AksAddons from '$lib/components/AksAddons.svelte';
   import ErrorMessage from '$lib/components/ErrorMessage.svelte';
   import type {
     AksClusterDetail,
@@ -57,7 +54,6 @@
   let aksDetail: AksClusterDetail | null = $state(null);
   let aksUpgradeProfile: AksUpgradeProfile | null = $state(null);
   let aksMaintenanceConfigs: AksMaintenanceConfig[] = $state([]);
-  let azureCloud = $state('Commercial');
 
   // Diagnostics derived state (#139)
   let diagNoNetworkPolicy = $derived(
@@ -85,12 +81,6 @@
 
   let staleData = $derived(
     lastSuccessfulRefresh !== null && Date.now() - lastSuccessfulRefresh > 30_000
-  );
-  let hasAksPortalIdentity = $derived(
-    (clusterInfo?.is_aks || $isAks) &&
-      !!aksIdentity?.subscription_id &&
-      !!aksIdentity?.resource_group &&
-      !!aksIdentity?.cluster_name
   );
 
   interface PodPhase {
@@ -305,11 +295,10 @@
   onMount(() => {
     refresh();
     // Fetch cluster info once (not on every poll cycle).
-    void Promise.all([getClusterInfo(), resolveAksIdentity(), getAzureCloud()]).then(
-      ([info, identity, cloud]) => {
+    void Promise.all([getClusterInfo(), resolveAksIdentity()]).then(
+      ([info, identity]) => {
         clusterInfo = info;
         aksIdentity = identity;
-        azureCloud = cloud;
         if (identity && info?.is_aks) {
           void refreshAksManagementData();
         }
@@ -385,26 +374,6 @@
     Succeeded: '#42a5f5',
     Unknown: '#757575',
   };
-
-  function getPortalUrl(blade?: string): string | null {
-    return aksIdentity ? getAzurePortalUrl(aksIdentity, azureCloud, blade) : null;
-  }
-
-  const azurePortalSections = [
-    { label: 'Overview', description: 'Cluster summary and health', blade: PORTAL_BLADES.overview },
-    { label: 'Node Pools', description: 'Scaling and pool configuration', blade: PORTAL_BLADES.nodePools },
-    { label: 'Upgrades', description: 'Available Kubernetes version upgrades', blade: PORTAL_BLADES.upgrade },
-    { label: 'Networking', description: 'Load balancers, IPs, and CNI settings', blade: PORTAL_BLADES.networking },
-    { label: 'Monitoring', description: 'Container insights and observability', blade: PORTAL_BLADES.monitoring },
-    { label: 'Activity Log', description: 'Recent Azure management operations', blade: PORTAL_BLADES.activityLog },
-  ] as const;
-
-  function openInPortal(blade = PORTAL_BLADES.overview) {
-    const portalUrl = getPortalUrl(blade);
-    if (portalUrl) {
-      window.open(portalUrl, '_blank', 'noopener');
-    }
-  }
 </script>
 
 <div class="overview">
@@ -461,37 +430,7 @@
           </span>
         </div>
       {/if}
-      {#if hasAksPortalIdentity}
-        <div class="info-item portal-link">
-          <button class="portal-btn" onclick={() => openInPortal()} title="Open cluster in Azure Portal">
-            🌐 Open in Azure Portal
-          </button>
-        </div>
-      {/if}
     </section>
-
-    {#if hasAksPortalIdentity}
-      <section aria-label="Azure management">
-        <div class="section-heading">
-          <h2>Azure</h2>
-          <span class="section-subtitle">Portal deep links for this AKS cluster</span>
-        </div>
-        <div class="azure-grid">
-          {#each azurePortalSections as section}
-            {@const href = getPortalUrl(section.blade)}
-            {#if href}
-              <a class="azure-card" href={href} target="_blank" rel="noopener">
-                <div class="azure-card-header">
-                  <span>{section.label}</span>
-                  <span class="azure-card-action">View in Portal ↗</span>
-                </div>
-                <p>{section.description}</p>
-              </a>
-            {/if}
-          {/each}
-        </div>
-      </section>
-    {/if}
 
     {#if aksActionMessage}
       <div class="action-banner success" role="status">{aksActionMessage}</div>
@@ -849,11 +788,6 @@
       </div>
     {/if}
 
-    <!-- AKS Add-ons -->
-    {#if clusterInfo?.is_aks || $isAks}
-      <AksAddons armAddonProfiles={aksDetail?.addonProfiles ?? null} />
-    {/if}
-
     <!-- Resource counts grid -->
     <section aria-label="Resource counts">
       <h2>Resources</h2>
@@ -1045,31 +979,12 @@
     letter-spacing: 0.04em;
     white-space: nowrap;
   }
-  .portal-link {
-    margin-left: auto;
-    justify-content: center;
-  }
   .auth-hint {
     font-size: 0.8rem;
     color: #8b949e;
   }
   .entra-icon {
     margin-right: 0.15rem;
-  }
-  .portal-btn {
-    background: rgba(0, 120, 212, 0.15);
-    color: #58a6ff;
-    border: 1px solid rgba(0, 120, 212, 0.3);
-    padding: 0.35rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.15s, border-color 0.15s;
-  }
-  .portal-btn:hover {
-    background: rgba(0, 120, 212, 0.3);
-    border-color: #0078d4;
   }
   .section-heading {
     display: flex;
@@ -1080,44 +995,6 @@
   .section-subtitle {
     color: #8b949e;
     font-size: 0.8rem;
-  }
-  .azure-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 0.75rem;
-  }
-  .azure-card {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.9rem 1rem;
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    text-decoration: none;
-    color: #e0e0e0;
-    transition: border-color 0.15s, background 0.15s;
-  }
-  .azure-card:hover {
-    border-color: #58a6ff;
-    background: #1a2332;
-  }
-  .azure-card-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.75rem;
-    font-weight: 600;
-  }
-  .azure-card-action {
-    color: #58a6ff;
-    font-size: 0.75rem;
-    white-space: nowrap;
-  }
-  .azure-card p {
-    margin: 0;
-    color: #8b949e;
-    font-size: 0.8rem;
-    line-height: 1.4;
   }
   .action-banner {
     padding: 0.85rem 1rem;

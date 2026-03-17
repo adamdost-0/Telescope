@@ -53,7 +53,7 @@
 
 ## Components (25)
 
-`AksAddons` · `AppHeader` · `AzureIdentitySection` · `Breadcrumbs` · `ConfirmDialog` · `ConnectionStatus` · `ContextSwitcher` · `ErrorMessage` · `EventsTable` · `ExecTerminal` · `FilterBar` · `LoadingSkeleton` · `LogViewer` · `NodePoolHeader` · `PodTable` · `PortForwardDialog` · `ResourceTable` · `ScaleDialog` · `SearchPalette` · `ShortcutHelp` · `Sidebar` · `Sparkline` · `Tabs` · `ThemeToggle` · `YamlEditor`
+`AppHeader` · `AzureIdentitySection` · `Breadcrumbs` · `ClusterVitals` · `ConfirmDialog` · `ConnectionStatus` · `ContextSwitcher` · `ErrorMessage` · `EventsTable` · `ExecTerminal` · `FilterBar` · `LoadingSkeleton` · `LogViewer` · `NodePoolHeader` · `PodTable` · `PortForwardDialog` · `ResourceTable` · `ScaleDialog` · `SearchPalette` · `ShortcutHelp` · `Sidebar` · `Sparkline` · `Tabs` · `ThemeToggle` · `YamlEditor`
 
 ## Must-have screens
 - **Cluster list + quick health:** Implemented via `/` with `/overview` as the connected landing dashboard.

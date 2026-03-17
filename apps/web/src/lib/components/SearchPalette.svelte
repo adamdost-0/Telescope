@@ -12,6 +12,56 @@
   let inputEl: HTMLInputElement | undefined = $state();
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // Scope mode: 'all', 'commands', 'resources', or 'navigation'
+  type ScopeMode = 'all' | 'commands' | 'resources' | 'navigation';
+  let scopeMode = $state<ScopeMode>('all');
+
+  // Command actions available globally
+  const COMMANDS: Record<string, { icon: string; label: string; action: () => void }> = {
+    reload: {
+      icon: '🔄',
+      label: 'Reload Resources',
+      action: () => {
+        // Placeholder: would trigger a refresh from backend
+        selectCommand('reload');
+      },
+    },
+    theme: {
+      icon: '🎨',
+      label: 'Toggle Theme',
+      action: () => {
+        selectCommand('theme');
+      },
+    },
+    settings: {
+      icon: '⚙️',
+      label: 'Settings',
+      action: () => {
+        selectCommand('settings');
+      },
+    },
+  };
+
+  // Navigation pages available
+  const PAGES: Record<
+    string,
+    { icon: string; label: string; route: string; description?: string }
+  > = {
+    overview: { icon: '📊', label: 'Overview', route: '/overview' },
+    pods: { icon: '📦', label: 'Pods', route: '/pods' },
+    nodes: { icon: '🖥️', label: 'Nodes', route: '/nodes' },
+    nodepools: { icon: '☁️', label: 'Node Pools', route: '/azure/node-pools' },
+    deployments: { icon: '🚀', label: 'Deployments', route: '/resources/deployments' },
+    services: { icon: '🌐', label: 'Services', route: '/resources/services' },
+    configmaps: { icon: '📋', label: 'ConfigMaps', route: '/resources/configmaps' },
+    helm: { icon: '⛵', label: 'Helm Releases', route: '/helm' },
+    events: { icon: '⚡', label: 'Events', route: '/events' },
+    namespaces: { icon: '📁', label: 'Namespaces', route: '/namespaces' },
+    crds: { icon: '🔷', label: 'CRDs', route: '/crds' },
+    create: { icon: '✨', label: 'Create Resource', route: '/create' },
+    settings: { icon: '⚙️', label: 'Settings', route: '/settings' },
+  };
+
   const KIND_ICONS: Record<string, string> = {
     Pod: '📦',
     Deployment: '🚀',
@@ -29,6 +79,64 @@
 
   function iconForGvk(gvk: string): string {
     return KIND_ICONS[kindFromGvk(gvk)] ?? '📄';
+  }
+
+  /** Extract scope prefix from query (>, @, /) and return [mode, cleanQuery]. */
+  function detectScope(q: string): [ScopeMode, string] {
+    if (q.startsWith('> ')) {
+      return ['commands', q.slice(2).trim()];
+    } else if (q.startsWith('@ ')) {
+      return ['resources', q.slice(2).trim()];
+    } else if (q.startsWith('/ ')) {
+      return ['navigation', q.slice(2).trim()];
+    }
+    return ['all', q.trim()];
+  }
+
+  /** Filter K8s resources by kind (for @ scope). */
+  function isResourceType(entry: ResourceEntry, filterText?: string): boolean {
+    // Common K8s resource kinds
+    const resourceKinds = new Set([
+      'Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet',
+      'Service', 'Ingress', 'NetworkPolicy', 'EndpointSlice',
+      'ConfigMap', 'Secret', 'ResourceQuota', 'LimitRange',
+      'PersistentVolume', 'PersistentVolumeClaim', 'StorageClass',
+      'Job', 'CronJob',
+      'Role', 'ClusterRole', 'RoleBinding', 'ClusterRoleBinding', 'ServiceAccount',
+      'HorizontalPodAutoscaler', 'PriorityClass', 'PodDisruptionBudget',
+      'ValidatingWebhookConfiguration', 'MutatingWebhookConfiguration',
+      'Node', 'Event', 'Namespace',
+    ]);
+    const kind = kindFromGvk(entry.gvk);
+    if (!resourceKinds.has(kind)) return false;
+    if (!filterText || filterText.length === 0) return true;
+    return (
+      entry.name.toLowerCase().includes(filterText.toLowerCase()) ||
+      kind.toLowerCase().includes(filterText.toLowerCase())
+    );
+  }
+
+  /** Filter command results. */
+  function filterCommands(filterText?: string): Array<[string, typeof COMMANDS[string]]> {
+    const entries = Object.entries(COMMANDS);
+    if (!filterText || filterText.length === 0) return entries;
+    const lower = filterText.toLowerCase();
+    return entries.filter(
+      ([_, cmd]) =>
+        cmd.label.toLowerCase().includes(lower) || cmd.action.toString().includes(lower)
+    );
+  }
+
+  /** Filter page results. */
+  function filterPages(filterText?: string): Array<[string, typeof PAGES[string]]> {
+    const entries = Object.entries(PAGES);
+    if (!filterText || filterText.length === 0) return entries;
+    const lower = filterText.toLowerCase();
+    return entries.filter(
+      ([_, page]) =>
+        page.label.toLowerCase().includes(lower) ||
+        page.route.toLowerCase().includes(lower)
+    );
   }
 
   /** Navigate to the appropriate detail page for a resource entry. */
@@ -56,11 +164,99 @@
     return flat;
   });
 
+  /** Flat list for command results. */
+  let flatCommandResults = $derived.by(() => {
+    const [, filterText] = detectScope(query);
+    return filterCommands(filterText);
+  });
+
+  /** Flat list for page results. */
+  let flatPageResults = $derived.by(() => {
+    const [, filterText] = detectScope(query);
+    return filterPages(filterText);
+  });
+
+  /** All results in flat form (depends on scope). */
+  let allFlatResults = $derived.by(() => {
+    if (scopeMode === 'commands') {
+      return flatCommandResults.map(([_, cmd]) => ({
+        type: 'command' as const,
+        id: cmd.label,
+        icon: cmd.icon,
+        label: cmd.label,
+        data: cmd,
+      }));
+    } else if (scopeMode === 'navigation') {
+      return flatPageResults.map(([key, page]) => ({
+        type: 'page' as const,
+        id: page.route,
+        icon: page.icon,
+        label: page.label,
+        description: page.description,
+        data: page,
+      }));
+    } else if (scopeMode === 'resources') {
+      const [, filterText] = detectScope(query);
+      return results
+        .filter((entry) => isResourceType(entry, filterText))
+        .map((entry, idx) => ({
+          type: 'resource' as const,
+          id: `${entry.gvk}/${entry.namespace}/${entry.name}`,
+          icon: iconForGvk(entry.gvk),
+          label: entry.name,
+          namespace: entry.namespace,
+          entry,
+          idx,
+        }));
+    } else {
+      // 'all' mode: show a mix
+      const [, filterText] = detectScope(query);
+      const resourceResults = results
+        .filter((entry) => isResourceType(entry, filterText))
+        .map((entry, idx) => ({
+          type: 'resource' as const,
+          id: `${entry.gvk}/${entry.namespace}/${entry.name}`,
+          icon: iconForGvk(entry.gvk),
+          label: entry.name,
+          namespace: entry.namespace,
+          entry,
+          idx,
+        }));
+      // Add top commands and pages if no filter text
+      const commandResults =
+        !filterText || filterText.length === 0
+          ? filterCommands(filterText)
+              .slice(0, 2)
+              .map(([_, cmd]) => ({
+                type: 'command' as const,
+                id: cmd.label,
+                icon: cmd.icon,
+                label: cmd.label,
+                data: cmd,
+              }))
+          : [];
+      const pageResults =
+        !filterText || filterText.length === 0
+          ? filterPages(filterText)
+              .slice(0, 2)
+              .map(([_, page]) => ({
+                type: 'page' as const,
+                id: page.route,
+                icon: page.icon,
+                label: page.label,
+                data: page,
+              }))
+          : [];
+      return [...commandResults, ...pageResults, ...resourceResults];
+    }
+  });
+
   function close() {
     open = false;
     query = '';
     results = [];
     selectedIndex = 0;
+    scopeMode = 'all';
   }
 
   function handleOverlayClick(event: MouseEvent) {
@@ -69,20 +265,56 @@
     }
   }
 
+  function selectCommand(commandId: string) {
+    const cmd = COMMANDS[commandId];
+    if (cmd) {
+      cmd.action();
+    }
+    close();
+  }
+
+  function selectPage(pageRoute: string) {
+    close();
+    goto(pageRoute);
+  }
+
   function selectEntry(entry: ResourceEntry) {
     close();
     goto(routeForEntry(entry));
   }
 
+  function handleSelectedItem() {
+    if (allFlatResults.length > 0 && selectedIndex < allFlatResults.length) {
+      const item = allFlatResults[selectedIndex];
+      if (item.type === 'command') {
+        selectCommand(item.id);
+      } else if (item.type === 'page') {
+        selectPage(item.id);
+      } else if (item.type === 'resource' && item.entry) {
+        selectEntry(item.entry);
+      }
+    }
+  }
+
   function handleInput() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
-      if (query.trim().length === 0) {
+      const [mode, cleanQuery] = detectScope(query);
+      scopeMode = mode;
+
+      if (cleanQuery.length === 0 && mode !== 'commands' && mode !== 'navigation') {
         results = [];
         selectedIndex = 0;
         return;
       }
-      results = await searchResources(query.trim());
+
+      // Fetch K8s resources if not purely command/navigation scope
+      if (mode === 'resources' || mode === 'all') {
+        results = await searchResources(cleanQuery);
+      } else {
+        results = [];
+      }
+
       selectedIndex = 0;
     }, 200);
   }
@@ -93,19 +325,17 @@
       close();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (flatResults.length > 0) {
-        selectedIndex = (selectedIndex + 1) % flatResults.length;
+      if (allFlatResults.length > 0) {
+        selectedIndex = (selectedIndex + 1) % allFlatResults.length;
       }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (flatResults.length > 0) {
-        selectedIndex = (selectedIndex - 1 + flatResults.length) % flatResults.length;
+      if (allFlatResults.length > 0) {
+        selectedIndex = (selectedIndex - 1 + allFlatResults.length) % allFlatResults.length;
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (flatResults.length > 0 && flatResults[selectedIndex]) {
-        selectEntry(flatResults[selectedIndex]);
-      }
+      handleSelectedItem();
     }
   }
 
@@ -126,41 +356,92 @@
           bind:this={inputEl}
           bind:value={query}
           oninput={handleInput}
-          placeholder="Search resources… (name or kind)"
+          placeholder="Search… (> commands, @ resources, / pages)"
           type="text"
           spellcheck="false"
           autocomplete="off"
-          aria-label="Search resources"
+          aria-label="Search resources, commands, and pages"
         />
+        {#if scopeMode !== 'all'}
+          <span class="scope-badge">
+            {#if scopeMode === 'commands'}
+              > Commands
+            {:else if scopeMode === 'resources'}
+              @ Resources
+            {:else if scopeMode === 'navigation'}
+              / Pages
+            {/if}
+          </span>
+        {/if}
         <kbd class="hint">ESC</kbd>
       </div>
 
-      {#if flatResults.length > 0}
+      {#if allFlatResults.length > 0}
         <div class="results" role="listbox">
-          {#each grouped as [kind, entries]}
-            <div class="group-header">{iconForGvk(entries[0].gvk)} {kind}</div>
-            {#each entries as entry}
-              {@const idx = flatResults.indexOf(entry)}
+          {#each allFlatResults as item, idx}
+            {#if item.type === 'command'}
               <button
                 class="result-item"
                 class:selected={idx === selectedIndex}
                 role="option"
                 aria-selected={idx === selectedIndex}
-                onclick={() => selectEntry(entry)}
+                onclick={() => selectCommand(item.id)}
                 onmouseenter={() => (selectedIndex = idx)}
               >
-                <span class="entry-name">{entry.name}</span>
-                {#if entry.namespace}
-                  <span class="entry-ns">{entry.namespace}</span>
+                <span class="item-icon">{item.icon}</span>
+                <span class="item-name">{item.label}</span>
+              </button>
+            {:else if item.type === 'page'}
+              <button
+                class="result-item"
+                class:selected={idx === selectedIndex}
+                role="option"
+                aria-selected={idx === selectedIndex}
+                onclick={() => selectPage(item.id)}
+                onmouseenter={() => (selectedIndex = idx)}
+              >
+                <span class="item-icon">{item.icon}</span>
+                <span class="item-name">{item.label}</span>
+              </button>
+            {:else if item.type === 'resource'}
+              <button
+                class="result-item"
+                class:selected={idx === selectedIndex}
+                role="option"
+                aria-selected={idx === selectedIndex}
+                onclick={() => selectEntry(item.entry)}
+                onmouseenter={() => (selectedIndex = idx)}
+              >
+                <span class="item-icon">{item.icon}</span>
+                <span class="entry-name">{item.label}</span>
+                {#if item.namespace}
+                  <span class="entry-ns">{item.namespace}</span>
                 {/if}
               </button>
-            {/each}
+            {/if}
           {/each}
         </div>
       {:else if query.trim().length > 0}
-        <div class="empty">No results for "{query}"</div>
+        <div class="empty">
+          {#if scopeMode === 'commands'}
+            No commands match "{query.slice(2).trim()}"
+          {:else if scopeMode === 'resources'}
+            No resources match "{query.slice(2).trim()}"
+          {:else if scopeMode === 'navigation'}
+            No pages match "{query.slice(2).trim()}"
+          {:else}
+            No results for "{query}"
+          {/if}
+        </div>
       {:else}
-        <div class="empty">Type to search pods, deployments, services…</div>
+        <div class="empty">
+          <div class="help-text">Type to search:</div>
+          <div class="help-examples">
+            <div class="help-item"><kbd>></kbd> Commands (reload, theme, settings)</div>
+            <div class="help-item"><kbd>@</kbd> Resources (pods, deployments, services…)</div>
+            <div class="help-item"><kbd>/</kbd> Pages (overview, nodes, helm…)</div>
+          </div>
+        </div>
       {/if}
     </div>
   </div>
@@ -210,6 +491,20 @@
   input::placeholder {
     color: #484f58;
   }
+  .scope-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: rgba(88, 166, 255, 0.15);
+    color: #58a6ff;
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    border: 1px solid rgba(88, 166, 255, 0.25);
+  }
   .hint {
     background: #21262d;
     color: #8b949e;
@@ -223,19 +518,12 @@
     overflow-y: auto;
     padding: 0.25rem 0;
   }
-  .group-header {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #484f58;
-    padding: 0.5rem 1rem 0.25rem;
-  }
   .result-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
     width: 100%;
-    padding: 0.5rem 1rem;
+    padding: 0.65rem 1rem;
     background: none;
     border: none;
     color: #c9d1d9;
@@ -243,10 +531,25 @@
     cursor: pointer;
     text-align: left;
     font-family: inherit;
+    transition: background-color 0.15s ease;
   }
   .result-item:hover,
   .result-item.selected {
     background: #1f2937;
+  }
+  .item-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+  }
+  .item-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .entry-name {
     flex: 1;
@@ -267,5 +570,36 @@
     text-align: center;
     color: #484f58;
     font-size: 0.875rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .help-text {
+    color: #8b949e;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+  .help-examples {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .help-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: #6e7681;
+  }
+  .help-item kbd {
+    background: #21262d;
+    color: #79c0ff;
+    padding: 0.2rem 0.35rem;
+    border-radius: 3px;
+    border: 1px solid #30363d;
+    font-family: monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
   }
 </style>

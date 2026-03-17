@@ -91,7 +91,12 @@ pnpm -C apps/desktop bundle  # Release build
 - Rust (stable)
 - Node.js 22+
 - pnpm 9.15+
-- Platform SDK (WebView2 on Windows, WebKitGTK on Linux)
+- Platform SDK:
+  - **Windows:** Microsoft Edge WebView2
+  - **macOS:** Xcode Command Line Tools
+  - **Linux:** WebKitGTK 4.1, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`
+
+Linux builds do not require system OpenSSL development packages for the Azure path; the remaining OpenSSL dependency is vendored during the build.
 
 ### Commands
 ```bash

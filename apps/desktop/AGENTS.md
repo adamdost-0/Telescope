@@ -48,8 +48,10 @@ pnpm -C apps/desktop tauri dev
 - Rust toolchain (stable)
 - Platform-specific dependencies:
   - **macOS:** Xcode command-line tools
-  - **Linux:** GTK 3, WebKit2GTK, libssl-dev, etc.
+  - **Linux:** WebKitGTK 4.1, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`
   - **Windows:** Windows SDK
+
+**Linux note:** System OpenSSL development packages are not required for the Azure dependency path; the remaining OpenSSL dependency is vendored during the build.
 
 ## CI Integration
 
@@ -141,7 +143,7 @@ Currently, the desktop app has **no dedicated tests**:
 
 ### Linux
 - AppImage, .deb, or .rpm packaging
-- Requires GTK 3, WebKit2GTK, and other system libs
+- Requires WebKitGTK 4.1, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`
 - Not currently built in CI (manual/Docker builds only)
 
 ## Code Conventions

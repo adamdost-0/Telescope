@@ -84,6 +84,7 @@ configmaps, cronjobs, daemonsets, deployments, endpointslices, hpas, ingresses, 
 | `AppHeader.svelte` | Top navigation bar |
 | `Sidebar.svelte` | Navigation sidebar |
 | `Breadcrumbs.svelte` | Breadcrumb navigation |
+| `ClusterVitals.svelte` | Cluster health metrics header |
 | `ConnectionStatus.svelte` | Cluster connection indicator |
 | `ContextSwitcher.svelte` | Kubeconfig context switcher |
 | `SearchPalette.svelte` | Global search (⌘K) |
@@ -104,7 +105,6 @@ configmaps, cronjobs, daemonsets, deployments, endpointslices, hpas, ingresses, 
 | `Sparkline.svelte` | Inline metric sparklines |
 | `Tabs.svelte` | Tab navigation |
 | `NodePoolHeader.svelte` | AKS node pool header |
-| `AksAddons.svelte` | AKS addon display |
 | `AzureIdentitySection.svelte` | AKS identity info |
 
 ## Testing

@@ -45,15 +45,6 @@ impl AzureCloud {
         }
     }
 
-    pub fn portal_url(&self) -> &str {
-        match self {
-            Self::Commercial => "https://portal.azure.com",
-            Self::UsGovernment => "https://portal.azure.us",
-            Self::UsGovSecret => "https://portal.azure.microsoft.scloud",
-            Self::UsGovTopSecret => "https://portal.azure.microsoft.eaglex.ic.gov",
-        }
-    }
-
     pub fn token_scope(&self) -> &str {
         match self {
             Self::Commercial => "https://management.azure.com/.default",
@@ -128,18 +119,6 @@ mod tests {
         assert_eq!(
             AzureCloud::UsGovernment.auth_endpoint(),
             "https://login.microsoftonline.us"
-        );
-    }
-
-    #[test]
-    fn cloud_portal_urls() {
-        assert_eq!(
-            AzureCloud::Commercial.portal_url(),
-            "https://portal.azure.com"
-        );
-        assert_eq!(
-            AzureCloud::UsGovernment.portal_url(),
-            "https://portal.azure.us"
         );
     }
 

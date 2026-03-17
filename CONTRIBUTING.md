@@ -12,7 +12,18 @@ Thanks for contributing to Telescope.
 - Tauri platform dependencies:
   - macOS: Xcode Command Line Tools
   - Windows: Microsoft Edge WebView2
-  - Linux: WebKitGTK and other Tauri system packages for your distro
+  - Linux: WebKitGTK 4.1, libgtk-3-dev, libayatana-appindicator3-dev, librsvg2-dev
+
+#### Linux Build Notes
+
+On Debian/Ubuntu systems:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+System OpenSSL development packages are not required for the Azure dependency path; the remaining OpenSSL dependency is vendored during the build.
 
 ### Clone and install
 ```bash

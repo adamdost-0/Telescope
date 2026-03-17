@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "node -e \"const fs = require('node:fs'); fs.rmSync('.svelte-kit/output', { recursive: true, force: true }); fs.mkdirSync('.svelte-kit/output/server', { recursive: true });\" && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "lint": "pnpm run build",
     "test": "vitest run --pool=forks --poolOptions.forks.singleFork=true",

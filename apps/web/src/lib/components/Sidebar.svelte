@@ -1,7 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { getAzurePortalUrl, parseAksUrl } from '$lib/azure-utils';
-  import { clusterServerUrl, isAks, isConnected } from '$lib/stores';
+  import { isAks, isConnected } from '$lib/stores';
 
   let collapsed = $state(false);
 
@@ -18,17 +17,6 @@
   }
 
   const baseSections: NavSection[] = [
-    {
-      title: 'Cluster',
-      items: [
-        { label: 'Overview', href: '/overview', icon: '📊' },
-        { label: 'Namespaces', href: '/namespaces', icon: '🗂️' },
-        { label: 'Create', href: '/create', icon: '➕' },
-        { label: 'Nodes', href: '/nodes', icon: '🖥️' },
-        { label: 'Priority Classes', href: '/resources/priorityclasses', icon: '🏷️' },
-        { label: 'Events', href: '/events', icon: '⚡' },
-      ]
-    },
     {
       title: 'Workloads',
       items: [
@@ -88,29 +76,30 @@
     },
   ];
 
-  const portalUrl = $derived.by(() => {
-    const serverUrl = $clusterServerUrl;
-    if (!serverUrl) return null;
-
-    const aksInfo = parseAksUrl(serverUrl);
-    return aksInfo ? getAzurePortalUrl(aksInfo) : null;
-  });
-
   const sections = $derived.by((): NavSection[] => {
-    if (!$isAks || !$isConnected) {
-      return baseSections;
+    const clusterItems: NavItem[] = [
+      { label: 'Overview', href: '/overview', icon: '📊' },
+      { label: 'Namespaces', href: '/namespaces', icon: '🗂️' },
+      { label: 'Create', href: '/create', icon: '➕' },
+      { label: 'Nodes', href: '/nodes', icon: '🖥️' },
+      { label: 'Priority Classes', href: '/resources/priorityclasses', icon: '🏷️' },
+      { label: 'Events', href: '/events', icon: '⚡' },
+    ];
+
+    // Add Node Pools to Cluster section if on AKS and connected
+    if ($isAks && $isConnected) {
+      clusterItems.push({ label: 'Node Pools', href: '/azure/node-pools', icon: '☁️' });
     }
 
-    const azureSection: NavSection = {
-      title: 'Azure',
-      items: [
-        { label: 'Node Pools', href: '/nodes', icon: '☁️' },
-        { label: 'AKS Add-ons', href: '/overview', icon: '🔌' },
-        { label: 'Portal', href: portalUrl, icon: '🌐', external: true },
-      ]
+    const clusterSection: NavSection = {
+      title: 'Cluster',
+      items: clusterItems
     };
 
-    return [baseSections[0], azureSection, ...baseSections.slice(1)];
+    return [
+      clusterSection,
+      ...baseSections
+    ];
   });
 
   function isActive(item: NavItem): boolean {
@@ -127,9 +116,6 @@
 
   function getItemTitle(item: NavItem, iconOnly = false): string | undefined {
     if (isDisabled(item)) {
-      if (item.external && !item.href) {
-        return iconOnly ? `${item.label} — Azure Portal link unavailable` : 'Azure Portal link unavailable';
-      }
       return iconOnly ? `${item.label} — connect to a cluster first` : 'Connect to a cluster first';
     }
 

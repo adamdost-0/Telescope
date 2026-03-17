@@ -2,7 +2,8 @@
   import ContextSwitcher from './ContextSwitcher.svelte';
   import ConnectionStatus from './ConnectionStatus.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
-  import { isProduction } from '$lib/stores';
+  import ClusterVitals from './ClusterVitals.svelte';
+  import { isProduction, isConnected } from '$lib/stores';
 
   let { onhelp }: { onhelp?: () => void } = $props();
 </script>
@@ -17,6 +18,7 @@
     <span class="brand-text">Telescope</span>
   </div>
   <div class="spacer"></div>
+  <ClusterVitals visible={$isConnected} />
   <div class="context-area">
     <ConnectionStatus />
     <ContextSwitcher />

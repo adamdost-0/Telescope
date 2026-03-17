@@ -13,3 +13,12 @@ test('sidebar: Azure section hidden when no AKS context is available', async ({ 
   const navigation = page.getByRole('navigation', { name: 'Resource navigation' });
   await expect(navigation.getByText('Azure')).toHaveCount(0);
 });
+
+test('header: cluster vitals structure is rendered', async ({ page }) => {
+  await page.goto('/overview');
+
+  const vitals = page.locator('header.app-header .cluster-vitals');
+  await expect(vitals).toHaveCount(1);
+  await expect(vitals).toContainText('CPU');
+  await expect(vitals).toContainText('Memory');
+});

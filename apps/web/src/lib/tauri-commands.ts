@@ -173,7 +173,6 @@ export interface AksClusterDetail {
     principalId: string | null;
     tenantId: string | null;
   } | null;
-  addonProfiles: Record<string, unknown> | null;
   autoUpgradeProfile: {
     upgradeChannel: string | null;
     nodeOsUpgradeChannel: string | null;
