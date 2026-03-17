@@ -1,20 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures::{AsyncBufReadExt, TryStreamExt};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 use telescope_azure::{
     AksNodePool, ArmClient, AzureCloud, CreateNodePoolRequest, MaintenanceConfig,
     PoolUpgradeProfile, UpgradeProfile,
 };
 use tokio::sync::{Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use telescope_core::{ConnectionState, ResourceEntry, ResourceStore};
-use telescope_engine::audit::AuditEntry;
-use telescope_engine::ClusterContext;
+use telescope_engine::{audit::AuditEntry, validation, ClusterContext};
 
 /// All watched GVK strings. Used for cache invalidation on connect,
 /// disconnect, namespace switch, and startup cleanup.
@@ -66,11 +66,74 @@ struct AppState {
     #[allow(dead_code)]
     db_path: String,
     audit_log_path: String,
+    audit_actor: String,
+    active_connection: RwLock<Option<ActiveConnection>>,
     store: Arc<Mutex<ResourceStore>>,
     connection_state: Arc<RwLock<ConnectionState>>,
     watch_handle: TokioMutex<Option<JoinHandle<()>>>,
     active_context: RwLock<Option<String>>,
     active_namespace: RwLock<String>,
+}
+
+#[derive(Clone)]
+struct ActiveConnection {
+    context_name: String,
+    client: kube::Client,
+}
+
+async fn write_audit_entry(
+    state: &AppState,
+    context: Option<String>,
+    namespace: impl Into<String>,
+    action: impl Into<String>,
+    resource_type: impl Into<String>,
+    resource_name: impl Into<String>,
+    result: impl Into<String>,
+    detail: Option<String>,
+) -> Result<(), String> {
+    let context = match context {
+        Some(context) => context,
+        None => state
+            .active_context
+            .read()
+            .await
+            .clone()
+            .unwrap_or_default(),
+    };
+
+    let entry = AuditEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        actor: state.audit_actor.clone(),
+        context,
+        namespace: namespace.into(),
+        action: action.into(),
+        resource_type: resource_type.into(),
+        resource_name: resource_name.into(),
+        result: result.into(),
+        detail,
+    };
+
+    telescope_engine::audit::log_audit(&state.audit_log_path, &entry)
+        .map_err(|error| format!("Failed to write audit log: {error}"))
+}
+
+fn finish_audited_command<T, E>(
+    outcome: std::result::Result<T, E>,
+    audit_result: Result<(), String>,
+) -> Result<T, String>
+where
+    E: std::fmt::Display,
+{
+    match (outcome, audit_result) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Ok(_), Err(audit_error)) => Err(format!(
+            "Operation completed but failed to write audit log: {audit_error}"
+        )),
+        (Err(error), Ok(())) => Err(error.to_string()),
+        (Err(error), Err(audit_error)) => {
+            Err(format!("{error}; audit log write failed: {audit_error}"))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -82,14 +145,11 @@ struct AppState {
 async fn get_cluster_info(
     state: State<'_, AppState>,
 ) -> Result<telescope_engine::ClusterInfo, String> {
-    let ctx = state.active_context.read().await.clone();
-    let context_name = ctx.ok_or_else(|| "Not connected".to_string())?;
-    let client = telescope_engine::client::create_client_for_context(&context_name)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mut info = telescope_engine::client::get_cluster_info(&client, &context_name)
-        .await
-        .map_err(|e| e.to_string())?;
+    let connection = active_connection(&state).await?;
+    let mut info =
+        telescope_engine::client::get_cluster_info(&connection.client, &connection.context_name)
+            .await
+            .map_err(|e| e.to_string())?;
 
     // Attempt AKS identity resolution when connected to an AKS cluster.
     if info.is_aks {
@@ -173,6 +233,8 @@ async fn upgrade_aks_cluster(
     state: State<'_, AppState>,
     target_version: String,
 ) -> Result<(), String> {
+    let target_version = validation::validate_kubernetes_version(&target_version, "targetVersion")
+        .map_err(|error| error.to_string())?;
     let (client, resource_id) = active_aks_arm_client(&state).await?;
     telescope_azure::upgrade_cluster(&client, &resource_id, &target_version)
         .await
@@ -184,6 +246,7 @@ async fn get_pool_upgrade_profile(
     state: State<'_, AppState>,
     pool: String,
 ) -> Result<PoolUpgradeProfile, String> {
+    let pool = validation::validate_aks_node_pool_name(&pool).map_err(|error| error.to_string())?;
     let (client, resource_id) = active_aks_arm_client(&state).await?;
     telescope_azure::get_pool_upgrade_profile(&client, &resource_id, &pool)
         .await
@@ -196,6 +259,9 @@ async fn upgrade_pool_version(
     pool: String,
     version: String,
 ) -> Result<(), String> {
+    let pool = validation::validate_aks_node_pool_name(&pool).map_err(|error| error.to_string())?;
+    let version = validation::validate_kubernetes_version(&version, "version")
+        .map_err(|error| error.to_string())?;
     let (client, resource_id) = active_aks_arm_client(&state).await?;
     telescope_azure::upgrade_pool_version(&client, &resource_id, &pool, &version)
         .await
@@ -204,6 +270,7 @@ async fn upgrade_pool_version(
 
 #[tauri::command]
 async fn upgrade_pool_node_image(state: State<'_, AppState>, pool: String) -> Result<(), String> {
+    let pool = validation::validate_aks_node_pool_name(&pool).map_err(|error| error.to_string())?;
     let (client, resource_id) = active_aks_arm_client(&state).await?;
     telescope_azure::upgrade_pool_node_image(&client, &resource_id, &pool)
         .await
@@ -236,11 +303,11 @@ async fn scale_aks_node_pool(
     pool_name: String,
     count: i32,
 ) -> Result<AksNodePool, String> {
-    let resource_id = resolve_active_aks_resource_id(&state)
-        .await?
-        .ok_or_else(|| "Scaling node pools requires an AKS cluster".to_string())?;
-    let cloud = configured_azure_cloud(&state).await?;
-    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    let pool_name =
+        validation::validate_aks_node_pool_name(&pool_name).map_err(|error| error.to_string())?;
+    let count = validate_i32_param(count, "count", 0, validation::MAX_NODE_POOL_COUNT)?;
+    let (client, resource_id) =
+        active_aks_arm_client_for(&state, "Scaling node pools requires an AKS cluster").await?;
     let outcome = telescope_azure::scale_node_pool(&client, &resource_id, &pool_name, count).await;
 
     let result_str = if outcome.is_ok() {
@@ -248,26 +315,18 @@ async fn scale_aks_node_pool(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "scale_aks_node_pool".into(),
-            resource_type: "AksNodePool".into(),
-            resource_name: pool_name.clone(),
-            result: result_str.into(),
-            detail: Some(format!("count={}", count)),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "scale_aks_node_pool",
+        "AksNodePool",
+        pool_name.clone(),
+        result_str,
+        Some(format!("count={count}")),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Update autoscaler settings on an AKS node pool.
@@ -279,11 +338,12 @@ async fn update_aks_autoscaler(
     min: Option<i32>,
     max: Option<i32>,
 ) -> Result<AksNodePool, String> {
-    let resource_id = resolve_active_aks_resource_id(&state)
-        .await?
-        .ok_or_else(|| "Updating autoscaler requires an AKS cluster".to_string())?;
-    let cloud = configured_azure_cloud(&state).await?;
-    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    let pool_name =
+        validation::validate_aks_node_pool_name(&pool_name).map_err(|error| error.to_string())?;
+    let (min, max) = validation::validate_autoscaler_bounds(enabled, min, max)
+        .map_err(|error| error.to_string())?;
+    let (client, resource_id) =
+        active_aks_arm_client_for(&state, "Updating autoscaler requires an AKS cluster").await?;
     let outcome =
         telescope_azure::update_autoscaler(&client, &resource_id, &pool_name, enabled, min, max)
             .await;
@@ -293,26 +353,18 @@ async fn update_aks_autoscaler(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "update_aks_autoscaler".into(),
-            resource_type: "AksNodePool".into(),
-            resource_name: pool_name.clone(),
-            result: result_str.into(),
-            detail: Some(format!("enabled={} min={:?} max={:?}", enabled, min, max)),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "update_aks_autoscaler",
+        "AksNodePool",
+        pool_name.clone(),
+        result_str,
+        Some(format!("enabled={enabled} min={min:?} max={max:?}")),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Create a new AKS node pool via the Azure ARM API.
@@ -321,26 +373,9 @@ async fn create_aks_node_pool(
     state: State<'_, AppState>,
     config: CreateNodePoolConfig,
 ) -> Result<AksNodePool, String> {
-    let resource_id = resolve_active_aks_resource_id(&state)
-        .await?
-        .ok_or_else(|| "Creating node pools requires an AKS cluster".to_string())?;
-    let cloud = configured_azure_cloud(&state).await?;
-    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
-    let request = CreateNodePoolRequest {
-        name: config.name.clone(),
-        vm_size: config.vm_size,
-        count: config.count,
-        os_type: config.os_type,
-        mode: config.mode,
-        orchestrator_version: config.orchestrator_version,
-        enable_auto_scaling: config.enable_auto_scaling,
-        min_count: config.min_count,
-        max_count: config.max_count,
-        availability_zones: config.availability_zones,
-        max_pods: config.max_pods,
-        node_labels: config.node_labels,
-        node_taints: config.node_taints,
-    };
+    let request = validate_create_node_pool_config(config)?;
+    let (client, resource_id) =
+        active_aks_arm_client_for(&state, "Creating node pools requires an AKS cluster").await?;
     let outcome = telescope_azure::create_node_pool(&client, &resource_id, &request).await;
 
     let result_str = if outcome.is_ok() {
@@ -348,39 +383,30 @@ async fn create_aks_node_pool(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "create_aks_node_pool".into(),
-            resource_type: "AksNodePool".into(),
-            resource_name: config.name.clone(),
-            result: result_str.into(),
-            detail: Some(format!(
-                "vmSize={} count={}",
-                request.vm_size, request.count
-            )),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "create_aks_node_pool",
+        "AksNodePool",
+        request.name.clone(),
+        result_str,
+        Some(format!(
+            "vmSize={} count={}",
+            request.vm_size, request.count
+        )),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Delete an AKS node pool via the Azure ARM API.
 #[tauri::command]
 async fn delete_aks_node_pool(state: State<'_, AppState>, pool_name: String) -> Result<(), String> {
-    let resource_id = resolve_active_aks_resource_id(&state)
-        .await?
-        .ok_or_else(|| "Deleting node pools requires an AKS cluster".to_string())?;
-    let cloud = configured_azure_cloud(&state).await?;
-    let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
+    let pool_name =
+        validation::validate_aks_node_pool_name(&pool_name).map_err(|error| error.to_string())?;
+    let (client, resource_id) =
+        active_aks_arm_client_for(&state, "Deleting node pools requires an AKS cluster").await?;
     let outcome = telescope_azure::delete_node_pool(&client, &resource_id, &pool_name).await;
 
     let result_str = if outcome.is_ok() {
@@ -388,37 +414,26 @@ async fn delete_aks_node_pool(state: State<'_, AppState>, pool_name: String) -> 
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "delete_aks_node_pool".into(),
-            resource_type: "AksNodePool".into(),
-            resource_name: pool_name.clone(),
-            result: result_str.into(),
-            detail: None,
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "delete_aks_node_pool",
+        "AksNodePool",
+        pool_name.clone(),
+        result_str,
+        None,
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// List available Kubernetes contexts from kubeconfig.
 #[tauri::command]
 fn list_contexts() -> Result<Vec<ClusterContext>, String> {
-    eprintln!("[telescope] list_contexts called");
+    debug!("list_contexts called");
     let result = telescope_engine::kubeconfig::list_contexts().map_err(|e| e.to_string());
-    eprintln!(
-        "[telescope] list_contexts result: {:?}",
-        result.as_ref().map(|v| v.len())
-    );
+    debug!(context_count = ?result.as_ref().map(|v| v.len()), "list_contexts completed");
     result
 }
 
@@ -479,6 +494,14 @@ fn get_events(
     namespace: Option<String>,
     involved_object: Option<String>,
 ) -> Result<Vec<ResourceEntry>, String> {
+    let namespace = namespace
+        .as_deref()
+        .map(validate_namespace_param)
+        .transpose()?;
+    let involved_object = involved_object
+        .as_deref()
+        .map(|value| validate_identifier_param(value, "involvedObject"))
+        .transpose()?;
     let store = state
         .store
         .lock()
@@ -488,10 +511,9 @@ fn get_events(
         .map_err(|e| e.to_string())?;
 
     if let Some(obj_name) = involved_object {
-        let needle = format!("\"name\":\"{}\"", obj_name);
         Ok(events
             .into_iter()
-            .filter(|entry| entry.content.contains(&needle))
+            .filter(|entry| validation::event_matches_involved_object_name(entry, &obj_name))
             .collect())
     } else {
         Ok(events)
@@ -711,32 +733,27 @@ async fn helm_rollback(
     name: String,
     revision: i32,
 ) -> Result<String, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let name = validate_k8s_name_param(&name, "name")?;
+    let revision = validate_i32_param(revision, "revision", 1, i32::MAX)?;
     let outcome = telescope_engine::helm::rollback_release(&namespace, &name, revision).await;
     let result_str = if outcome.is_ok() {
         "success"
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: namespace.clone(),
-            action: "helm_rollback".into(),
-            resource_type: "HelmRelease".into(),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: Some(format!("revision={}", revision)),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        namespace.clone(),
+        "helm_rollback",
+        "HelmRelease",
+        name.clone(),
+        result_str,
+        Some(format!("revision={revision}")),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// List available namespaces from the connected cluster.
@@ -751,6 +768,7 @@ async fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<String>, Stri
 /// Create a namespace in the connected cluster.
 #[tauri::command]
 async fn create_namespace(state: State<'_, AppState>, name: String) -> Result<String, String> {
+    let name = validate_namespace_param(&name)?;
     let client = active_client(&state).await?;
     let outcome = telescope_engine::namespace::create_namespace(&client, &name).await;
     let result_str = if outcome.is_ok() {
@@ -758,31 +776,24 @@ async fn create_namespace(state: State<'_, AppState>, name: String) -> Result<St
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: name.clone(),
-            action: "create_namespace".into(),
-            resource_type: "v1/Namespace".into(),
-            resource_name: name,
-            result: result_str.into(),
-            detail: None,
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        name.clone(),
+        "create_namespace",
+        "v1/Namespace",
+        name,
+        result_str,
+        None,
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Delete a namespace in the connected cluster.
 #[tauri::command]
 async fn delete_namespace(state: State<'_, AppState>, name: String) -> Result<String, String> {
+    let name = validate_namespace_param(&name)?;
     let client = active_client(&state).await?;
     let outcome = telescope_engine::namespace::delete_namespace(&client, &name).await;
     let result_str = if outcome.is_ok() {
@@ -790,26 +801,18 @@ async fn delete_namespace(state: State<'_, AppState>, name: String) -> Result<St
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: name.clone(),
-            action: "delete_namespace".into(),
-            resource_type: "v1/Namespace".into(),
-            resource_name: name,
-            result: result_str.into(),
-            detail: None,
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        name.clone(),
+        "delete_namespace",
+        "v1/Namespace",
+        name,
+        result_str,
+        None,
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 // ---------------------------------------------------------------------------
@@ -823,7 +826,6 @@ async fn connect_to_context(
     state: State<'_, AppState>,
     context_name: String,
 ) -> Result<(), String> {
-    eprintln!("[telescope] connect_to_context called: {}", context_name);
     info!("Connecting to context: {}", context_name);
 
     // Abort any existing watch task.
@@ -836,6 +838,14 @@ async fn connect_to_context(
             .lock()
             .map_err(|e| format!("Store lock failed: {}", e))?;
         clear_all_resources(&store);
+    }
+    {
+        let mut ctx = state.active_context.write().await;
+        *ctx = None;
+    }
+    {
+        let mut active_connection = state.active_connection.write().await;
+        *active_connection = None;
     }
 
     // Update connection state to Connecting.
@@ -855,25 +865,29 @@ async fn connect_to_context(
         let mut ctx = state.active_context.write().await;
         *ctx = Some(context_name.clone());
     }
+    {
+        let mut active_connection = state.active_connection.write().await;
+        *active_connection = Some(ActiveConnection {
+            context_name: context_name.clone(),
+            client: client.clone(),
+        });
+    }
     let namespace = state.active_namespace.read().await.clone();
 
     // Spawn the watcher background task.
     spawn_watch_task(&app, &state, client, &namespace).await;
 
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: context_name.clone(),
-            namespace: namespace.clone(),
-            action: "connect".into(),
-            resource_type: "context".into(),
-            resource_name: context_name.clone(),
-            result: "success".into(),
-            detail: None,
-        },
-    );
+    write_audit_entry(
+        &state,
+        Some(context_name.clone()),
+        namespace.clone(),
+        "connect",
+        "context",
+        context_name.clone(),
+        "success",
+        None,
+    )
+    .await?;
 
     info!(
         "Watch started for context={}, namespace={}",
@@ -909,23 +923,24 @@ async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         let mut ctx = state.active_context.write().await;
         *ctx = None;
     }
+    {
+        let mut active_connection = state.active_connection.write().await;
+        *active_connection = None;
+    }
 
     set_connection_state(&app, &state.connection_state, ConnectionState::Disconnected).await;
 
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: ctx_name.clone(),
-            namespace: String::new(),
-            action: "disconnect".into(),
-            resource_type: "context".into(),
-            resource_name: ctx_name,
-            result: "success".into(),
-            detail: None,
-        },
-    );
+    write_audit_entry(
+        &state,
+        Some(ctx_name.clone()),
+        String::new(),
+        "disconnect",
+        "context",
+        ctx_name,
+        "success",
+        None,
+    )
+    .await?;
 
     Ok(())
 }
@@ -937,6 +952,7 @@ async fn set_namespace(
     state: State<'_, AppState>,
     namespace: String,
 ) -> Result<(), String> {
+    let namespace = validate_namespace_param(&namespace)?;
     info!("Switching namespace to: {}", namespace);
 
     {
@@ -957,12 +973,23 @@ async fn set_namespace(
                 .map_err(|e| format!("Store lock failed: {}", e))?;
             clear_all_resources(&store);
         }
+        {
+            let mut active_connection = state.active_connection.write().await;
+            *active_connection = None;
+        }
 
         set_connection_state(&app, &state.connection_state, ConnectionState::Connecting).await;
 
         let client = telescope_engine::client::create_client_for_context(&ctx)
             .await
             .map_err(|e| e.to_string())?;
+        {
+            let mut active_connection = state.active_connection.write().await;
+            *active_connection = Some(ActiveConnection {
+                context_name: ctx.clone(),
+                client: client.clone(),
+            });
+        }
 
         spawn_watch_task(&app, &state, client, &namespace).await;
     }
@@ -990,6 +1017,9 @@ async fn get_pod_logs(
     previous: Option<bool>,
     tail_lines: Option<i64>,
 ) -> Result<String, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let pod = validate_k8s_name_param(&pod, "pod")?;
+    let container = validate_optional_k8s_name_param(container, "container")?;
     let client = active_client(&state).await?;
 
     let req = telescope_engine::logs::LogRequest {
@@ -1013,6 +1043,8 @@ async fn list_containers(
     namespace: String,
     pod: String,
 ) -> Result<Vec<String>, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let pod = validate_k8s_name_param(&pod, "pod")?;
     let client = active_client(&state).await?;
 
     telescope_engine::logs::list_containers(&client, &namespace, &pod)
@@ -1030,6 +1062,9 @@ async fn start_log_stream(
     container: Option<String>,
     tail_lines: Option<i64>,
 ) -> Result<(), String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let pod = validate_k8s_name_param(&pod, "pod")?;
+    let container = validate_optional_k8s_name_param(container, "container")?;
     let client = active_client(&state).await?;
 
     let req = telescope_engine::logs::LogRequest {
@@ -1085,6 +1120,16 @@ async fn apply_dynamic_resource(
     manifest: String,
     dry_run: bool,
 ) -> Result<telescope_engine::actions::ApplyResult, String> {
+    let group = validate_identifier_param(&group, "group")?;
+    let version = validate_identifier_param(&version, "version")?;
+    let kind = validate_identifier_param(&kind, "kind")?;
+    let plural = validate_identifier_param(&plural, "plural")?;
+    let namespace = namespace
+        .as_deref()
+        .map(validate_namespace_param)
+        .transpose()?;
+    telescope_engine::actions::validate_apply_resource_content(&manifest)
+        .map_err(|error| error.to_string())?;
     let client = active_client(&state).await?;
     let outcome = telescope_engine::dynamic::apply_dynamic_resource(
         &client,
@@ -1102,26 +1147,18 @@ async fn apply_dynamic_resource(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: namespace.clone().unwrap_or_default(),
-            action: "apply_dynamic".into(),
-            resource_type: format!("{}/{}/{}", group, version, kind),
-            resource_name: String::new(),
-            result: result_str.into(),
-            detail: Some(format!("dry_run={}", dry_run)),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        namespace.clone().unwrap_or_default(),
+        "apply_dynamic",
+        format!("{group}/{version}/{kind}"),
+        String::new(),
+        result_str,
+        Some(format!("dry_run={dry_run}")),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 #[tauri::command]
@@ -1134,6 +1171,15 @@ async fn delete_dynamic_resource(
     namespace: Option<String>,
     name: String,
 ) -> Result<String, String> {
+    let group = validate_identifier_param(&group, "group")?;
+    let version = validate_identifier_param(&version, "version")?;
+    let kind = validate_identifier_param(&kind, "kind")?;
+    let plural = validate_identifier_param(&plural, "plural")?;
+    let namespace = namespace
+        .as_deref()
+        .map(validate_namespace_param)
+        .transpose()?;
+    let name = validate_identifier_param(&name, "name")?;
     let client = active_client(&state).await?;
     let outcome = telescope_engine::dynamic::delete_dynamic_resource(
         &client,
@@ -1149,26 +1195,18 @@ async fn delete_dynamic_resource(
         Ok(r) if r.success => "success",
         _ => "failure",
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: namespace.clone().unwrap_or_default(),
-            action: "delete_dynamic".into(),
-            resource_type: format!("{}/{}/{}", group, version, kind),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: None,
-        },
-    );
-    let result = outcome.map_err(|e| e.to_string())?;
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        namespace.clone().unwrap_or_default(),
+        "delete_dynamic",
+        format!("{group}/{version}/{kind}"),
+        name.clone(),
+        result_str,
+        None,
+    )
+    .await;
+    let result = finish_audited_command(outcome, audit_result)?;
     if result.success {
         Ok(result.message)
     } else {
@@ -1185,6 +1223,9 @@ async fn scale_resource(
     name: String,
     replicas: i32,
 ) -> Result<String, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let name = validate_k8s_name_param(&name, "name")?;
+    let replicas = validate_i32_param(replicas, "replicas", 0, validation::MAX_REPLICAS)?;
     let client = active_client(&state).await?;
     let outcome =
         telescope_engine::actions::scale_resource(&client, &gvk, &namespace, &name, replicas).await;
@@ -1193,26 +1234,18 @@ async fn scale_resource(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: namespace.clone(),
-            action: "scale".into(),
-            resource_type: gvk.clone(),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: Some(format!("replicas={}", replicas)),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        namespace.clone(),
+        "scale",
+        gvk.clone(),
+        name.clone(),
+        result_str,
+        Some(format!("replicas={replicas}")),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Delete a namespaced Kubernetes resource by GVK, namespace, and name.
@@ -1223,6 +1256,8 @@ async fn delete_resource(
     namespace: String,
     name: String,
 ) -> Result<String, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let name = validate_k8s_name_param(&name, "name")?;
     let client = active_client(&state).await?;
     let outcome =
         telescope_engine::actions::delete_resource(&client, &gvk, &namespace, &name).await;
@@ -1230,26 +1265,18 @@ async fn delete_resource(
         Ok(r) if r.success => "success",
         _ => "failure",
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: namespace.clone(),
-            action: "delete".into(),
-            resource_type: gvk.clone(),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: None,
-        },
-    );
-    let result = outcome.map_err(|e| e.to_string())?;
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        namespace.clone(),
+        "delete",
+        gvk.clone(),
+        name.clone(),
+        result_str,
+        None,
+    )
+    .await;
+    let result = finish_audited_command(outcome, audit_result)?;
     if result.success {
         Ok(result.message)
     } else {
@@ -1264,6 +1291,8 @@ async fn apply_resource(
     json_content: String,
     dry_run: bool,
 ) -> Result<telescope_engine::actions::ApplyResult, String> {
+    telescope_engine::actions::validate_apply_resource_content(&json_content)
+        .map_err(|error| error.to_string())?;
     let client = active_client(&state).await?;
     let outcome = telescope_engine::actions::apply_resource(&client, &json_content, dry_run).await;
     let result_str = if outcome.is_ok() {
@@ -1271,31 +1300,190 @@ async fn apply_resource(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "apply".into(),
-            resource_type: "resource".into(),
-            resource_name: String::new(),
-            result: result_str.into(),
-            detail: Some(format!("dry_run={}", dry_run)),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "apply",
+        "resource",
+        String::new(),
+        result_str,
+        Some(format!("dry_run={dry_run}")),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn validate_k8s_name_param(value: &str, field: &str) -> Result<String, String> {
+    validation::validate_k8s_name_field(value, field).map_err(|error| error.to_string())
+}
+
+fn validate_namespace_param(value: &str) -> Result<String, String> {
+    validation::validate_namespace(value).map_err(|error| error.to_string())
+}
+
+fn validate_identifier_param(value: &str, field: &str) -> Result<String, String> {
+    validation::validate_identifier(value, field).map_err(|error| error.to_string())
+}
+
+fn validate_i32_param(value: i32, field: &str, min: i32, max: i32) -> Result<i32, String> {
+    validation::validate_i32_range(value, field, min, max).map_err(|error| error.to_string())
+}
+
+fn validate_i64_param(value: i64, field: &str, min: i64, max: i64) -> Result<i64, String> {
+    validation::validate_i64_range(value, field, min, max).map_err(|error| error.to_string())
+}
+
+fn validate_optional_allowed_value_param(
+    value: Option<String>,
+    field: &str,
+    allowed: &[&str],
+) -> Result<Option<String>, String> {
+    match normalize_optional_string(value) {
+        Some(value) => validation::validate_allowed_value(&value, field, allowed)
+            .map(Some)
+            .map_err(|error| error.to_string()),
+        None => Ok(None),
+    }
+}
+
+fn validate_optional_k8s_name_param(
+    value: Option<String>,
+    field: &str,
+) -> Result<Option<String>, String> {
+    match normalize_optional_string(value) {
+        Some(value) => validate_k8s_name_param(&value, field).map(Some),
+        None => Ok(None),
+    }
+}
+
+fn validate_optional_kubernetes_version_param(
+    value: Option<String>,
+    field: &str,
+) -> Result<Option<String>, String> {
+    match normalize_optional_string(value) {
+        Some(value) => validation::validate_kubernetes_version(&value, field)
+            .map(Some)
+            .map_err(|error| error.to_string()),
+        None => Ok(None),
+    }
+}
+
+fn validate_create_node_pool_config(
+    config: CreateNodePoolConfig,
+) -> Result<CreateNodePoolRequest, String> {
+    let name =
+        validation::validate_aks_node_pool_name(&config.name).map_err(|error| error.to_string())?;
+    let vm_size =
+        validation::validate_aks_vm_size(&config.vm_size).map_err(|error| error.to_string())?;
+    let count = validate_i32_param(config.count, "count", 1, validation::MAX_NODE_POOL_COUNT)?;
+    let os_type =
+        validate_optional_allowed_value_param(config.os_type, "osType", &["Linux", "Windows"])?;
+    let mode = validate_optional_allowed_value_param(config.mode, "mode", &["User", "System"])?;
+    let orchestrator_version = validate_optional_kubernetes_version_param(
+        config.orchestrator_version,
+        "orchestratorVersion",
+    )?;
+
+    let enable_auto_scaling = config.enable_auto_scaling.unwrap_or(false);
+    let (min_count, max_count) = validation::validate_autoscaler_bounds(
+        enable_auto_scaling,
+        config.min_count,
+        config.max_count,
+    )
+    .map_err(|error| error.to_string())?;
+
+    if let (Some(min_count), Some(max_count)) = (min_count, max_count) {
+        if count < min_count || count > max_count {
+            return Err(format!(
+                "count must be between {min_count} and {max_count} when autoscaling is enabled"
+            ));
+        }
+    }
+
+    let availability_zones = match config.availability_zones {
+        Some(zones) => {
+            let validated = validation::validate_aks_availability_zones(&zones)
+                .map_err(|error| error.to_string())?;
+            if validated.is_empty() {
+                None
+            } else {
+                Some(validated)
+            }
+        }
+        None => None,
+    };
+
+    let max_pods = match config.max_pods {
+        Some(max_pods) => Some(validate_i32_param(max_pods, "maxPods", 10, 250)?),
+        None => None,
+    };
+
+    let node_labels = match config.node_labels {
+        Some(labels) => {
+            let mut validated = HashMap::with_capacity(labels.len());
+            for (key, value) in labels {
+                let key = validate_identifier_param(&key, "node label key")?;
+                let value = validate_identifier_param(&value, "node label value")?;
+                validated.insert(key, value);
+            }
+
+            if validated.is_empty() {
+                None
+            } else {
+                Some(validated)
+            }
+        }
+        None => None,
+    };
+
+    let node_taints = match config.node_taints {
+        Some(taints) => {
+            let mut validated = Vec::with_capacity(taints.len());
+            for taint in taints {
+                validated.push(validate_identifier_param(&taint, "node taint")?);
+            }
+
+            if validated.is_empty() {
+                None
+            } else {
+                Some(validated)
+            }
+        }
+        None => None,
+    };
+
+    Ok(CreateNodePoolRequest {
+        name,
+        vm_size,
+        count,
+        os_type,
+        mode,
+        orchestrator_version,
+        enable_auto_scaling: Some(enable_auto_scaling),
+        min_count,
+        max_count,
+        availability_zones,
+        max_pods,
+        node_labels,
+        node_taints,
+    })
+}
 
 /// Abort the current watch task if one is running.
 async fn abort_watch(state: &State<'_, AppState>) {
@@ -1349,14 +1537,11 @@ async fn detect_active_azure_cloud(state: &State<'_, AppState>) -> Result<AzureC
 async fn resolve_active_aks_resource_id(
     state: &State<'_, AppState>,
 ) -> Result<Option<telescope_azure::AksResourceId>, String> {
-    let ctx = state.active_context.read().await.clone();
-    let context_name = ctx.ok_or_else(|| "Not connected".to_string())?;
-    let client = telescope_engine::client::create_client_for_context(&context_name)
-        .await
-        .map_err(|e| e.to_string())?;
-    let info = telescope_engine::client::get_cluster_info(&client, &context_name)
-        .await
-        .map_err(|e| e.to_string())?;
+    let connection = active_connection(state).await?;
+    let info =
+        telescope_engine::client::get_cluster_info(&connection.client, &connection.context_name)
+            .await
+            .map_err(|e| e.to_string())?;
 
     if !info.is_aks {
         return Ok(None);
@@ -1392,24 +1577,51 @@ async fn configured_azure_cloud(state: &State<'_, AppState>) -> Result<AzureClou
 async fn active_aks_arm_client(
     state: &State<'_, AppState>,
 ) -> Result<(ArmClient, telescope_azure::AksResourceId), String> {
+    active_aks_arm_client_for(state, "This action requires an AKS cluster").await
+}
+
+async fn active_aks_arm_client_for(
+    state: &State<'_, AppState>,
+    missing_cluster_message: &str,
+) -> Result<(ArmClient, telescope_azure::AksResourceId), String> {
     let resource_id = resolve_active_aks_resource_id(state)
         .await?
-        .ok_or_else(|| "This action requires an AKS cluster".to_string())?;
+        .ok_or_else(|| missing_cluster_message.to_string())?;
     let cloud = configured_azure_cloud(state).await?;
     let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
     Ok((client, resource_id))
 }
 
 async fn active_client(state: &State<'_, AppState>) -> Result<kube::Client, String> {
-    let context_name = state
-        .active_context
+    Ok(active_connection(state).await?.client)
+}
+
+async fn active_connection(state: &State<'_, AppState>) -> Result<ActiveConnection, String> {
+    let lifecycle_state = state.connection_state.read().await.clone();
+    match lifecycle_state {
+        ConnectionState::Ready
+        | ConnectionState::Syncing { .. }
+        | ConnectionState::Degraded { .. } => {}
+        ConnectionState::Disconnected => return Err("Not connected".to_string()),
+        ConnectionState::Connecting => {
+            return Err(
+                "Connection is still initializing; try again once sync completes".to_string(),
+            )
+        }
+        ConnectionState::Error { message } => {
+            return Err(format!("Connection is unavailable: {message}"))
+        }
+        ConnectionState::Backoff { .. } => {
+            return Err("Connection is retrying after a watch error; try again shortly".to_string())
+        }
+    }
+
+    state
+        .active_connection
         .read()
         .await
         .clone()
-        .ok_or_else(|| "Not connected".to_string())?;
-    telescope_engine::client::create_client_for_context(&context_name)
-        .await
-        .map_err(|e| e.to_string())
+        .ok_or_else(|| "Active connection is unavailable".to_string())
 }
 
 /// Update connection state and emit an event to the frontend.
@@ -1604,6 +1816,8 @@ async fn rollout_restart(
     namespace: String,
     name: String,
 ) -> Result<String, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let name = validate_k8s_name_param(&name, "name")?;
     let client = active_client(&state).await?;
     let outcome =
         telescope_engine::actions::rollout_restart(&client, &gvk, &namespace, &name).await;
@@ -1612,26 +1826,18 @@ async fn rollout_restart(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: namespace.clone(),
-            action: "rollout_restart".into(),
-            resource_type: gvk.clone(),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: None,
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        namespace.clone(),
+        "rollout_restart",
+        gvk.clone(),
+        name.clone(),
+        result_str,
+        None,
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Get rollout status for a Deployment or StatefulSet.
@@ -1655,6 +1861,7 @@ async fn rollout_status(
 /// Cordon a node (mark as unschedulable).
 #[tauri::command]
 async fn cordon_node(state: State<'_, AppState>, name: String) -> Result<String, String> {
+    let name = validate_k8s_name_param(&name, "node name")?;
     let client = active_client(&state).await?;
     let outcome = telescope_engine::node_ops::cordon_node(&client, &name).await;
     let result_str = if outcome.is_ok() {
@@ -1662,31 +1869,24 @@ async fn cordon_node(state: State<'_, AppState>, name: String) -> Result<String,
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "cordon".into(),
-            resource_type: "Node".into(),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: None,
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "cordon",
+        "Node",
+        name.clone(),
+        result_str,
+        None,
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Uncordon a node (mark as schedulable).
 #[tauri::command]
 async fn uncordon_node(state: State<'_, AppState>, name: String) -> Result<String, String> {
+    let name = validate_k8s_name_param(&name, "node name")?;
     let client = active_client(&state).await?;
     let outcome = telescope_engine::node_ops::uncordon_node(&client, &name).await;
     let result_str = if outcome.is_ok() {
@@ -1694,26 +1894,18 @@ async fn uncordon_node(state: State<'_, AppState>, name: String) -> Result<Strin
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "uncordon".into(),
-            resource_type: "Node".into(),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: None,
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "uncordon",
+        "Node",
+        name.clone(),
+        result_str,
+        None,
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Drain a node: cordon then evict eligible pods.
@@ -1725,9 +1917,16 @@ async fn drain_node(
     ignore_daemonsets: Option<bool>,
     force: Option<bool>,
 ) -> Result<telescope_engine::node_ops::DrainResult, String> {
+    let name = validate_k8s_name_param(&name, "node name")?;
+    let grace_period = validate_i64_param(
+        grace_period.unwrap_or(30),
+        "gracePeriod",
+        0,
+        validation::MAX_DRAIN_GRACE_PERIOD_SECONDS,
+    )?;
     let client = active_client(&state).await?;
     let options = telescope_engine::node_ops::DrainOptions {
-        grace_period: grace_period.unwrap_or(30),
+        grace_period,
         ignore_daemonsets: ignore_daemonsets.unwrap_or(true),
         force: force.unwrap_or(false),
     };
@@ -1736,29 +1935,21 @@ async fn drain_node(
         Ok(r) if r.success => "success",
         _ => "failure",
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "drain".into(),
-            resource_type: "Node".into(),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: Some(format!(
-                "grace_period={}, ignore_daemonsets={}, force={}",
-                options.grace_period, options.ignore_daemonsets, options.force
-            )),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "drain",
+        "Node",
+        name.clone(),
+        result_str,
+        Some(format!(
+            "grace_period={}, ignore_daemonsets={}, force={}",
+            options.grace_period, options.ignore_daemonsets, options.force
+        )),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Add a taint to a node.
@@ -1770,6 +1961,10 @@ async fn add_node_taint(
     value: String,
     effect: String,
 ) -> Result<String, String> {
+    let name = validate_k8s_name_param(&name, "node name")?;
+    let key = validate_identifier_param(&key, "key")?;
+    let value = validate_identifier_param(&value, "value")?;
+    let effect = validation::validate_taint_effect(&effect).map_err(|error| error.to_string())?;
     let client = active_client(&state).await?;
     let outcome =
         telescope_engine::node_ops::add_taint(&client, &name, &key, &value, &effect).await;
@@ -1778,26 +1973,18 @@ async fn add_node_taint(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "add_taint".into(),
-            resource_type: "Node".into(),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: Some(format!("{}={}:{}", key, value, effect)),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "add_taint",
+        "Node",
+        name.clone(),
+        result_str,
+        Some(format!("{key}={value}:{effect}")),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Remove a taint from a node by key.
@@ -1807,6 +1994,8 @@ async fn remove_node_taint(
     name: String,
     key: String,
 ) -> Result<String, String> {
+    let name = validate_k8s_name_param(&name, "node name")?;
+    let key = validate_identifier_param(&key, "key")?;
     let client = active_client(&state).await?;
     let outcome = telescope_engine::node_ops::remove_taint(&client, &name, &key).await;
     let result_str = if outcome.is_ok() {
@@ -1814,26 +2003,18 @@ async fn remove_node_taint(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: String::new(),
-            action: "remove_taint".into(),
-            resource_type: "Node".into(),
-            resource_name: name.clone(),
-            result: result_str.into(),
-            detail: Some(format!("key={}", key)),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        String::new(),
+        "remove_taint",
+        "Node",
+        name.clone(),
+        result_str,
+        Some(format!("key={key}")),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Fetch maintenance configurations for an AKS cluster.
@@ -1864,6 +2045,10 @@ async fn exec_command(
     container: Option<String>,
     command: Vec<String>,
 ) -> Result<telescope_engine::exec::ExecResult, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let pod = validate_k8s_name_param(&pod, "pod")?;
+    let container = validate_optional_k8s_name_param(container, "container")?;
+    let command = validation::validate_exec_command(&command).map_err(|error| error.to_string())?;
     let cmd_detail = command.join(" ");
     let audit_ns = namespace.clone();
     let audit_pod = pod.clone();
@@ -1880,26 +2065,18 @@ async fn exec_command(
     } else {
         "failure"
     };
-    telescope_engine::audit::log_audit(
-        &state.audit_log_path,
-        &AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            actor: "desktop-user@local".into(),
-            context: state
-                .active_context
-                .read()
-                .await
-                .clone()
-                .unwrap_or_default(),
-            namespace: audit_ns,
-            action: "exec".into(),
-            resource_type: "Pod".into(),
-            resource_name: audit_pod,
-            result: result_str.into(),
-            detail: Some(cmd_detail),
-        },
-    );
-    outcome.map_err(|e| e.to_string())
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        audit_ns,
+        "exec",
+        "Pod",
+        audit_pod,
+        result_str,
+        Some(cmd_detail),
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
 }
 
 /// Start port forwarding from a local port to a pod port.
@@ -1911,6 +2088,8 @@ async fn start_port_forward(
     local_port: u16,
     remote_port: u16,
 ) -> Result<u16, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let pod = validate_k8s_name_param(&pod, "pod")?;
     let client = active_client(&state).await?;
     let req = telescope_engine::portforward::PortForwardRequest {
         namespace,
@@ -1990,32 +2169,10 @@ fn set_preference(state: State<'_, AppState>, key: String, value: String) -> Res
 async fn get_aks_cluster_detail(
     state: State<'_, AppState>,
 ) -> Result<Option<telescope_azure::aks::AksClusterDetail>, String> {
-    let ctx = state.active_context.read().await.clone();
-    let context_name = ctx.ok_or_else(|| "Not connected".to_string())?;
-    let client = telescope_engine::client::create_client_for_context(&context_name)
-        .await
-        .map_err(|e| e.to_string())?;
-    let info = telescope_engine::client::get_cluster_info(&client, &context_name)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if !info.is_aks {
-        return Ok(None);
-    }
-
-    // Resolve AKS identity (subscription, RG, cluster name).
-    let preferred_id = {
-        let store_guard = state.store.lock().map_err(|e| e.to_string())?;
-        telescope_azure::resolve_aks_identity_from_preferences(Some(&store_guard))
+    let resource_id = match resolve_active_aks_resource_id(&state).await? {
+        Some(resource_id) => resource_id,
+        None => return Ok(None),
     };
-
-    let resource_id =
-        match telescope_azure::resolve_aks_identity(&info.server_url, preferred_id).await {
-            Some(id) => id,
-            None => return Ok(None),
-        };
-
-    // Determine Azure cloud and create ARM client.
     let cloud = configured_azure_cloud(&state).await?;
     let arm_client = telescope_azure::ArmClient::new(cloud).map_err(|e| e.to_string())?;
 
@@ -2051,14 +2208,14 @@ async fn set_azure_cloud(state: State<'_, AppState>, cloud: String) -> Result<()
 
 fn main() {
     tracing_subscriber::fmt::init();
-    eprintln!("[telescope] Starting Telescope desktop app");
+    info!("Starting Telescope desktop app");
 
     let data_dir = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .map(|h| std::path::PathBuf::from(h).join(".telescope"))
         .unwrap_or_else(|_| std::env::temp_dir().join("telescope"));
     let db_path = data_dir.join("resources.db");
-    eprintln!("[telescope] DB path: {:?}", db_path);
+    debug!(db_path = ?db_path, "Resolved desktop database path");
     // safe: path always has a parent after join()
     std::fs::create_dir_all(db_path.parent().unwrap()).expect("Failed to create data directory");
 
@@ -2089,9 +2246,13 @@ fn main() {
     // Clear stale data from previous runs.
     clear_all_resources(&store);
 
+    let audit_actor = telescope_engine::audit::resolve_actor_identity();
+
     let app_state = AppState {
         db_path: db_path_str,
         audit_log_path: audit_path,
+        audit_actor,
+        active_connection: RwLock::new(None),
         store: Arc::new(Mutex::new(store)),
         connection_state: Arc::new(RwLock::new(ConnectionState::Disconnected)),
         watch_handle: TokioMutex::new(None),
@@ -2170,9 +2331,27 @@ fn main() {
             list_aks_maintenance_configs,
         ])
         .setup(|_app| {
-            eprintln!("[telescope] Tauri setup complete, window should be loading frontend");
+            info!("Tauri setup complete, loading frontend");
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                let clear_result: Result<(), String> = {
+                    let state = app.state::<AppState>();
+                    let result = match state.store.lock() {
+                        Ok(store) => {
+                            clear_all_resources(&store);
+                            Ok(())
+                        }
+                        Err(error) => Err(error.to_string()),
+                    };
+                    result
+                };
+                if let Err(error) = clear_result {
+                    error!("Failed to clear cached resources on exit: {}", error);
+                }
+            }
+        });
 }

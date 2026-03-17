@@ -153,8 +153,8 @@ pub struct AksClusterDetail {
     pub security_profile: Option<AksSecurityProfile>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AvailableUpgrade {
     pub kubernetes_version: String,
     pub is_preview: bool,
@@ -175,12 +175,69 @@ pub struct PoolUpgradeProfile {
     pub latest_node_image_version: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ManagedClusterEnvelope {
     pub properties: AksClusterDetail,
     pub sku: Option<AksClusterSku>,
     pub identity: Option<AksIdentityProfile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ArmListResponse<T> {
+    value: Vec<T>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NamedPropertiesResponse<T> {
+    name: String,
+    properties: T,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MaintenanceConfigPropertiesResponse {
+    #[serde(default)]
+    not_allowed_time: Vec<MaintenanceTimeSpan>,
+    #[serde(default)]
+    time_in_week: Vec<MaintenanceTimeInWeek>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClusterUpgradeProfileEnvelope {
+    properties: ClusterUpgradeProfileProperties,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClusterUpgradeProfileProperties {
+    control_plane_profile: ClusterUpgradePayload,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClusterUpgradePayload {
+    kubernetes_version: String,
+    #[serde(default)]
+    upgrades: Vec<AvailableUpgrade>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolUpgradeProfileEnvelope {
+    properties: PoolUpgradeProfileProperties,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolUpgradeProfileProperties {
+    kubernetes_version: Option<String>,
+    orchestrator_version: Option<String>,
+    #[serde(default)]
+    upgrades: Vec<AvailableUpgrade>,
+    latest_node_image_version: Option<String>,
 }
 
 const ARM_POLL_INTERVAL: Duration = Duration::from_secs(15);
@@ -218,35 +275,17 @@ pub async fn list_node_pools(
     resource_id: &AksResourceId,
 ) -> Result<Vec<AksNodePool>> {
     let path = format!("{}/agentPools", resource_id.arm_path());
-    let response: serde_json::Value = client.get(&path).await?;
-    let pools = response
-        .get("value")
-        .and_then(|value| value.as_array())
-        .cloned()
-        .unwrap_or_default();
-
-    let mut result = Vec::with_capacity(pools.len());
-    for pool_val in pools {
-        let name = pool_val
-            .get("name")
-            .and_then(|name| name.as_str())
-            .unwrap_or_default()
-            .to_string();
-        let properties = pool_val.get("properties").cloned().unwrap_or_default();
-        let mut pool = serde_json::from_value::<AksNodePool>(properties).unwrap_or_default();
-        pool.name = name;
-        result.push(pool);
-    }
-
-    Ok(result)
+    let response: ArmListResponse<NamedPropertiesResponse<AksNodePool>> = client.get(&path).await?;
+    Ok(response.value.into_iter().map(into_node_pool).collect())
 }
 
 pub async fn get_upgrade_profile(
     client: &ArmClient,
     resource_id: &AksResourceId,
 ) -> Result<UpgradeProfile> {
-    let response: Value = client.get(&resource_id.upgrade_profile_path()).await?;
-    Ok(parse_cluster_upgrade_profile(&response))
+    let response: ClusterUpgradeProfileEnvelope =
+        client.get(&resource_id.upgrade_profile_path()).await?;
+    Ok(into_cluster_upgrade_profile(response))
 }
 
 pub async fn upgrade_cluster(
@@ -256,9 +295,11 @@ pub async fn upgrade_cluster(
 ) -> Result<()> {
     let path = resource_id.arm_path();
     let mut cluster: Value = client.get(&path).await?;
-    if let Some(props) = cluster.get_mut("properties") {
-        props["kubernetesVersion"] = serde_json::json!(target_version);
-    }
+    let properties = require_properties_map(&mut cluster, "cluster upgrade request")?;
+    properties.insert(
+        "kubernetesVersion".to_string(),
+        serde_json::json!(target_version),
+    );
     let _: Value = client.put(&path, &cluster).await?;
     wait_for_cluster_state(client, resource_id, None, Some(target_version)).await
 }
@@ -269,39 +310,18 @@ pub async fn list_maintenance_configs(
     resource_id: &AksResourceId,
 ) -> Result<Vec<MaintenanceConfig>> {
     let path = resource_id.maintenance_config_path();
-    let response: Value = client.get(&path).await?;
-    let items = response
-        .get("value")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
+    let response: ArmListResponse<NamedPropertiesResponse<MaintenanceConfigPropertiesResponse>> =
+        client.get(&path).await?;
 
-    let mut configs = Vec::with_capacity(items.len());
-    for item in items {
-        let name = item
-            .get("name")
-            .and_then(|n| n.as_str())
-            .unwrap_or_default()
-            .to_string();
-        let properties = item.get("properties").cloned().unwrap_or_default();
-
-        let not_allowed_time = properties
-            .get("notAllowedTime")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let time_in_week = properties
-            .get("timeInWeek")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-
-        configs.push(MaintenanceConfig {
-            name,
-            not_allowed_time,
-            time_in_week,
-        });
-    }
-
-    Ok(configs)
+    Ok(response
+        .value
+        .into_iter()
+        .map(|item| MaintenanceConfig {
+            name: item.name,
+            not_allowed_time: item.properties.not_allowed_time,
+            time_in_week: item.properties.time_in_week,
+        })
+        .collect())
 }
 
 pub async fn get_pool_upgrade_profile(
@@ -313,8 +333,8 @@ pub async fn get_pool_upgrade_profile(
         "{}/upgradeProfiles/default",
         resource_id.agent_pool_path(pool_name)
     );
-    let response: Value = client.get(&path).await?;
-    Ok(parse_pool_upgrade_profile(&response))
+    let response: PoolUpgradeProfileEnvelope = client.get(&path).await?;
+    into_pool_upgrade_profile(response)
 }
 
 // ── Node-pool mutation types ─────────────────────────────────────────────
@@ -340,16 +360,24 @@ pub struct CreateNodePoolRequest {
 
 // ── Node-pool mutation operations ────────────────────────────────────────
 
-fn parse_pool_response(val: serde_json::Value) -> AksNodePool {
-    let name = val
-        .get("name")
-        .and_then(|n| n.as_str())
-        .unwrap_or_default()
-        .to_string();
-    let properties = val.get("properties").cloned().unwrap_or_default();
-    let mut pool = serde_json::from_value::<AksNodePool>(properties).unwrap_or_default();
-    pool.name = name;
+fn into_node_pool(response: NamedPropertiesResponse<AksNodePool>) -> AksNodePool {
+    let mut pool = response.properties;
+    pool.name = response.name;
     pool
+}
+
+fn require_properties_map<'a>(
+    value: &'a mut Value,
+    context: &str,
+) -> Result<&'a mut serde_json::Map<String, Value>> {
+    value
+        .get_mut("properties")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            AzureError::Serialization(format!(
+                "Azure ARM response for {context} did not include a properties object"
+            ))
+        })
 }
 
 /// Scale a node pool to a specific node count.
@@ -361,11 +389,10 @@ pub async fn scale_node_pool(
 ) -> Result<AksNodePool> {
     let path = resource_id.agent_pool_path(pool_name);
     let mut current: serde_json::Value = client.get(&path).await?;
-    if let Some(props) = current.get_mut("properties") {
-        props["count"] = serde_json::json!(count);
-    }
-    let result: serde_json::Value = client.put(&path, &current).await?;
-    Ok(parse_pool_response(result))
+    let properties = require_properties_map(&mut current, "node pool scale request")?;
+    properties.insert("count".to_string(), serde_json::json!(count));
+    let result: NamedPropertiesResponse<AksNodePool> = client.put(&path, &current).await?;
+    Ok(into_node_pool(result))
 }
 
 /// Update the autoscaler settings on a node pool.
@@ -379,17 +406,16 @@ pub async fn update_autoscaler(
 ) -> Result<AksNodePool> {
     let path = resource_id.agent_pool_path(pool_name);
     let mut current: serde_json::Value = client.get(&path).await?;
-    if let Some(props) = current.get_mut("properties") {
-        props["enableAutoScaling"] = serde_json::json!(enabled);
-        if let Some(min_v) = min {
-            props["minCount"] = serde_json::json!(min_v);
-        }
-        if let Some(max_v) = max {
-            props["maxCount"] = serde_json::json!(max_v);
-        }
+    let properties = require_properties_map(&mut current, "node pool autoscaler update")?;
+    properties.insert("enableAutoScaling".to_string(), serde_json::json!(enabled));
+    if let Some(min_v) = min {
+        properties.insert("minCount".to_string(), serde_json::json!(min_v));
     }
-    let result: serde_json::Value = client.put(&path, &current).await?;
-    Ok(parse_pool_response(result))
+    if let Some(max_v) = max {
+        properties.insert("maxCount".to_string(), serde_json::json!(max_v));
+    }
+    let result: NamedPropertiesResponse<AksNodePool> = client.put(&path, &current).await?;
+    Ok(into_node_pool(result))
 }
 
 /// Create a new node pool on an AKS cluster.
@@ -415,8 +441,8 @@ pub async fn create_node_pool(
             "nodeTaints": config.node_taints,
         }
     });
-    let result: serde_json::Value = client.put(&path, &body).await?;
-    Ok(parse_pool_response(result))
+    let result: NamedPropertiesResponse<AksNodePool> = client.put(&path, &body).await?;
+    Ok(into_node_pool(result))
 }
 
 /// Delete a node pool from an AKS cluster.
@@ -437,9 +463,11 @@ pub async fn upgrade_pool_version(
 ) -> Result<()> {
     let path = resource_id.agent_pool_path(pool_name);
     let mut pool: Value = client.get(&path).await?;
-    if let Some(props) = pool.get_mut("properties") {
-        props["orchestratorVersion"] = serde_json::json!(version);
-    }
+    let properties = require_properties_map(&mut pool, "node pool upgrade request")?;
+    properties.insert(
+        "orchestratorVersion".to_string(),
+        serde_json::json!(version),
+    );
     let _: Value = client.put(&path, &pool).await?;
     wait_for_pool_state(client, resource_id, pool_name, Some(version), None).await
 }
@@ -467,44 +495,37 @@ pub async fn upgrade_pool_node_image(
     .await
 }
 
-fn parse_available_upgrades(value: Option<&Value>) -> Vec<AvailableUpgrade> {
-    value
-        .and_then(|upgrades| upgrades.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|upgrade| serde_json::from_value::<AvailableUpgrade>(upgrade.clone()).ok())
-        .filter(|upgrade| !upgrade.kubernetes_version.is_empty())
-        .collect()
-}
+fn into_cluster_upgrade_profile(response: ClusterUpgradeProfileEnvelope) -> UpgradeProfile {
+    let ClusterUpgradePayload {
+        kubernetes_version,
+        upgrades,
+    } = response.properties.control_plane_profile;
 
-fn parse_cluster_upgrade_profile(value: &Value) -> UpgradeProfile {
-    let properties = value.get("properties").unwrap_or(value);
-    let control_plane = properties.get("controlPlaneProfile").unwrap_or(properties);
     UpgradeProfile {
-        current_version: control_plane
-            .get("kubernetesVersion")
-            .and_then(|version| version.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        upgrades: parse_available_upgrades(control_plane.get("upgrades")),
+        current_version: kubernetes_version,
+        upgrades,
     }
 }
 
-fn parse_pool_upgrade_profile(value: &Value) -> PoolUpgradeProfile {
-    let properties = value.get("properties").unwrap_or(value);
-    PoolUpgradeProfile {
-        current_version: properties
-            .get("kubernetesVersion")
-            .or_else(|| properties.get("orchestratorVersion"))
-            .and_then(|version| version.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        upgrades: parse_available_upgrades(properties.get("upgrades")),
-        latest_node_image_version: properties
-            .get("latestNodeImageVersion")
-            .and_then(|version| version.as_str())
-            .map(ToString::to_string),
-    }
+fn into_pool_upgrade_profile(response: PoolUpgradeProfileEnvelope) -> Result<PoolUpgradeProfile> {
+    let PoolUpgradeProfileProperties {
+        kubernetes_version,
+        orchestrator_version,
+        upgrades,
+        latest_node_image_version,
+    } = response.properties;
+    let current_version = kubernetes_version.or(orchestrator_version).ok_or_else(|| {
+        AzureError::Serialization(
+            "Azure ARM node pool upgrade profile was missing kubernetesVersion/orchestratorVersion"
+                .to_string(),
+        )
+    })?;
+
+    Ok(PoolUpgradeProfile {
+        current_version,
+        upgrades,
+        latest_node_image_version,
+    })
 }
 
 fn normalize_state(state: Option<&str>) -> String {
@@ -558,8 +579,8 @@ async fn wait_for_pool_state(
 ) -> Result<()> {
     let path = resource_id.agent_pool_path(pool_name);
     for _ in 0..ARM_MAX_POLLS {
-        let response: Value = client.get(&path).await?;
-        let pool = parse_pool_response(response);
+        let response: NamedPropertiesResponse<AksNodePool> = client.get(&path).await?;
+        let pool = into_node_pool(response);
         let provisioning_state = normalize_state(pool.provisioning_state.as_deref());
         let version_matches = desired_version
             .map(|version| pool.orchestrator_version.as_deref() == Some(version))
@@ -610,24 +631,15 @@ mod tests {
             ]
         });
 
-        let pools = response
-            .get("value")
-            .and_then(|value| value.as_array())
-            .cloned()
-            .unwrap_or_default();
-        let mut parsed = Vec::new();
-
-        for pool_val in pools {
-            let name = pool_val
-                .get("name")
-                .and_then(|value| value.as_str())
-                .unwrap_or_default()
-                .to_string();
-            let properties = pool_val.get("properties").cloned().unwrap_or_default();
-            let mut pool = serde_json::from_value::<AksNodePool>(properties).unwrap_or_default();
-            pool.name = name;
-            parsed.push(pool);
-        }
+        let parsed =
+            serde_json::from_value::<ArmListResponse<NamedPropertiesResponse<AksNodePool>>>(
+                response,
+            )
+            .unwrap()
+            .value
+            .into_iter()
+            .map(into_node_pool)
+            .collect::<Vec<_>>();
 
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].name, "systempool");
@@ -658,7 +670,9 @@ mod tests {
             }
         });
 
-        let profile = parse_cluster_upgrade_profile(&response);
+        let profile = into_cluster_upgrade_profile(
+            serde_json::from_value::<ClusterUpgradeProfileEnvelope>(response).unwrap(),
+        );
         assert_eq!(profile.current_version, "1.29.4");
         assert_eq!(profile.upgrades.len(), 2);
         assert_eq!(profile.upgrades[0].kubernetes_version, "1.29.7");
@@ -678,12 +692,49 @@ mod tests {
             }
         });
 
-        let profile = parse_pool_upgrade_profile(&response);
+        let profile = into_pool_upgrade_profile(
+            serde_json::from_value::<PoolUpgradeProfileEnvelope>(response).unwrap(),
+        )
+        .unwrap();
         assert_eq!(profile.current_version, "1.29.4");
         assert_eq!(
             profile.latest_node_image_version.as_deref(),
             Some("AKSUbuntu-2204gen2containerd-2024.10.12")
         );
         assert_eq!(profile.upgrades[0].kubernetes_version, "1.29.7");
+    }
+
+    #[test]
+    fn node_pool_list_requires_value_array() {
+        let result = serde_json::from_value::<ArmListResponse<NamedPropertiesResponse<AksNodePool>>>(
+            serde_json::json!({}),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn managed_cluster_response_requires_properties() {
+        let result = serde_json::from_value::<ManagedClusterEnvelope>(serde_json::json!({}));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pool_upgrade_profile_requires_current_version() {
+        let response = serde_json::json!({
+            "properties": {
+                "latestNodeImageVersion": "image"
+            }
+        });
+
+        let err = into_pool_upgrade_profile(
+            serde_json::from_value::<PoolUpgradeProfileEnvelope>(response).unwrap(),
+        )
+        .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("missing kubernetesVersion/orchestratorVersion"));
     }
 }

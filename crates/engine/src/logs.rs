@@ -25,6 +25,20 @@ pub struct LogChunk {
     pub is_complete: bool,
 }
 
+const MAX_TAIL_LINES: i64 = 10_000;
+
+fn validate_tail_lines(tail_lines: Option<i64>) -> crate::Result<()> {
+    if let Some(count) = tail_lines {
+        if !(1..=MAX_TAIL_LINES).contains(&count) {
+            return Err(crate::EngineError::Other(format!(
+                "tail_lines must be between 1 and {MAX_TAIL_LINES}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// Build [`LogParams`] from a [`LogRequest`].
 fn build_log_params(req: &LogRequest) -> LogParams {
     LogParams {
@@ -38,6 +52,7 @@ fn build_log_params(req: &LogRequest) -> LogParams {
 
 /// Fetch pod logs (non-streaming, returns all at once).
 pub async fn get_pod_logs(client: &Client, req: &LogRequest) -> crate::Result<String> {
+    validate_tail_lines(req.tail_lines)?;
     let pods: Api<Pod> = Api::namespaced(client.clone(), &req.namespace);
     let params = build_log_params(req);
     let logs = pods.logs(&req.pod, &params).await?;
@@ -52,6 +67,7 @@ pub async fn stream_pod_logs(
     client: &Client,
     req: &LogRequest,
 ) -> crate::Result<impl futures::AsyncBufRead> {
+    validate_tail_lines(req.tail_lines)?;
     let pods: Api<Pod> = Api::namespaced(client.clone(), &req.namespace);
     let mut params = build_log_params(req);
     params.follow = true;
@@ -118,6 +134,25 @@ mod tests {
         assert!(params.previous);
         assert_eq!(params.container.as_deref(), Some("coredns"));
         assert_eq!(params.tail_lines, Some(500));
+    }
+
+    #[test]
+    fn validate_tail_lines_accepts_in_range_values() {
+        validate_tail_lines(None).expect("none should be allowed");
+        validate_tail_lines(Some(1)).expect("minimum should be allowed");
+        validate_tail_lines(Some(MAX_TAIL_LINES)).expect("maximum should be allowed");
+    }
+
+    #[test]
+    fn validate_tail_lines_rejects_large_values() {
+        let err = validate_tail_lines(Some(MAX_TAIL_LINES + 1)).unwrap_err();
+        assert!(err.to_string().contains("tail_lines must be between"));
+    }
+
+    #[test]
+    fn validate_tail_lines_rejects_non_positive_values() {
+        let err = validate_tail_lines(Some(0)).unwrap_err();
+        assert!(err.to_string().contains("tail_lines must be between"));
     }
 
     #[test]

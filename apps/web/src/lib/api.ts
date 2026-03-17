@@ -33,6 +33,10 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 const AZURE_CLOUD_STORAGE_KEY = 'telescope-azure-cloud';
 const AZURE_CLOUD_SELECTION_STORAGE_KEY = 'telescope-azure-cloud-selection';
 
+export function isTauriDesktop(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
 /** Fetch counts for all major resource types. */
 export async function getResourceCounts(): Promise<[string, number][]> {
   try {
@@ -580,7 +584,7 @@ export async function getAzureCloud(): Promise<string> {
 
 /** Persist the preferred Azure cloud selection. */
 export async function setAzureCloud(cloud: string): Promise<void> {
-  const isTauriDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const tauriDesktop = isTauriDesktop();
 
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(AZURE_CLOUD_SELECTION_STORAGE_KEY, cloud);
@@ -592,7 +596,7 @@ export async function setAzureCloud(cloud: string): Promise<void> {
   try {
     await invoke<void>('set_azure_cloud', { cloud });
   } catch (error) {
-    if (isTauriDesktop || typeof localStorage === 'undefined') {
+    if (tauriDesktop || typeof localStorage === 'undefined') {
       throw error;
     }
   }

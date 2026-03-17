@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::io::Read;
+use std::path::PathBuf;
 
 use flate2::read::GzDecoder;
 use k8s_openapi::api::core::v1::Secret;
@@ -22,6 +23,118 @@ pub struct HelmRelease {
     pub revision: i32,
     pub status: String,
     pub updated: String,
+}
+
+const MAX_HELM_RELEASE_JSON_BYTES: usize = 8 * 1024 * 1024;
+const HELM_BINARY_PATH_ENV: &str = "TELESCOPE_HELM_PATH";
+
+#[cfg(target_os = "windows")]
+const TRUSTED_HELM_BINARY_PATHS: &[&str] = &[
+    r"C:\Program Files\Helm\helm.exe",
+    r"C:\Program Files (x86)\Helm\helm.exe",
+    r"C:\ProgramData\chocolatey\bin\helm.exe",
+];
+
+#[cfg(not(target_os = "windows"))]
+const TRUSTED_HELM_BINARY_PATHS: &[&str] = &[
+    "/usr/local/bin/helm",
+    "/opt/homebrew/bin/helm",
+    "/usr/bin/helm",
+    "/snap/bin/helm",
+];
+
+fn decode_release_json(data: &[u8]) -> crate::Result<serde_json::Value> {
+    let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)
+        .map_err(|error| {
+            crate::EngineError::Other(format!("Failed to decode Helm release payload: {error}"))
+        })?;
+
+    let mut limited_reader =
+        GzDecoder::new(&decoded[..]).take((MAX_HELM_RELEASE_JSON_BYTES as u64) + 1);
+    let mut json_bytes = Vec::new();
+    limited_reader
+        .read_to_end(&mut json_bytes)
+        .map_err(|error| {
+            crate::EngineError::Other(format!(
+                "Failed to decompress Helm release payload: {error}"
+            ))
+        })?;
+
+    if json_bytes.len() > MAX_HELM_RELEASE_JSON_BYTES {
+        return Err(crate::EngineError::Other(format!(
+            "Helm release payload exceeds {MAX_HELM_RELEASE_JSON_BYTES} bytes after decompression"
+        )));
+    }
+
+    serde_json::from_slice(&json_bytes).map_err(|error| {
+        crate::EngineError::Other(format!("Failed to parse Helm release payload: {error}"))
+    })
+}
+
+fn validate_helm_binary_path(path: PathBuf, source: &str) -> crate::Result<PathBuf> {
+    if !path.is_absolute() {
+        return Err(crate::EngineError::Other(format!(
+            "Helm binary from {source} must be configured with an absolute path"
+        )));
+    }
+
+    let canonical = path.canonicalize().map_err(|error| {
+        crate::EngineError::Other(format!(
+            "Failed to resolve Helm binary from {source}: {error}"
+        ))
+    })?;
+    let metadata = std::fs::metadata(&canonical).map_err(|error| {
+        crate::EngineError::Other(format!(
+            "Failed to inspect Helm binary at {}: {error}",
+            canonical.display()
+        ))
+    })?;
+
+    if !metadata.is_file() {
+        return Err(crate::EngineError::Other(format!(
+            "Configured Helm binary at {} is not a file",
+            canonical.display()
+        )));
+    }
+
+    Ok(canonical)
+}
+
+fn resolve_helm_binary_path_with<I>(
+    configured_path: Option<PathBuf>,
+    trusted_paths: I,
+) -> crate::Result<PathBuf>
+where
+    I: IntoIterator<Item = PathBuf>,
+{
+    if let Some(path) = configured_path {
+        return validate_helm_binary_path(
+            path,
+            &format!("environment variable {HELM_BINARY_PATH_ENV}"),
+        );
+    }
+
+    for candidate in trusted_paths {
+        if !candidate.exists() {
+            continue;
+        }
+
+        if let Ok(resolved) = validate_helm_binary_path(candidate, "trusted installation location")
+        {
+            return Ok(resolved);
+        }
+    }
+
+    Err(crate::EngineError::Other(format!(
+        "Unable to locate Helm in trusted installation paths. Set {HELM_BINARY_PATH_ENV} to an absolute path to a trusted Helm binary."
+    )))
+}
+
+fn resolve_helm_binary_path() -> crate::Result<PathBuf> {
+    resolve_helm_binary_path_with(
+        std::env::var_os(HELM_BINARY_PATH_ENV).map(PathBuf::from),
+        TRUSTED_HELM_BINARY_PATHS.iter().map(PathBuf::from),
+    )
 }
 
 /// List all Helm releases across all namespaces (or a specific namespace).
@@ -121,13 +234,8 @@ pub async fn get_release_history(
 ///
 /// The data flow is: K8s Secret (base64-decoded by kube-rs into ByteString)
 /// -> inner base64 decode -> gzip decompress -> JSON.
-fn parse_helm_release(data: &[u8]) -> Result<HelmRelease, Box<dyn std::error::Error>> {
-    let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)?;
-    let mut decoder = GzDecoder::new(&decoded[..]);
-    let mut json_str = String::new();
-    decoder.read_to_string(&mut json_str)?;
-
-    let release: serde_json::Value = serde_json::from_str(&json_str)?;
+fn parse_helm_release(data: &[u8]) -> crate::Result<HelmRelease> {
+    let release = decode_release_json(data)?;
 
     Ok(HelmRelease {
         name: release["name"].as_str().unwrap_or("").to_string(),
@@ -159,18 +267,15 @@ fn parse_helm_release(data: &[u8]) -> Result<HelmRelease, Box<dyn std::error::Er
 ///
 /// Returns the values as a YAML string. If no config values exist,
 /// returns an empty YAML document.
-pub fn extract_values_from_release(data: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
-    let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)?;
-    let mut decoder = GzDecoder::new(&decoded[..]);
-    let mut json_str = String::new();
-    decoder.read_to_string(&mut json_str)?;
-
-    let release: serde_json::Value = serde_json::from_str(&json_str)?;
+pub fn extract_values_from_release(data: &[u8]) -> crate::Result<String> {
+    let release = decode_release_json(data)?;
     let config = &release["config"];
     if config.is_null() || config.as_object().is_some_and(|o| o.is_empty()) {
         return Ok("# No custom values configured\n".to_string());
     }
-    Ok(serde_yaml::to_string(config)?)
+    serde_yaml::to_string(config).map_err(|error| {
+        crate::EngineError::Other(format!("Failed to serialize Helm values to YAML: {error}"))
+    })
 }
 
 /// Get the user-supplied values for the latest revision of a Helm release.
@@ -210,8 +315,7 @@ pub async fn get_release_values(
     }
 
     match best {
-        Some((_, data)) => extract_values_from_release(&data)
-            .map_err(|e| crate::EngineError::Other(format!("Failed to extract values: {e}"))),
+        Some((_, data)) => extract_values_from_release(&data),
         None => Err(crate::EngineError::Other(format!(
             "Release \"{name}\" not found in namespace \"{namespace}\""
         ))),
@@ -292,24 +396,47 @@ pub fn redact_sensitive_values(value: &mut serde_json::Value) {
 pub async fn rollback_release(namespace: &str, name: &str, revision: i32) -> crate::Result<String> {
     validate_k8s_name(namespace)?;
     validate_k8s_name(name)?;
+    if revision <= 0 {
+        return Err(crate::EngineError::Other(
+            "Helm rollback revision must be greater than zero".to_string(),
+        ));
+    }
 
-    let output = std::process::Command::new("helm")
+    let helm_binary = resolve_helm_binary_path()?;
+    let revision_arg = revision.to_string();
+    let output = tokio::process::Command::new(&helm_binary)
         .args([
             "rollback",
             name,
-            &revision.to_string(),
+            revision_arg.as_str(),
             "--namespace",
             namespace,
         ])
+        .kill_on_drop(true)
         .output()
-        .map_err(|e| crate::EngineError::Other(format!("helm CLI not found: {e}")))?;
+        .await
+        .map_err(|e| {
+            crate::EngineError::Other(format!(
+                "Failed to execute Helm CLI at {}: {e}",
+                helm_binary.display()
+            ))
+        })?;
 
     if output.status.success() {
         Ok(format!("Rolled back {name} to revision {revision}"))
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("helm exited with status {}", output.status)
+        };
         Err(crate::EngineError::Other(format!(
-            "Rollback failed: {stderr}"
+            "Rollback via {} failed: {detail}",
+            helm_binary.display()
         )))
     }
 }
@@ -320,6 +447,32 @@ mod tests {
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestTempFile {
+        path: PathBuf,
+    }
+
+    impl TestTempFile {
+        fn new(name: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "telescope-helm-{name}-{}-{unique}",
+                std::process::id()
+            ));
+            std::fs::write(&path, b"helm-test").unwrap();
+            Self { path }
+        }
+    }
+
+    impl Drop for TestTempFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
 
     fn make_helm_secret_data(json: &str) -> Vec<u8> {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
@@ -327,6 +480,29 @@ mod tests {
         let gzipped = encoder.finish().unwrap();
         let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &gzipped);
         b64.into_bytes()
+    }
+
+    fn make_oversized_helm_secret_data() -> Vec<u8> {
+        let json = serde_json::json!({
+            "name": "too-large",
+            "version": 1,
+            "info": {
+                "status": "deployed",
+                "last_deployed": "2025-01-15T10:30:00Z"
+            },
+            "chart": {
+                "metadata": {
+                    "name": "nginx",
+                    "version": "1.2.3",
+                    "appVersion": "1.25.0"
+                }
+            },
+            "config": {
+                "oversized": "x".repeat(MAX_HELM_RELEASE_JSON_BYTES + 1)
+            }
+        });
+
+        make_helm_secret_data(&json.to_string())
     }
 
     #[test]
@@ -378,6 +554,12 @@ mod tests {
     }
 
     #[test]
+    fn parse_helm_release_rejects_oversized_decompressed_payload() {
+        let err = parse_helm_release(&make_oversized_helm_secret_data()).unwrap_err();
+        assert!(err.to_string().contains("exceeds"));
+    }
+
+    #[test]
     fn extract_values_returns_yaml() {
         let json = r#"{
             "name": "my-release",
@@ -399,6 +581,12 @@ mod tests {
         let data = make_helm_secret_data(json);
         let values = extract_values_from_release(&data).expect("should extract");
         assert!(values.contains("No custom values"));
+    }
+
+    #[test]
+    fn extract_values_rejects_oversized_decompressed_payload() {
+        let err = extract_values_from_release(&make_oversized_helm_secret_data()).unwrap_err();
+        assert!(err.to_string().contains("exceeds"));
     }
 
     #[test]
@@ -467,5 +655,38 @@ mod tests {
         assert_eq!(val["password"], original["password"]);
         assert_eq!(val["auth"], original["auth"]);
         assert_eq!(val["secret"], original["secret"]);
+    }
+
+    #[test]
+    fn resolve_helm_binary_prefers_explicit_absolute_path() {
+        let helm_binary = TestTempFile::new("configured");
+        let resolved = resolve_helm_binary_path_with(Some(helm_binary.path.clone()), Vec::new())
+            .expect("configured path should resolve");
+
+        assert_eq!(resolved, helm_binary.path.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_helm_binary_rejects_relative_paths() {
+        let err = resolve_helm_binary_path_with(Some(PathBuf::from("helm")), Vec::new())
+            .expect_err("relative path should fail");
+
+        assert!(err.to_string().contains("absolute path"));
+    }
+
+    #[test]
+    fn resolve_helm_binary_uses_trusted_candidate() {
+        let helm_binary = TestTempFile::new("trusted");
+        let resolved = resolve_helm_binary_path_with(None, vec![helm_binary.path.clone()])
+            .expect("trusted candidate should resolve");
+
+        assert_eq!(resolved, helm_binary.path.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_helm_binary_requires_explicit_trust_when_not_found() {
+        let err = resolve_helm_binary_path_with(None, Vec::new()).expect_err("missing binary");
+
+        assert!(err.to_string().contains(HELM_BINARY_PATH_ENV));
     }
 }

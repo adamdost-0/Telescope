@@ -284,12 +284,32 @@ pub struct ApplyResult {
     pub result_yaml: Option<String>,
 }
 
+pub const MAX_APPLY_RESOURCE_MANIFEST_BYTES: usize = 1024 * 1024;
+
+pub fn validate_apply_resource_content(content: &str) -> crate::Result<()> {
+    if content.trim().is_empty() {
+        return Err(crate::EngineError::Other(
+            "Manifest must not be empty".to_string(),
+        ));
+    }
+
+    if content.len() > MAX_APPLY_RESOURCE_MANIFEST_BYTES {
+        return Err(crate::EngineError::Other(format!(
+            "Manifest exceeds maximum size of {MAX_APPLY_RESOURCE_MANIFEST_BYTES} bytes"
+        )));
+    }
+
+    Ok(())
+}
+
 /// Apply a resource from a YAML or JSON string using server-side apply.
 pub async fn apply_resource(
     client: &Client,
     content: &str,
     dry_run: bool,
 ) -> crate::Result<ApplyResult> {
+    validate_apply_resource_content(content)?;
+
     let value: serde_json::Value = serde_json::from_str(content)
         .or_else(|_| serde_yaml::from_str(content))
         .map_err(|e| crate::EngineError::Other(format!("Invalid YAML/JSON: {}", e)))?;
@@ -433,6 +453,19 @@ data:
         let value: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(value["apiVersion"].as_str().unwrap(), "v1");
         assert_eq!(value["kind"].as_str().unwrap(), "ConfigMap");
+    }
+
+    #[test]
+    fn validate_apply_resource_content_rejects_oversized_manifest() {
+        let manifest = "a".repeat(MAX_APPLY_RESOURCE_MANIFEST_BYTES + 1);
+        let err = validate_apply_resource_content(&manifest).unwrap_err();
+        assert!(err.to_string().contains("maximum size"));
+    }
+
+    #[test]
+    fn validate_apply_resource_content_rejects_empty_manifest() {
+        let err = validate_apply_resource_content("   ").unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
     }
 
     #[test]

@@ -42,6 +42,7 @@
 ### Desktop experience
 - 🖥️ **Native Tauri app** — Rust backend commands over IPC with 60+ desktop commands exposed to the UI
 - 🎨 **SvelteKit frontend** — `apps/web` contains the frontend source that is packaged into the desktop application by Tauri
+- 🧹 **Ephemeral local cache** — Telescope clears the SQLite resource cache on startup, disconnect, and app exit; Secrets stay on-demand only, and cached Pod env literal values are redacted before they hit disk
 
 ### AKS-first experience
 - 🔑 **Auth detection** — Identifies exec/token/certificate auth and provides kubelogin guidance

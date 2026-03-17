@@ -690,8 +690,8 @@
 
 <!-- ── Scale Dialog ────────────────────────────────────────────────────── -->
 {#if showScaleDialog}
-  <div class="dialog-backdrop" onclick={() => (showScaleDialog = false)} role="presentation">
-    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Scale Node Pool">
+  <div class="dialog-backdrop" onclick={(e) => e.target === e.currentTarget && (showScaleDialog = false)} role="presentation">
+    <div class="dialog" role="dialog" aria-modal="true" tabindex="-1" aria-label="Scale Node Pool">
       <h2>Scale Node Pool: {scalePoolName}</h2>
       <p class="dialog-subtitle">Current count: <strong>{scaleCurrentCount}</strong></p>
       <label class="dialog-field">
@@ -713,8 +713,8 @@
 
 <!-- ── Autoscaler Dialog ───────────────────────────────────────────────── -->
 {#if showAutoscalerDialog}
-  <div class="dialog-backdrop" onclick={() => (showAutoscalerDialog = false)} role="presentation">
-    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Configure Autoscaler">
+  <div class="dialog-backdrop" onclick={(e) => e.target === e.currentTarget && (showAutoscalerDialog = false)} role="presentation">
+    <div class="dialog" role="dialog" aria-modal="true" tabindex="-1" aria-label="Configure Autoscaler">
       <h2>Autoscaler: {autoscalerPoolName}</h2>
       <label class="dialog-field toggle-field">
         <span>Enable autoscaler</span>
@@ -742,8 +742,8 @@
 
 <!-- ── Create Dialog ───────────────────────────────────────────────────── -->
 {#if showCreateDialog}
-  <div class="dialog-backdrop" onclick={() => (showCreateDialog = false)} role="presentation">
-    <div class="dialog dialog-wide" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Create Node Pool">
+  <div class="dialog-backdrop" onclick={(e) => e.target === e.currentTarget && (showCreateDialog = false)} role="presentation">
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" tabindex="-1" aria-label="Create Node Pool">
       <h2>Create Node Pool</h2>
       <div class="dialog-form-grid">
         <label class="dialog-field">
@@ -826,8 +826,8 @@
 
 <!-- ── Delete Dialog ───────────────────────────────────────────────────── -->
 {#if showDeleteDialog}
-  <div class="dialog-backdrop" onclick={() => (showDeleteDialog = false)} role="presentation">
-    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Delete Node Pool">
+  <div class="dialog-backdrop" onclick={(e) => e.target === e.currentTarget && (showDeleteDialog = false)} role="presentation">
+    <div class="dialog" role="dialog" aria-modal="true" tabindex="-1" aria-label="Delete Node Pool">
       <h2>Delete Node Pool</h2>
       <div class="delete-warning">
         <p>⚠️ This will permanently remove pool <strong>{deletePoolName}</strong>.</p>
@@ -849,8 +849,8 @@
 {/if}
 
 {#if pendingUpgrade}
-  <div class="dialog-backdrop" onclick={() => (pendingUpgrade = null)} role="presentation">
-    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Upgrade Node Pool">
+  <div class="dialog-backdrop" onclick={(e) => e.target === e.currentTarget && (pendingUpgrade = null)} role="presentation">
+    <div class="dialog" role="dialog" aria-modal="true" tabindex="-1" aria-label="Upgrade Node Pool">
       <h2>
         {#if pendingUpgrade.type === 'version'}
           Upgrade {pendingUpgrade.poolName} to Kubernetes {pendingUpgrade.upgrade.kubernetesVersion}

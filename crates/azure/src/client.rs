@@ -15,6 +15,52 @@ pub struct ArmClient {
     http: Client,
 }
 
+const MAX_RESPONSE_BODY_PREVIEW_CHARS: usize = 256;
+
+fn response_body_preview(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return "<empty body>".to_string();
+    }
+
+    let preview: String = trimmed
+        .chars()
+        .take(MAX_RESPONSE_BODY_PREVIEW_CHARS)
+        .collect();
+    if trimmed.chars().count() > MAX_RESPONSE_BODY_PREVIEW_CHARS {
+        format!("{preview}…")
+    } else {
+        preview
+    }
+}
+
+async fn read_response_text(response: reqwest::Response) -> Result<String> {
+    let status = response.status().as_u16();
+    response.text().await.map_err(|error| {
+        AzureError::Serialization(format!(
+            "Failed to read ARM response body ({status}): {error}"
+        ))
+    })
+}
+
+fn parse_api_error(status: u16, body: String) -> AzureError {
+    match serde_json::from_str::<AzureErrorResponse>(&body) {
+        Ok(err) => AzureError::Api {
+            status,
+            code: err.error.code,
+            message: err.error.message,
+        },
+        Err(parse_error) => AzureError::Api {
+            status,
+            code: "UnexpectedResponse".to_string(),
+            message: format!(
+                "Unparseable Azure error response: {parse_error}; body: {}",
+                response_body_preview(&body)
+            ),
+        },
+    }
+}
+
 impl ArmClient {
     pub fn new(cloud: AzureCloud) -> Result<Self> {
         let credential =
@@ -63,28 +109,30 @@ impl ArmClient {
             return Err(AzureError::NotFound);
         }
         if status == 409 {
-            let text = response.text().await.unwrap_or_default();
-            return Err(AzureError::Conflict(text));
+            let text = read_response_text(response).await?;
+            let conflict = match parse_api_error(status, text) {
+                AzureError::Api { code, message, .. } => {
+                    AzureError::Conflict(format!("[{code}] {message}"))
+                }
+                other => AzureError::Conflict(other.to_string()),
+            };
+            return Err(conflict);
         }
         if !response.status().is_success() {
-            let text = response.text().await.unwrap_or_default();
-            if let Ok(err) = serde_json::from_str::<AzureErrorResponse>(&text) {
-                return Err(AzureError::Api {
-                    status,
-                    code: err.error.code,
-                    message: err.error.message,
-                });
-            }
-            return Err(AzureError::Api {
-                status,
-                code: "Unknown".to_string(),
-                message: text,
-            });
+            let text = read_response_text(response).await?;
+            return Err(parse_api_error(status, text));
         }
-        response
-            .json::<T>()
-            .await
-            .map_err(|e| AzureError::Serialization(e.to_string()))
+        let body = response.bytes().await.map_err(|error| {
+            AzureError::Serialization(format!(
+                "Failed to read ARM success response body ({status}): {error}"
+            ))
+        })?;
+        serde_json::from_slice::<T>(&body).map_err(|error| {
+            let preview = response_body_preview(&String::from_utf8_lossy(&body));
+            AzureError::Serialization(format!(
+                "Failed to deserialize ARM success response ({status}): {error}; body: {preview}"
+            ))
+        })
     }
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -128,23 +176,12 @@ impl ArmClient {
             .send()
             .await
             .map_err(|e| AzureError::Network(e.to_string()))?;
-        let status = response.status().as_u16();
-        if status == 200 || status == 202 || status == 204 {
+        if response.status().is_success() {
             return Ok(());
         }
-        let text = response.text().await.unwrap_or_default();
-        if let Ok(err) = serde_json::from_str::<AzureErrorResponse>(&text) {
-            return Err(AzureError::Api {
-                status,
-                code: err.error.code,
-                message: err.error.message,
-            });
-        }
-        Err(AzureError::Api {
-            status,
-            code: "Unknown".into(),
-            message: text,
-        })
+        let status = response.status().as_u16();
+        let text = read_response_text(response).await?;
+        Err(parse_api_error(status, text))
     }
 
     pub async fn delete(&self, path: &str) -> Result<()> {
@@ -158,23 +195,12 @@ impl ArmClient {
             .send()
             .await
             .map_err(|e| AzureError::Network(e.to_string()))?;
-        let status = response.status().as_u16();
-        if status == 200 || status == 202 || status == 204 {
+        if response.status().is_success() {
             return Ok(());
         }
-        let text = response.text().await.unwrap_or_default();
-        if let Ok(err) = serde_json::from_str::<AzureErrorResponse>(&text) {
-            return Err(AzureError::Api {
-                status,
-                code: err.error.code,
-                message: err.error.message,
-            });
-        }
-        Err(AzureError::Api {
-            status,
-            code: "Unknown".into(),
-            message: text,
-        })
+        let status = response.status().as_u16();
+        let text = read_response_text(response).await?;
+        Err(parse_api_error(status, text))
     }
 }
 
@@ -222,5 +248,53 @@ mod tests {
             AKS_API_VERSION
         );
         assert!(url.starts_with("https://management.azure.microsoft.scloud"));
+    }
+
+    #[test]
+    fn parse_api_error_preserves_azure_error_payloads() {
+        let err = parse_api_error(
+            400,
+            r#"{"error":{"code":"BadRequest","message":"Invalid parameter"}}"#.to_string(),
+        );
+
+        match err {
+            AzureError::Api {
+                status,
+                code,
+                message,
+            } => {
+                assert_eq!(status, 400);
+                assert_eq!(code, "BadRequest");
+                assert_eq!(message, "Invalid parameter");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_api_error_reports_unparseable_bodies() {
+        let err = parse_api_error(502, "<html>gateway failure</html>".to_string());
+
+        match err {
+            AzureError::Api {
+                status,
+                code,
+                message,
+            } => {
+                assert_eq!(status, 502);
+                assert_eq!(code, "UnexpectedResponse");
+                assert!(message.contains("gateway failure"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn response_body_preview_handles_empty_and_long_text() {
+        assert_eq!(response_body_preview("   "), "<empty body>");
+
+        let preview = response_body_preview(&"x".repeat(MAX_RESPONSE_BODY_PREVIEW_CHARS + 8));
+        assert!(preview.ends_with('…'));
+        assert_eq!(preview.chars().count(), MAX_RESPONSE_BODY_PREVIEW_CHARS + 1);
     }
 }

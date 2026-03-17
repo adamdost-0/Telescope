@@ -1,6 +1,7 @@
 //! Structured audit logging for destructive operations.
 
 use serde::Serialize;
+use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
 
@@ -17,13 +18,88 @@ pub struct AuditEntry {
     pub detail: Option<String>,
 }
 
-/// Append an audit entry to the audit log file as a JSON line.
-pub fn log_audit(log_path: &str, entry: &AuditEntry) {
-    if let Ok(json) = serde_json::to_string(entry) {
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
-            let _ = writeln!(file, "{}", json);
-        }
+fn sanitize_field(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect()
+}
+
+fn sanitize_entry(entry: &AuditEntry) -> AuditEntry {
+    AuditEntry {
+        timestamp: sanitize_field(&entry.timestamp),
+        actor: sanitize_field(&entry.actor),
+        context: sanitize_field(&entry.context),
+        namespace: sanitize_field(&entry.namespace),
+        action: sanitize_field(&entry.action),
+        resource_type: sanitize_field(&entry.resource_type),
+        resource_name: sanitize_field(&entry.resource_name),
+        result: sanitize_field(&entry.result),
+        detail: entry.detail.as_deref().map(sanitize_field),
     }
+}
+
+fn normalize_actor_component(value: Option<&str>, fallback: &str) -> String {
+    let normalized: String = value
+        .unwrap_or_default()
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_control() || ch.is_whitespace() || ch == '@' {
+                '_'
+            } else {
+                ch
+            }
+        })
+        .collect();
+
+    if normalized.trim_matches('_').is_empty() {
+        fallback.to_string()
+    } else {
+        normalized
+    }
+}
+
+fn first_non_empty_env(keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        env::var(key)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn resolve_actor_identity_from_sources(user: Option<&str>, host: Option<&str>) -> String {
+    let user = normalize_actor_component(user, "unknown");
+    let host = normalize_actor_component(host, "local");
+    format!("{user}@{host}")
+}
+
+/// Resolve an audit actor string in `user@host` form for desktop audit logs.
+pub fn resolve_actor_identity() -> String {
+    let user = first_non_empty_env(&["USER", "USERNAME", "LOGNAME"]);
+    let host = hostname::get()
+        .ok()
+        .and_then(|value| value.into_string().ok())
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| first_non_empty_env(&["HOSTNAME", "COMPUTERNAME", "HOST"]));
+
+    resolve_actor_identity_from_sources(user.as_deref(), host.as_deref())
+}
+
+/// Append an audit entry to the audit log file as a JSON line.
+pub fn log_audit(log_path: &str, entry: &AuditEntry) -> std::io::Result<()> {
+    let json = serde_json::to_string(&sanitize_entry(entry)).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("failed to serialize audit entry: {error}"),
+        )
+    })?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)?;
+    writeln!(file, "{json}")
 }
 
 #[cfg(test)]
@@ -53,7 +129,7 @@ mod tests {
             detail: None,
         };
 
-        log_audit(&path_str, &entry);
+        log_audit(&path_str, &entry).expect("should write first audit entry");
 
         let mut contents = String::new();
         std::fs::File::open(&path)
@@ -72,7 +148,7 @@ mod tests {
             action: "scale".to_string(),
             ..entry
         };
-        log_audit(&path_str, &entry2);
+        log_audit(&path_str, &entry2).expect("should append second audit entry");
 
         let mut contents2 = String::new();
         std::fs::File::open(&path)
@@ -87,5 +163,85 @@ mod tests {
 
         // Clean up.
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn log_audit_returns_write_errors() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir()
+            .join(format!("telescope-audit-missing-{unique}"))
+            .join("nested")
+            .join("audit.log");
+        let path_str = path.to_string_lossy().to_string();
+
+        let entry = AuditEntry {
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            actor: "test-user@example.com".to_string(),
+            context: "test-ctx".to_string(),
+            namespace: "default".to_string(),
+            action: "delete".to_string(),
+            resource_type: "v1/Pod".to_string(),
+            resource_name: "my-pod".to_string(),
+            result: "success".to_string(),
+            detail: None,
+        };
+
+        let err = log_audit(&path_str, &entry).expect_err("missing parent directory should fail");
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn log_audit_sanitizes_control_characters() {
+        let dir = std::env::temp_dir().join("telescope-audit-sanitize-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test-audit.log");
+        let path_str = path.to_string_lossy().to_string();
+
+        let _ = std::fs::remove_file(&path);
+
+        let entry = AuditEntry {
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            actor: "test-user\n@example.com".to_string(),
+            context: "test\rctx".to_string(),
+            namespace: "default".to_string(),
+            action: "delete".to_string(),
+            resource_type: "v1/Pod".to_string(),
+            resource_name: "my-pod".to_string(),
+            result: "success".to_string(),
+            detail: Some("line1\nline2\t".to_string()),
+        };
+
+        log_audit(&path_str, &entry).expect("should write sanitized entry");
+
+        let mut contents = String::new();
+        std::fs::File::open(&path)
+            .unwrap()
+            .read_to_string(&mut contents)
+            .unwrap();
+
+        let lines: Vec<&str> = contents.trim().lines().collect();
+        assert_eq!(lines.len(), 1);
+
+        let parsed: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(parsed["actor"], "test-user @example.com");
+        assert_eq!(parsed["context"], "test ctx");
+        assert_eq!(parsed["detail"], "line1 line2 ");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn resolve_actor_identity_uses_user_and_host_sources() {
+        let actor = resolve_actor_identity_from_sources(Some("alice"), Some("workstation"));
+        assert_eq!(actor, "alice@workstation");
+    }
+
+    #[test]
+    fn resolve_actor_identity_sanitizes_components_and_falls_back() {
+        let actor = resolve_actor_identity_from_sources(Some("  jane doe  "), Some(" \n "));
+        assert_eq!(actor, "jane_doe@local");
     }
 }

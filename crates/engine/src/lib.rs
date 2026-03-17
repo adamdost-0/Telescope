@@ -15,6 +15,7 @@ pub mod namespace;
 pub mod node_ops;
 pub mod portforward;
 pub mod secrets;
+pub mod validation;
 pub mod watcher;
 
 pub use client::ClusterInfo;

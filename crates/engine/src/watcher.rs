@@ -29,6 +29,7 @@ use kube::{
     Api, Client, Resource as KubeResource, ResourceExt,
 };
 use serde::Serialize;
+use serde_json::Value;
 use tokio::sync::{watch, Semaphore};
 use tracing::{error, info, warn};
 
@@ -36,6 +37,49 @@ use telescope_core::{ConnectionEvent, ConnectionState, ResourceEntry, ResourceSt
 
 /// Maximum concurrent LIST operations across all watchers.
 const MAX_CONCURRENT_LISTS: usize = 3;
+const REDACTED_CACHE_VALUE: &str = "<redacted>";
+
+fn redact_cached_pod_fields(value: &mut Value) {
+    let Some(spec) = value.get_mut("spec").and_then(Value::as_object_mut) else {
+        return;
+    };
+
+    for container_key in ["containers", "initContainers", "ephemeralContainers"] {
+        let Some(containers) = spec.get_mut(container_key).and_then(Value::as_array_mut) else {
+            continue;
+        };
+
+        for container in containers {
+            let Some(env_vars) = container.get_mut("env").and_then(Value::as_array_mut) else {
+                continue;
+            };
+
+            for env_var in env_vars {
+                let Some(env) = env_var.as_object_mut() else {
+                    continue;
+                };
+
+                if env.contains_key("value") {
+                    env.insert(
+                        "value".to_string(),
+                        Value::String(REDACTED_CACHE_VALUE.to_string()),
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn serialize_resource_for_cache<K>(gvk: &str, obj: &K) -> Option<String>
+where
+    K: Serialize,
+{
+    let mut value = serde_json::to_value(obj).ok()?;
+    if gvk == "v1/Pod" {
+        redact_cached_pod_fields(&mut value);
+    }
+    serde_json::to_string(&value).ok()
+}
 
 /// Convert any Kubernetes resource to a [`ResourceEntry`] for SQLite storage.
 fn resource_to_entry<K>(gvk: &str, namespace: &str, obj: &K) -> Option<ResourceEntry>
@@ -45,7 +89,7 @@ where
     let meta = obj.meta();
     let name = meta.name.as_deref()?;
     let rv = meta.resource_version.as_deref().unwrap_or("");
-    let content = serde_json::to_string(obj).ok()?;
+    let content = serialize_resource_for_cache(gvk, obj)?;
     Some(ResourceEntry {
         gvk: gvk.to_string(),
         namespace: namespace.to_string(),
@@ -562,6 +606,51 @@ mod tests {
         let entry = resource_to_entry("v1/Pod", "default", &pod).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&entry.content).unwrap();
         assert!(parsed.is_object());
+    }
+
+    #[test]
+    fn resource_to_entry_redacts_literal_pod_env_values() {
+        let pod: Pod = serde_json::from_value(serde_json::json!({
+            "metadata": {
+                "name": "sensitive-pod",
+                "resourceVersion": "9"
+            },
+            "spec": {
+                "containers": [{
+                    "name": "web",
+                    "image": "nginx",
+                    "env": [
+                        { "name": "DATABASE_PASSWORD", "value": "super-secret-123" },
+                        { "name": "FROM_SECRET", "valueFrom": { "secretKeyRef": { "name": "db", "key": "password" } } }
+                    ]
+                }],
+                "initContainers": [{
+                    "name": "init",
+                    "image": "busybox",
+                    "env": [
+                        { "name": "BOOTSTRAP_TOKEN", "value": "bootstrap-secret" }
+                    ]
+                }]
+            }
+        }))
+        .expect("pod JSON should deserialize");
+
+        let entry = resource_to_entry("v1/Pod", "default", &pod).expect("pod should serialize");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&entry.content).expect("cached content should be valid JSON");
+
+        assert_eq!(
+            parsed["spec"]["containers"][0]["env"][0]["value"],
+            REDACTED_CACHE_VALUE
+        );
+        assert_eq!(
+            parsed["spec"]["initContainers"][0]["env"][0]["value"],
+            REDACTED_CACHE_VALUE
+        );
+        assert_eq!(
+            parsed["spec"]["containers"][0]["env"][1]["valueFrom"]["secretKeyRef"]["name"],
+            "db"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getConnectionState } from '$lib/api';
+  import { getConnectionState, isTauriDesktop } from '$lib/api';
   import { connectionState } from '$lib/stores';
   import type { ConnectionState } from '$lib/tauri-commands';
 
@@ -15,6 +15,10 @@
   onMount(async () => {
     const initial = await getConnectionState();
     updateState(initial);
+
+    if (!isTauriDesktop()) {
+      return;
+    }
 
     const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<ConnectionState>('connection-state-changed', (event) => {
