@@ -19,7 +19,7 @@ jobs:
             asset_name: telescope-windows-x64.exe
           - os: macos-latest
             binary: telescope-desktop
-            asset_name: telescope-macos-x64
+            asset_name: telescope-macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -152,6 +152,19 @@ jobs:
           cp "target/release/${{ matrix.binary }}" "target/release/${VERSIONED}"
           echo "VERSIONED_ASSET=${VERSIONED}" >> "$GITHUB_ENV"
 
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd target/release
+          CHECKSUM_FILE="checksums-${{ matrix.asset_name }}.sha256"
+          sha256sum "${{ env.VERSIONED_ASSET }}" > "$CHECKSUM_FILE"
+          find bundle -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.app.tar.gz" \) 2>/dev/null | while read f; do
+            sha256sum "$f" >> "$CHECKSUM_FILE"
+          done
+          echo "CHECKSUM_FILE=$CHECKSUM_FILE" >> "$GITHUB_ENV"
+          echo "=== Checksums ==="
+          cat "$CHECKSUM_FILE"
+
       - name: Create GitHub Release (curated changelog)
         if: ${{ env.HAS_CHANGELOG_RELEASE_NOTES == 'true' }}
         uses: softprops/action-gh-release@v2
@@ -160,6 +173,7 @@ jobs:
           body_path: ${{ env.RELEASE_NOTES_PATH }}
           files: |
             target/release/${{ env.VERSIONED_ASSET }}
+            target/release/${{ env.CHECKSUM_FILE }}
             target/release/bundle/msi/**
             target/release/bundle/nsis/**
             target/release/bundle/dmg/**
@@ -175,6 +189,7 @@ jobs:
           generate_release_notes: true
           files: |
             target/release/${{ env.VERSIONED_ASSET }}
+            target/release/${{ env.CHECKSUM_FILE }}
             target/release/bundle/msi/**
             target/release/bundle/nsis/**
             target/release/bundle/dmg/**
