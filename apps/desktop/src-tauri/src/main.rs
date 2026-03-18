@@ -1650,6 +1650,7 @@ async fn spawn_watch_task(
     let ns = namespace.to_string();
 
     let watcher = telescope_engine::ResourceWatcher::new(client, Arc::clone(&store));
+    watcher.register_watches(29); // 28 aux watchers + 1 pod watcher
     let mut state_rx = watcher.state_receiver();
 
     // Spawn a task to forward state changes from the watcher to the UI.
@@ -2208,6 +2209,14 @@ async fn set_azure_cloud(state: State<'_, AppState>, cloud: String) -> Result<()
 
 fn main() {
     tracing_subscriber::fmt::init();
+    if let Err(e) = run() {
+        error!("Fatal startup error: {}", e);
+        eprintln!("Telescope failed to start: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting Telescope desktop app");
 
     let data_dir = std::env::var("HOME")
@@ -2217,10 +2226,10 @@ fn main() {
     let db_path = data_dir.join("resources.db");
     debug!(db_path = ?db_path, "Resolved desktop database path");
     // safe: path always has a parent after join()
-    std::fs::create_dir_all(db_path.parent().unwrap()).expect("Failed to create data directory");
+    std::fs::create_dir_all(db_path.parent().unwrap())?;
 
     let db_path_str = db_path.to_string_lossy().to_string();
-    let store = ResourceStore::open(&db_path_str).expect("Failed to initialize resource store");
+    let store = ResourceStore::open(&db_path_str)?;
 
     // Set restrictive file permissions on the database (Unix only).
     #[cfg(unix)]
@@ -2334,8 +2343,7 @@ fn main() {
             info!("Tauri setup complete, loading frontend");
             Ok(())
         })
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
+        .build(tauri::generate_context!())?
         .run(|app, event| {
             if let RunEvent::Exit = event {
                 let clear_result: Result<(), String> = {
@@ -2354,4 +2362,6 @@ fn main() {
                 }
             }
         });
+
+    Ok(())
 }
