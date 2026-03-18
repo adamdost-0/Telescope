@@ -4,6 +4,7 @@
 //! into the SQLite ResourceStore. Implements exponential backoff
 //! with jitter and concurrency limits on LIST operations.
 
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures::{StreamExt, TryStreamExt};
@@ -110,6 +111,38 @@ where
     })
 }
 
+/// Tracks aggregate sync progress across multiple concurrent watch tasks.
+///
+/// When [`ResourceWatcher::register_watches`] is called with the total
+/// expected watch count, individual watch loops report via
+/// [`ResourceWatcher::mark_watch_synced`] and [`mark_watch_failed`].
+/// `SyncComplete` is emitted only after **all** watches have reported.
+struct SyncTracker {
+    expected: AtomicU32,
+    synced: AtomicU32,
+    failed: AtomicU32,
+    /// Ensures the completion event is emitted exactly once.
+    emitted: AtomicBool,
+}
+
+impl SyncTracker {
+    fn new() -> Self {
+        Self {
+            expected: AtomicU32::new(0),
+            synced: AtomicU32::new(0),
+            failed: AtomicU32::new(0),
+            emitted: AtomicBool::new(false),
+        }
+    }
+
+    fn reset(&self, expected: u32) {
+        self.expected.store(expected, Ordering::SeqCst);
+        self.synced.store(0, Ordering::SeqCst);
+        self.failed.store(0, Ordering::SeqCst);
+        self.emitted.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Manages watch streams and syncs resources to SQLite.
 ///
 /// The store is wrapped in `Mutex` because `rusqlite::Connection` is `Send`
@@ -124,6 +157,8 @@ pub struct ResourceWatcher {
     store: Arc<Mutex<ResourceStore>>,
     /// Semaphore to limit concurrent LIST operations.
     list_semaphore: Arc<Semaphore>,
+    /// Aggregate sync tracker for multi-watch readiness.
+    sync_tracker: Arc<SyncTracker>,
     /// Sender for connection state updates.
     state_tx: Arc<watch::Sender<ConnectionState>>,
     /// Receiver for connection state (clone for UI consumption).
@@ -137,6 +172,7 @@ impl ResourceWatcher {
             client,
             store,
             list_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_LISTS)),
+            sync_tracker: Arc::new(SyncTracker::new()),
             state_tx: Arc::new(state_tx),
             state_rx,
         }
@@ -165,6 +201,104 @@ impl ResourceWatcher {
         let current = self.state_rx.borrow().clone();
         if let Some(next) = current.transition(event) {
             let _ = self.state_tx.send(next);
+        }
+    }
+
+    /// Register the total number of watch tasks that will be spawned.
+    ///
+    /// Must be called **before** any watch task starts. Drives the
+    /// connection state to `Syncing`. When all registered watches
+    /// report (via `InitDone` or error), the aggregate state transitions
+    /// to `Ready` (all synced) or `Degraded` (some failed).
+    pub fn register_watches(&self, count: u32) {
+        self.sync_tracker.reset(count);
+        self.transition(&ConnectionEvent::Connect);
+        self.transition(&ConnectionEvent::Authenticated);
+        if count > 0 {
+            self.transition(&ConnectionEvent::SyncProgress {
+                synced: 0,
+                total: Some(count),
+            });
+        } else {
+            self.transition(&ConnectionEvent::SyncComplete);
+        }
+    }
+
+    /// Record that one watch completed its initial LIST successfully.
+    fn mark_watch_synced(&self, gvk: &str) {
+        let new_synced = self.sync_tracker.synced.fetch_add(1, Ordering::SeqCst) + 1;
+        let expected = self.sync_tracker.expected.load(Ordering::SeqCst);
+
+        info!(
+            gvk,
+            synced = new_synced,
+            expected,
+            "Watch completed initial sync"
+        );
+
+        if expected > 0 {
+            self.transition(&ConnectionEvent::SyncProgress {
+                synced: new_synced,
+                total: Some(expected),
+            });
+            self.check_sync_complete();
+        } else {
+            // Legacy mode: no registration, immediate transition.
+            self.transition(&ConnectionEvent::SyncComplete);
+        }
+    }
+
+    /// Record that one watch failed before completing its initial LIST.
+    fn mark_watch_failed(&self, gvk: &str, error: &str) {
+        let new_failed = self.sync_tracker.failed.fetch_add(1, Ordering::SeqCst) + 1;
+        let expected = self.sync_tracker.expected.load(Ordering::SeqCst);
+
+        warn!(
+            gvk,
+            failed = new_failed,
+            expected,
+            error,
+            "Watch failed during initial sync"
+        );
+
+        if expected > 0 {
+            self.check_sync_complete();
+        } else {
+            self.transition(&ConnectionEvent::WatchError {
+                message: error.to_string(),
+            });
+        }
+    }
+
+    /// If all registered watches have reported, emit the final state event.
+    fn check_sync_complete(&self) {
+        let synced = self.sync_tracker.synced.load(Ordering::SeqCst);
+        let failed = self.sync_tracker.failed.load(Ordering::SeqCst);
+        let expected = self.sync_tracker.expected.load(Ordering::SeqCst);
+
+        if expected == 0 || synced + failed < expected {
+            return;
+        }
+
+        // Ensure exactly one caller emits the completion event.
+        if self
+            .sync_tracker
+            .emitted
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+
+        if failed > 0 {
+            self.transition(&ConnectionEvent::WatchError {
+                message: format!(
+                    "{} of {} watches failed during initial sync",
+                    failed, expected
+                ),
+            });
+        } else {
+            self.transition(&ConnectionEvent::SyncComplete);
         }
     }
 
@@ -260,20 +394,28 @@ impl ResourceWatcher {
                         info!("Initial sync complete for {}/{}", gvk_str, ns);
                         if !synced {
                             synced = true;
-                            self.transition(&ConnectionEvent::SyncComplete);
+                            self.mark_watch_synced(&gvk_str);
                         }
                     }
                 },
                 Ok(None) => {
                     warn!("Watch stream ended for {}/{}", gvk_str, ns);
-                    self.transition(&ConnectionEvent::Disconnected);
+                    if !synced {
+                        self.mark_watch_failed(&gvk_str, "watch stream ended before initial sync");
+                    } else {
+                        self.transition(&ConnectionEvent::Disconnected);
+                    }
                     break;
                 }
                 Err(e) => {
                     error!("Watch error for {}/{}: {}", gvk_str, ns, e);
-                    self.transition(&ConnectionEvent::WatchError {
-                        message: e.to_string(),
-                    });
+                    if !synced {
+                        self.mark_watch_failed(&gvk_str, &e.to_string());
+                    } else {
+                        self.transition(&ConnectionEvent::WatchError {
+                            message: e.to_string(),
+                        });
+                    }
                     break;
                 }
             }
@@ -341,20 +483,28 @@ impl ResourceWatcher {
                         info!("Initial sync complete for {} (all namespaces)", gvk_str);
                         if !synced {
                             synced = true;
-                            self.transition(&ConnectionEvent::SyncComplete);
+                            self.mark_watch_synced(&gvk_str);
                         }
                     }
                 },
                 Ok(None) => {
                     warn!("Watch stream ended for {} (all namespaces)", gvk_str);
-                    self.transition(&ConnectionEvent::Disconnected);
+                    if !synced {
+                        self.mark_watch_failed(&gvk_str, "watch stream ended before initial sync");
+                    } else {
+                        self.transition(&ConnectionEvent::Disconnected);
+                    }
                     break;
                 }
                 Err(e) => {
                     error!("Watch error for {} (all namespaces): {}", gvk_str, e);
-                    self.transition(&ConnectionEvent::WatchError {
-                        message: e.to_string(),
-                    });
+                    if !synced {
+                        self.mark_watch_failed(&gvk_str, &e.to_string());
+                    } else {
+                        self.transition(&ConnectionEvent::WatchError {
+                            message: e.to_string(),
+                        });
+                    }
                     break;
                 }
             }
@@ -783,5 +933,140 @@ mod tests {
         assert_eq!(entry.gvk, "v1/Node");
         assert_eq!(entry.resource_version, "500");
         assert!(entry.content.contains("node-1"));
+    }
+
+    /// Helper: create a ResourceWatcher backed by an in-memory store.
+    fn make_test_watcher() -> ResourceWatcher {
+        let store = ResourceStore::open(":memory:").expect("in-memory store");
+        let (state_tx, state_rx) = watch::channel(ConnectionState::Disconnected);
+        ResourceWatcher {
+            client: {
+                // Build a dummy client — never used in these tests.
+                let config = kube::Config {
+                    cluster_url: "https://localhost:6443".parse().unwrap(),
+                    default_namespace: "default".into(),
+                    root_cert: None,
+                    connect_timeout: None,
+                    read_timeout: None,
+                    write_timeout: None,
+                    accept_invalid_certs: true,
+                    auth_info: Default::default(),
+                    proxy_url: None,
+                    tls_server_name: None,
+                    headers: vec![],
+                    disable_compression: false,
+                };
+                Client::try_from(config).unwrap()
+            },
+            store: Arc::new(Mutex::new(store)),
+            list_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_LISTS)),
+            sync_tracker: Arc::new(SyncTracker::new()),
+            state_tx: Arc::new(state_tx),
+            state_rx,
+        }
+    }
+
+    #[tokio::test]
+    async fn register_watches_transitions_to_syncing() {
+        let w = make_test_watcher();
+        w.register_watches(3);
+        let state = w.state_rx.borrow().clone();
+        assert_eq!(
+            state,
+            ConnectionState::Syncing {
+                resources_synced: 0,
+                resources_total: Some(3)
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn register_watches_zero_transitions_to_ready() {
+        let w = make_test_watcher();
+        w.register_watches(0);
+        let state = w.state_rx.borrow().clone();
+        assert_eq!(state, ConnectionState::Ready);
+    }
+
+    #[tokio::test]
+    async fn mark_synced_emits_progress_not_ready_until_all() {
+        let w = make_test_watcher();
+        w.register_watches(3);
+
+        w.mark_watch_synced("v1/Pod");
+        let state = w.state_rx.borrow().clone();
+        assert_eq!(
+            state,
+            ConnectionState::Syncing {
+                resources_synced: 1,
+                resources_total: Some(3)
+            }
+        );
+
+        w.mark_watch_synced("apps/v1/Deployment");
+        let state = w.state_rx.borrow().clone();
+        assert_eq!(
+            state,
+            ConnectionState::Syncing {
+                resources_synced: 2,
+                resources_total: Some(3)
+            }
+        );
+
+        w.mark_watch_synced("v1/Service");
+        let state = w.state_rx.borrow().clone();
+        assert_eq!(state, ConnectionState::Ready);
+    }
+
+    #[tokio::test]
+    async fn mixed_sync_and_failure_emits_degraded() {
+        let w = make_test_watcher();
+        w.register_watches(3);
+
+        w.mark_watch_synced("v1/Pod");
+        w.mark_watch_synced("apps/v1/Deployment");
+        w.mark_watch_failed("v1/Service", "403 forbidden");
+
+        let state = w.state_rx.borrow().clone();
+        assert!(matches!(state, ConnectionState::Degraded { .. }));
+    }
+
+    #[tokio::test]
+    async fn all_watches_fail_emits_degraded() {
+        let w = make_test_watcher();
+        w.register_watches(2);
+
+        w.mark_watch_failed("v1/Pod", "timeout");
+        w.mark_watch_failed("v1/Service", "unauthorized");
+
+        let state = w.state_rx.borrow().clone();
+        assert!(matches!(state, ConnectionState::Degraded { .. }));
+    }
+
+    #[tokio::test]
+    async fn legacy_mode_no_registration_immediate_ready() {
+        let w = make_test_watcher();
+        // Drive state to Syncing manually (legacy: first watch does this).
+        w.transition(&ConnectionEvent::Connect);
+        w.transition(&ConnectionEvent::Authenticated);
+
+        // Without register_watches, mark_watch_synced emits SyncComplete directly.
+        w.mark_watch_synced("v1/Pod");
+        let state = w.state_rx.borrow().clone();
+        assert_eq!(state, ConnectionState::Ready);
+    }
+
+    #[test]
+    fn sync_tracker_reset_clears_state() {
+        let tracker = SyncTracker::new();
+        tracker.synced.fetch_add(5, Ordering::SeqCst);
+        tracker.failed.fetch_add(2, Ordering::SeqCst);
+        tracker.emitted.store(true, Ordering::SeqCst);
+
+        tracker.reset(10);
+        assert_eq!(tracker.expected.load(Ordering::SeqCst), 10);
+        assert_eq!(tracker.synced.load(Ordering::SeqCst), 0);
+        assert_eq!(tracker.failed.load(Ordering::SeqCst), 0);
+        assert!(!tracker.emitted.load(Ordering::SeqCst));
     }
 }

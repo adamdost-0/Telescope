@@ -93,6 +93,11 @@ impl ConnectionState {
             (ConnectionState::Syncing { .. }, ConnectionEvent::SyncComplete) => {
                 Some(ConnectionState::Ready)
             }
+            (ConnectionState::Syncing { .. }, ConnectionEvent::WatchError { message }) => {
+                Some(ConnectionState::Degraded {
+                    message: message.clone(),
+                })
+            }
             (ConnectionState::Syncing { .. }, ConnectionEvent::Disconnected) => {
                 Some(ConnectionState::Error {
                     message: "Lost connection during sync".into(),
@@ -450,6 +455,25 @@ mod tests {
             next,
             ConnectionState::Error {
                 message: "Connection failed".into()
+            }
+        );
+    }
+
+    #[test]
+    fn syncing_watch_error_becomes_degraded() {
+        let state = ConnectionState::Syncing {
+            resources_synced: 2,
+            resources_total: Some(5),
+        };
+        let next = state
+            .transition(&ConnectionEvent::WatchError {
+                message: "stream reset".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            next,
+            ConnectionState::Degraded {
+                message: "stream reset".into()
             }
         );
     }
