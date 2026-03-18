@@ -30,6 +30,28 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   }
 }
 
+// ── API error notification ───────────────────────────────────────────────
+
+type ApiErrorListener = (error: { command: string; message: string }) => void;
+const errorListeners: ApiErrorListener[] = [];
+
+/** Subscribe to API errors that are caught and suppressed by helpers. Returns an unsubscribe function. */
+export function onApiError(listener: ApiErrorListener): () => void {
+  errorListeners.push(listener);
+  return () => {
+    const idx = errorListeners.indexOf(listener);
+    if (idx >= 0) errorListeners.splice(idx, 1);
+  };
+}
+
+function notifyApiError(command: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`[telescope] ${command} failed:`, message);
+  for (const listener of errorListeners) {
+    listener({ command, message });
+  }
+}
+
 const AZURE_CLOUD_STORAGE_KEY = 'telescope-azure-cloud';
 const AZURE_CLOUD_SELECTION_STORAGE_KEY = 'telescope-azure-cloud-selection';
 
@@ -41,7 +63,8 @@ export function isTauriDesktop(): boolean {
 export async function getResourceCounts(): Promise<[string, number][]> {
   try {
     return await invoke<[string, number][]>('get_resource_counts');
-  } catch {
+  } catch (e) {
+    notifyApiError('get_resource_counts', e);
     return [];
   }
 }
@@ -50,7 +73,8 @@ export async function getResourceCounts(): Promise<[string, number][]> {
 export async function searchResources(query: string): Promise<ResourceEntry[]> {
   try {
     return await invoke<ResourceEntry[]>('search_resources', { query });
-  } catch {
+  } catch (e) {
+    notifyApiError('search_resources', e);
     return [];
   }
 }
@@ -58,7 +82,8 @@ export async function searchResources(query: string): Promise<ResourceEntry[]> {
 export async function listContexts(): Promise<ClusterContext[]> {
   try {
     return await invoke<ClusterContext[]>('list_contexts');
-  } catch {
+  } catch (e) {
+    notifyApiError('list_contexts', e);
     return [];
   }
 }
@@ -66,7 +91,8 @@ export async function listContexts(): Promise<ClusterContext[]> {
 export async function activeContext(): Promise<string | null> {
   try {
     return await invoke<string>('active_context');
-  } catch {
+  } catch (e) {
+    notifyApiError('active_context', e);
     return null;
   }
 }
@@ -74,7 +100,8 @@ export async function activeContext(): Promise<string | null> {
 export async function getConnectionState(): Promise<ConnectionState> {
   try {
     return await invoke<ConnectionState>('get_connection_state');
-  } catch {
+  } catch (e) {
+    notifyApiError('get_connection_state', e);
     return { state: 'Disconnected' };
   }
 }
@@ -83,7 +110,8 @@ export async function getConnectionState(): Promise<ConnectionState> {
 export async function getClusterInfo(): Promise<ClusterInfo | null> {
   try {
     return await invoke<ClusterInfo>('get_cluster_info');
-  } catch {
+  } catch (e) {
+    notifyApiError('get_cluster_info', e);
     return null;
   }
 }
@@ -91,7 +119,8 @@ export async function getClusterInfo(): Promise<ClusterInfo | null> {
 export async function getPods(namespace?: string): Promise<ResourceEntry[]> {
   try {
     return await invoke<ResourceEntry[]>('get_pods', { namespace: namespace ?? null });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_pods', e);
     return [];
   }
 }
@@ -100,7 +129,8 @@ export async function getPods(namespace?: string): Promise<ResourceEntry[]> {
 export async function getResources(gvk: string, namespace?: string): Promise<ResourceEntry[]> {
   try {
     return await invoke<ResourceEntry[]>('get_resources', { gvk, namespace: namespace ?? null });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_resources', e);
     return [];
   }
 }
@@ -118,7 +148,8 @@ export async function listDynamicResources(
       plural,
       namespace: namespace ?? null,
     });
-  } catch {
+  } catch (e) {
+    notifyApiError('list_dynamic_resources', e);
     return [];
   }
 }
@@ -138,7 +169,8 @@ export async function getDynamicResource(
       namespace,
       name,
     });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_dynamic_resource', e);
     return null;
   }
 }
@@ -151,7 +183,8 @@ export async function getResource(
 ): Promise<ResourceEntry | null> {
   try {
     return await invoke<ResourceEntry | null>('get_resource', { gvk, namespace, name });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_resource', e);
     return null;
   }
 }
@@ -160,7 +193,8 @@ export async function getResource(
 export async function getSecrets(namespace: string): Promise<ResourceEntry[]> {
   try {
     return await invoke<ResourceEntry[]>('get_secrets', { namespace });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_secrets', e);
     return [];
   }
 }
@@ -169,7 +203,8 @@ export async function getSecrets(namespace: string): Promise<ResourceEntry[]> {
 export async function getSecret(namespace: string, name: string): Promise<ResourceEntry | null> {
   try {
     return await invoke<ResourceEntry | null>('get_secret', { namespace, name });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_secret', e);
     return null;
   }
 }
@@ -181,7 +216,8 @@ export async function getEvents(namespace?: string | null, involvedObject?: stri
       namespace: namespace ?? null,
       involvedObject: involvedObject ?? null,
     });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_events', e);
     return [];
   }
 }
@@ -230,7 +266,8 @@ export async function setNamespace(namespace: string): Promise<void> {
 export async function listNamespaces(): Promise<string[]> {
   try {
     return await invoke<string[]>('list_namespaces');
-  } catch {
+  } catch (e) {
+    notifyApiError('list_namespaces', e);
     return ['default'];
   }
 }
@@ -259,7 +296,8 @@ export async function getPodLogs(
       previous: previous ?? false,
       tailLines: tailLines ?? 500,
     });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_pod_logs', e);
     return '';
   }
 }
@@ -268,7 +306,8 @@ export async function getPodLogs(
 export async function listContainers(namespace: string, pod: string): Promise<string[]> {
   try {
     return await invoke<string[]>('list_containers', { namespace, pod });
-  } catch {
+  } catch (e) {
+    notifyApiError('list_containers', e);
     return [];
   }
 }
@@ -374,7 +413,8 @@ export async function startPortForward(namespace: string, pod: string, localPort
 export async function getPodMetrics(namespace?: string): Promise<PodMetrics[]> {
   try {
     return await invoke<PodMetrics[]>('get_pod_metrics', { namespace: namespace ?? null });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_pod_metrics', e);
     return [];
   }
 }
@@ -383,7 +423,8 @@ export async function getPodMetrics(namespace?: string): Promise<PodMetrics[]> {
 export async function checkMetricsAvailable(): Promise<boolean> {
   try {
     return await invoke<boolean>('check_metrics_available');
-  } catch {
+  } catch (e) {
+    notifyApiError('check_metrics_available', e);
     return false;
   }
 }
@@ -392,7 +433,8 @@ export async function checkMetricsAvailable(): Promise<boolean> {
 export async function listHelmReleases(namespace?: string): Promise<HelmRelease[]> {
   try {
     return await invoke<HelmRelease[]>('list_helm_releases', { namespace: namespace ?? null });
-  } catch {
+  } catch (e) {
+    notifyApiError('list_helm_releases', e);
     return [];
   }
 }
@@ -401,7 +443,8 @@ export async function listHelmReleases(namespace?: string): Promise<HelmRelease[
 export async function getHelmReleaseHistory(namespace: string, name: string): Promise<HelmRelease[]> {
   try {
     return await invoke<HelmRelease[]>('get_helm_release_history', { namespace, name });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_helm_release_history', e);
     return [];
   }
 }
@@ -421,7 +464,8 @@ export async function helmRollback(namespace: string, name: string, revision: nu
 export async function listCrds(): Promise<CrdInfo[]> {
   try {
     return await invoke<CrdInfo[]>('list_crds');
-  } catch {
+  } catch (e) {
+    notifyApiError('list_crds', e);
     return [];
   }
 }
@@ -430,7 +474,8 @@ export async function listCrds(): Promise<CrdInfo[]> {
 export async function getNodeMetrics(): Promise<NodeMetricsData[]> {
   try {
     return await invoke<NodeMetricsData[]>('get_node_metrics');
-  } catch {
+  } catch (e) {
+    notifyApiError('get_node_metrics', e);
     return [];
   }
 }
@@ -441,7 +486,8 @@ export async function getNodeMetrics(): Promise<NodeMetricsData[]> {
 export async function getPreference(key: string): Promise<string | null> {
   try {
     return await invoke<string | null>('get_preference', { key });
-  } catch {
+  } catch (e) {
+    notifyApiError('get_preference', e);
     return null;
   }
 }
@@ -457,7 +503,8 @@ export async function setPreference(key: string, value: string): Promise<void> {
 export async function resolveAksIdentity(): Promise<AksIdentityInfo | null> {
   try {
     return await invoke<AksIdentityInfo | null>('resolve_aks_identity');
-  } catch {
+  } catch (e) {
+    notifyApiError('resolve_aks_identity', e);
     return null;
   }
 }
@@ -466,7 +513,8 @@ export async function resolveAksIdentity(): Promise<AksIdentityInfo | null> {
 export async function listAksNodePools(): Promise<AksNodePool[]> {
   try {
     return await invoke<AksNodePool[]>('list_aks_node_pools');
-  } catch {
+  } catch (e) {
+    notifyApiError('list_aks_node_pools', e);
     return [];
   }
 }
@@ -517,7 +565,8 @@ export async function deleteAksNodePool(poolName: string): Promise<void> {
 export async function getAksClusterDetail(): Promise<AksClusterDetail | null> {
   try {
     return await invoke<AksClusterDetail | null>('get_aks_cluster_detail');
-  } catch {
+  } catch (e) {
+    notifyApiError('get_aks_cluster_detail', e);
     return null;
   }
 }
@@ -561,7 +610,8 @@ export async function upgradePoolNodeImage(pool: string): Promise<void> {
 export async function listAksMaintenanceConfigs(): Promise<AksMaintenanceConfig[]> {
   try {
     return await invoke<AksMaintenanceConfig[]>('list_aks_maintenance_configs');
-  } catch {
+  } catch (e) {
+    notifyApiError('list_aks_maintenance_configs', e);
     return [];
   }
 }

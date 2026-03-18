@@ -25,6 +25,7 @@
   let lastUpdatedText = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let timestampTimer: ReturnType<typeof setInterval> | null = null;
+  let loadId = 0;
 
   function formatTimestamp(): string {
     if (!lastUpdated) return '';
@@ -36,6 +37,8 @@
   }
 
   async function loadPods() {
+    const thisLoad = ++loadId;
+
     if (!$isConnected) {
       loading = false;
       pods = [];
@@ -55,17 +58,21 @@
         getPods($selectedNamespace),
         getPodMetrics($selectedNamespace),
       ]);
+      if (thisLoad !== loadId) return;
       pods = podResult;
       metrics = metricsResult;
       lastUpdated = new Date();
       lastUpdatedText = formatTimestamp();
     } catch (e) {
+      if (thisLoad !== loadId) return;
       error = e instanceof Error ? e.message : 'Failed to load pods';
       pods = [];
       metrics = [];
     } finally {
-      loading = false;
-      refreshing = false;
+      if (thisLoad === loadId) {
+        loading = false;
+        refreshing = false;
+      }
     }
   }
 

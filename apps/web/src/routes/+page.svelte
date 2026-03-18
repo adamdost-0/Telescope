@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { listContexts, connectToContext, listNamespaces, setNamespace } from '$lib/api';
+  import { listContexts, connectToContext, listNamespaces, setNamespace, onApiError } from '$lib/api';
   import { getPreferredNamespace } from '$lib/preferences';
   import {
     selectedContext,
@@ -16,7 +16,15 @@
   let error: string | null = $state(null);
   let connectingTo: string | null = $state(null);
 
+  let unsubApiError: (() => void) | null = null;
+
   onMount(async () => {
+    unsubApiError = onApiError(({ command, message }) => {
+      if (!error) {
+        error = `${command}: ${message}`;
+      }
+    });
+
     try {
       contexts = await listContexts();
     } catch (e) {
@@ -24,6 +32,10 @@
     } finally {
       loading = false;
     }
+  });
+
+  onDestroy(() => {
+    unsubApiError?.();
   });
 
   async function handleConnect(contextName: string) {

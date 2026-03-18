@@ -14,6 +14,8 @@
   let showPrevious = $state(false);
   let searchQuery = $state('');
   let tailLines = $state(500);
+  let fetchId = 0;
+  let destroyed = false;
 
   let logContainer: HTMLElement | undefined = $state();
   let cleanup: (() => void) | null = null;
@@ -35,10 +37,13 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     cleanup?.();
+    cleanup = null;
   });
 
   async function fetchLogs() {
+    const thisFetch = ++fetchId;
     loading = true;
     error = null;
     streaming = false;
@@ -47,6 +52,7 @@
 
     try {
       const result = await getPodLogs(namespace, pod, selectedContainer ?? undefined, showPrevious, tailLines);
+      if (thisFetch !== fetchId || destroyed) return;
       logs = result;
       await scrollToBottom();
 
@@ -54,10 +60,13 @@
         await startStreaming();
       }
     } catch (e) {
+      if (thisFetch !== fetchId || destroyed) return;
       error = e instanceof Error ? e.message : 'Failed to fetch logs';
       logs = '';
     } finally {
-      loading = false;
+      if (thisFetch === fetchId && !destroyed) {
+        loading = false;
+      }
     }
   }
 
@@ -74,6 +83,7 @@
       await startLogStream(namespace, pod, selectedContainer ?? undefined, 0);
 
       const unlisten = await listen<{ lines: string; is_complete: boolean }>('log-chunk', (event) => {
+        if (destroyed) return;
         if (event.payload.is_complete) {
           streaming = false;
           return;
@@ -89,7 +99,7 @@
         streaming = false;
       };
     } catch {
-      streaming = false;
+      if (!destroyed) streaming = false;
     }
   }
 
