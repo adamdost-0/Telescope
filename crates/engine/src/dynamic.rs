@@ -7,6 +7,7 @@ use kube::{
     Api, Client,
 };
 use telescope_core::store::ResourceEntry;
+use tracing::warn;
 
 fn gvk_string(group: &str, version: &str, kind: &str) -> String {
     if group.is_empty() {
@@ -26,13 +27,20 @@ fn entry_from_dynamic(
     kind: &str,
     object: &DynamicObject,
 ) -> Option<ResourceEntry> {
+    let gvk = gvk_string(group, version, kind);
+    let content = serde_json::to_string(object)
+        .map_err(|e| {
+            warn!(error = %e, %gvk, "failed to serialize dynamic resource");
+            e
+        })
+        .ok()?;
     Some(ResourceEntry {
-        gvk: gvk_string(group, version, kind),
+        gvk,
         namespace: object.metadata.namespace.clone().unwrap_or_default(),
         name: object.metadata.name.clone()?,
         resource_version: object.metadata.resource_version.clone().unwrap_or_default(),
-        content: serde_json::to_string(object).ok()?,
-        updated_at: String::new(),
+        content,
+        updated_at: telescope_core::now_rfc3339(),
     })
 }
 
@@ -179,7 +187,11 @@ pub async fn apply_dynamic_resource(
         } else {
             format!("Applied {kind}/{name} in {scope_display}")
         },
-        result_yaml: serde_json::to_string_pretty(&applied).ok(),
+        result_yaml: Some(serde_json::to_string_pretty(&applied).map_err(|e| {
+            crate::EngineError::Other(format!(
+                "apply succeeded but response serialization failed: {e}"
+            ))
+        })?),
     })
 }
 

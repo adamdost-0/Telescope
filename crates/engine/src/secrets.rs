@@ -1,6 +1,7 @@
 use k8s_openapi::api::core::v1::Secret;
 use kube::{Api, Client, ResourceExt};
 use telescope_core::ResourceEntry;
+use tracing::warn;
 
 const GVK_SECRET: &str = "v1/Secret";
 const REDACTED_VALUE: &str = "●●●●●●●●";
@@ -35,16 +36,28 @@ fn secret_to_entry(secret: &Secret) -> Option<ResourceEntry> {
     let name = secret.metadata.name.as_deref()?.to_string();
     let namespace = secret.namespace().unwrap_or_default();
     let resource_version = secret.resource_version().unwrap_or_default();
-    let mut content = serde_json::to_value(secret).ok()?;
+    let mut content = serde_json::to_value(secret)
+        .map_err(|e| {
+            warn!(error = %e, %name, "failed to serialize secret to value");
+            e
+        })
+        .ok()?;
     redact_secret_value(&mut content);
+
+    let content_str = serde_json::to_string(&content)
+        .map_err(|e| {
+            warn!(error = %e, %name, "failed to serialize secret to string");
+            e
+        })
+        .ok()?;
 
     Some(ResourceEntry {
         gvk: GVK_SECRET.to_string(),
         namespace,
         name,
         resource_version,
-        content: serde_json::to_string(&content).ok()?,
-        updated_at: String::new(),
+        content: content_str,
+        updated_at: telescope_core::now_rfc3339(),
     })
 }
 

@@ -340,7 +340,11 @@ pub async fn apply_resource(
             let res = api
                 .patch(name, &patch_params, &Patch::Apply(&value))
                 .await?;
-            serde_json::to_string_pretty(&res).unwrap_or_default()
+            serde_json::to_string_pretty(&res).map_err(|e| {
+                crate::EngineError::Other(format!(
+                    "apply succeeded but response serialization failed: {e}"
+                ))
+            })?
         }
         "apps/v1/Deployment" => {
             let api: Api<k8s_openapi::api::apps::v1::Deployment> =
@@ -348,7 +352,11 @@ pub async fn apply_resource(
             let res = api
                 .patch(name, &patch_params, &Patch::Apply(&value))
                 .await?;
-            serde_json::to_string_pretty(&res).unwrap_or_default()
+            serde_json::to_string_pretty(&res).map_err(|e| {
+                crate::EngineError::Other(format!(
+                    "apply succeeded but response serialization failed: {e}"
+                ))
+            })?
         }
         "apps/v1/StatefulSet"
         | "apps/v1/DaemonSet"
@@ -394,43 +402,71 @@ async fn apply_typed_resource(
             let api: Api<k8s_openapi::api::apps::v1::StatefulSet> =
                 Api::namespaced(client.clone(), namespace);
             let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
-            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+            serde_json::to_string_pretty(&res).map_err(|e| {
+                crate::EngineError::Other(format!(
+                    "apply succeeded but response serialization failed: {e}"
+                ))
+            })
         }
         "apps/v1/DaemonSet" => {
             let api: Api<k8s_openapi::api::apps::v1::DaemonSet> =
                 Api::namespaced(client.clone(), namespace);
             let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
-            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+            serde_json::to_string_pretty(&res).map_err(|e| {
+                crate::EngineError::Other(format!(
+                    "apply succeeded but response serialization failed: {e}"
+                ))
+            })
         }
         "batch/v1/Job" => {
             let api: Api<k8s_openapi::api::batch::v1::Job> =
                 Api::namespaced(client.clone(), namespace);
             let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
-            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+            serde_json::to_string_pretty(&res).map_err(|e| {
+                crate::EngineError::Other(format!(
+                    "apply succeeded but response serialization failed: {e}"
+                ))
+            })
         }
         "batch/v1/CronJob" => {
             let api: Api<k8s_openapi::api::batch::v1::CronJob> =
                 Api::namespaced(client.clone(), namespace);
             let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
-            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+            serde_json::to_string_pretty(&res).map_err(|e| {
+                crate::EngineError::Other(format!(
+                    "apply succeeded but response serialization failed: {e}"
+                ))
+            })
         }
         "v1/Service" => {
             let api: Api<k8s_openapi::api::core::v1::Service> =
                 Api::namespaced(client.clone(), namespace);
             let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
-            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+            serde_json::to_string_pretty(&res).map_err(|e| {
+                crate::EngineError::Other(format!(
+                    "apply succeeded but response serialization failed: {e}"
+                ))
+            })
         }
         "v1/ConfigMap" => {
             let api: Api<k8s_openapi::api::core::v1::ConfigMap> =
                 Api::namespaced(client.clone(), namespace);
             let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
-            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+            serde_json::to_string_pretty(&res).map_err(|e| {
+                crate::EngineError::Other(format!(
+                    "apply succeeded but response serialization failed: {e}"
+                ))
+            })
         }
         "v1/Secret" => {
             let api: Api<k8s_openapi::api::core::v1::Secret> =
                 Api::namespaced(client.clone(), namespace);
             let res = api.patch(name, patch_params, &Patch::Apply(value)).await?;
-            Ok(serde_json::to_string_pretty(&res).unwrap_or_default())
+            serde_json::to_string_pretty(&res).map_err(|e| {
+                crate::EngineError::Other(format!(
+                    "apply succeeded but response serialization failed: {e}"
+                ))
+            })
         }
         _ => unreachable!(),
     }

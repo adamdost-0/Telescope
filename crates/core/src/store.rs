@@ -7,6 +7,11 @@
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 
+/// Return the current UTC time as an RFC 3339 string (e.g. `2025-07-01T12:00:00+00:00`).
+pub fn now_rfc3339() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
+
 /// A stored Kubernetes resource entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ResourceEntry {

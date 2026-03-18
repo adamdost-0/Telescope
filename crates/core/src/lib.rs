@@ -4,7 +4,7 @@ pub mod connection;
 pub mod store;
 
 pub use connection::{ConnectionEvent, ConnectionState};
-pub use store::{ResourceEntry, ResourceStore};
+pub use store::{now_rfc3339, ResourceEntry, ResourceStore};
 
 use serde::{Deserialize, Serialize};
 

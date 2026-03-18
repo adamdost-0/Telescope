@@ -74,11 +74,21 @@ fn serialize_resource_for_cache<K>(gvk: &str, obj: &K) -> Option<String>
 where
     K: Serialize,
 {
-    let mut value = serde_json::to_value(obj).ok()?;
+    let mut value = serde_json::to_value(obj)
+        .map_err(|e| {
+            warn!(error = %e, gvk, "failed to serialize resource to value");
+            e
+        })
+        .ok()?;
     if gvk == "v1/Pod" {
         redact_cached_pod_fields(&mut value);
     }
-    serde_json::to_string(&value).ok()
+    serde_json::to_string(&value)
+        .map_err(|e| {
+            warn!(error = %e, gvk, "failed to serialize resource to string");
+            e
+        })
+        .ok()
 }
 
 /// Convert any Kubernetes resource to a [`ResourceEntry`] for SQLite storage.
@@ -96,7 +106,7 @@ where
         name: name.to_string(),
         resource_version: rv.to_string(),
         content,
-        updated_at: String::new(),
+        updated_at: telescope_core::now_rfc3339(),
     })
 }
 
