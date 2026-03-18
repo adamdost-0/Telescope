@@ -66,12 +66,14 @@ jobs:
 
           const webVersionPath = 'apps/web/src/lib/version.ts';
           const webVersionSource = fs.readFileSync(webVersionPath, 'utf8');
+          const webVersionPattern =
+            /^(\s*export\s+const\s+version\s*=\s*['"])[^'"\r\n]+(['"]\s*;?\s*)$/m;
           const nextWebVersionSource = webVersionSource.replace(
-            /export const version = ['"][^'"]+['"];?/,
-            `export const version = '${releaseVersion}';`,
+            webVersionPattern,
+            (_, prefix, suffix) => `${prefix}${releaseVersion}${suffix}`,
           );
 
-          if (nextWebVersionSource === webVersionSource) {
+          if (!webVersionPattern.test(webVersionSource)) {
             throw new Error(`Unable to stamp ${webVersionPath}`);
           }
 
