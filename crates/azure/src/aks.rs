@@ -391,7 +391,9 @@ pub async fn scale_node_pool(
     let mut current: serde_json::Value = client.get(&path).await?;
     let properties = require_properties_map(&mut current, "node pool scale request")?;
     properties.insert("count".to_string(), serde_json::json!(count));
-    let result: NamedPropertiesResponse<AksNodePool> = client.put(&path, &current).await?;
+    let _: Value = client.put(&path, &current).await?;
+    wait_for_pool_state(client, resource_id, pool_name, None, None).await?;
+    let result: NamedPropertiesResponse<AksNodePool> = client.get(&path).await?;
     Ok(into_node_pool(result))
 }
 
@@ -414,7 +416,9 @@ pub async fn update_autoscaler(
     if let Some(max_v) = max {
         properties.insert("maxCount".to_string(), serde_json::json!(max_v));
     }
-    let result: NamedPropertiesResponse<AksNodePool> = client.put(&path, &current).await?;
+    let _: Value = client.put(&path, &current).await?;
+    wait_for_pool_state(client, resource_id, pool_name, None, None).await?;
+    let result: NamedPropertiesResponse<AksNodePool> = client.get(&path).await?;
     Ok(into_node_pool(result))
 }
 
@@ -441,7 +445,9 @@ pub async fn create_node_pool(
             "nodeTaints": config.node_taints,
         }
     });
-    let result: NamedPropertiesResponse<AksNodePool> = client.put(&path, &body).await?;
+    let _: Value = client.put(&path, &body).await?;
+    wait_for_pool_state(client, resource_id, &config.name, None, None).await?;
+    let result: NamedPropertiesResponse<AksNodePool> = client.get(&path).await?;
     Ok(into_node_pool(result))
 }
 
@@ -452,7 +458,28 @@ pub async fn delete_node_pool(
     pool_name: &str,
 ) -> Result<()> {
     let path = resource_id.agent_pool_path(pool_name);
-    client.delete(&path).await
+    client.delete(&path).await?;
+    for _ in 0..ARM_MAX_POLLS {
+        match client.get::<Value>(&path).await {
+            Err(_) => return Ok(()),
+            Ok(val) => {
+                let state = val
+                    .pointer("/properties/provisioningState")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
+                if state != "deleting" {
+                    return Ok(());
+                }
+                sleep(ARM_POLL_INTERVAL).await;
+            }
+        }
+    }
+    Err(AzureError::Api {
+        status: 408,
+        code: "Timeout".to_string(),
+        message: format!("Timed out waiting for node pool {} deletion", pool_name),
+    })
 }
 
 pub async fn upgrade_pool_version(
