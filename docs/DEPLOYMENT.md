@@ -14,7 +14,7 @@
 - **Platform SDK/runtime dependencies:**
   - **macOS:** Xcode command-line tools
   - **Windows:** Windows SDK and WebView2-capable environment
-  - **Linux:** GTK 3, WebKit2GTK, OpenSSL development libraries, and other Tauri system dependencies
+  - **Linux:** GTK 3, WebKit2GTK, and other Tauri system dependencies (system OpenSSL development packages are not required; the remaining OpenSSL dependency is vendored during the build)
 - **Azure ARM features (optional):**
   - Azure CLI (`az`) installed and signed in — used for AKS identity resolution
   - Azure RBAC permissions on AKS resources (see Azure ARM Features below)

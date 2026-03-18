@@ -1,6 +1,6 @@
 # Telescope — Testing Strategy
 
-> **Status: v1.0.0** — Current test inventory: **133 Rust tests**, **4 Vitest files (39 test cases)**, and **2 Playwright specs**.
+> **Status: v1.0.0** — Current test inventory: **133 Rust tests**, **5 Vitest files (40+ test cases)**, and **6 Playwright specs**.
 
 ## Goals
 - Keep CI **green by default**: no flaky E2E, no hidden cluster dependency in routine PR validation.
@@ -22,20 +22,27 @@
 **Run locally:** `cargo test --workspace --exclude telescope-desktop --all-features`
 
 ### 2) Frontend UI (`apps/web`)
-**Current Vitest coverage: 4 test files, 39 test cases**
+**Current Vitest coverage: 5 test files, 40+ test cases**
 - `src/lib/azure-utils.test.ts` (16 cases) — AKS URL detection, Azure Portal link generation, Azure Government endpoint handling.
 - `src/lib/error-suggestions.test.ts` (8 cases) — friendly error-message suggestions for auth, RBAC, timeout, and connectivity failures.
 - `src/lib/prod-detection.test.ts` (14 cases) — production-context pattern detection via `it.each()` table-driven tests.
 - `src/lib/version.test.ts` (1 case) — shared version exposure.
+- `src/lib/realMetrics.test.ts` — real metrics polling logic tests.
 
-**Run locally:** `pnpm -C apps/web test`
+**Run locally:** `pnpm -C apps/web test` (vitest with `--pool=forks`)
 
 ### 3) Frontend E2E (`apps/web/tests-e2e`)
-**Current Playwright coverage: 2 specs**
+**Current Playwright coverage: 6 specs**
 - `smoke.spec.ts` — app boots and renders the landing page.
 - `settings.spec.ts` — settings/about page exposes the shared application version.
+- `node-pools.spec.ts` — AKS node pool management flows.
+- `search-palette.spec.ts` — search palette interaction and navigation.
+- `detail-reload.spec.ts` — resource detail page reload behavior.
+- `error-states.spec.ts` — error state rendering and recovery.
 
-These E2E tests run against deterministic stubbed data, not a live Kubernetes cluster.
+These E2E tests run against deterministic stubbed data using `tests-e2e/helpers/mock-tauri.ts` to simulate Tauri IPC in the browser, not a live Kubernetes cluster.
+
+**Setup:** `pnpm -C apps/web exec playwright install --with-deps chromium`
 
 **Run locally:** `pnpm -C apps/web e2e`
 

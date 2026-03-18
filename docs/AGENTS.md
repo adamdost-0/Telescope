@@ -10,7 +10,7 @@
 
 | File | Status | Notes |
 |------|--------|-------|
-| `ARCHITECTURE.md` | Current | Crate layering (`core → engine → azure → desktop`) and Tauri IPC model |
+| `ARCHITECTURE.md` | Current | Crate layering (`desktop → engine + azure + core`; `engine → core`; `azure → core`) and Tauri IPC model |
 | `PRD.md` | Current + vision | Product goals, milestone tracking, shipped vs planned features |
 | `ROADMAP.md` | Current planning | Shipped, partial, and planned milestones |
 | `TESTING.md` | Current | Rust unit tests, Vitest, Playwright E2E suites |
@@ -68,7 +68,7 @@ Additional engine capabilities:
 ### Automated Test Surface
 - Rust unit tests across `core`, `engine`, and `azure` crates
 - Vitest unit tests (azure-utils, error-suggestions, prod-detection, version)
-- Playwright E2E tests (smoke, settings) against stub server
+- Playwright E2E tests (smoke, settings, node-pools, search-palette, detail-reload, error-states) against mock-tauri stub
 
 ## Updating Documentation
 

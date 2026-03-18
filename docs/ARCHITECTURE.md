@@ -343,7 +343,7 @@ CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
 - **Authentication**: `ArmClient` uses `azure_identity::DefaultAzureCredential`, which chains: environment variables → managed identity → Azure CLI → workload identity → Visual Studio Code credential. No credentials are stored by Telescope.
 - **Token scope**: Tokens are scoped to the ARM management endpoint for the target cloud (e.g., `https://management.azure.com/.default` for Commercial, `https://management.usgovcloudapi.net/.default` for Government).
 - **Azure Government support**: `AzureCloud` enum supports Commercial, UsGovernment, UsGovSecret, and UsGovTopSecret clouds with correct ARM/auth/portal endpoints per cloud.
-- **RBAC requirements**: ARM operations require the operator's Azure identity to hold appropriate RBAC roles on the AKS resource (e.g., `Azure Kubernetes Service Contributor` for cluster start/stop/upgrade, `Azure Kubernetes Service Cluster Admin Role` for node pool management).
+- **RBAC requirements**: ARM operations require the operator's Azure identity to hold appropriate RBAC roles on the AKS resource. `Reader` on the AKS resource is sufficient for read-only views (cluster details, node pools, upgrade profiles, maintenance configs). `Azure Kubernetes Service Contributor` is the recommended minimum for management operations (start/stop cluster, scale/create/delete node pools, upgrade cluster/pool versions, update autoscaler config).
 - **ARM operations are audited**: all AKS management operations (node pool scale, create, delete, autoscaler update) are logged to the local audit log (`~/.telescope/audit.log`).
 
 ### Not yet implemented
