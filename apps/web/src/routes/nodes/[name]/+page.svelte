@@ -196,7 +196,10 @@
     return obj?.spec?.taints ?? [];
   }
 
-  onMount(loadNode);
+  $effect(() => {
+    void nodeName;
+    loadNode();
+  });
 
   onMount(() => {
     pollNodeMetrics();

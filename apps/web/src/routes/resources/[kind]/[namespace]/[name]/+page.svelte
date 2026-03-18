@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
   import {
     applyDynamicResource,
     applyResource,
@@ -222,7 +221,12 @@
     }
   }
 
-  onMount(loadResource);
+  $effect(() => {
+    void kind;
+    void namespaceParam;
+    void resourceName;
+    loadResource();
+  });
 
   async function handleApply(dryRun: boolean) {
     applying = true;

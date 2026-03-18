@@ -108,7 +108,11 @@
     }
   }
 
-  onMount(loadPod);
+  $effect(() => {
+    void namespace;
+    void podName;
+    loadPod();
+  });
 
   onMount(() => {
     pollMetrics();

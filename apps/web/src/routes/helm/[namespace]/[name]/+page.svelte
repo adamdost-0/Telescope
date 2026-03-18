@@ -1,6 +1,5 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
   import { listHelmReleases, getHelmReleaseHistory, getHelmReleaseValues, helmRollback } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import YamlEditor from '$lib/components/YamlEditor.svelte';
@@ -155,7 +154,11 @@
     }
   });
 
-  onMount(loadRelease);
+  $effect(() => {
+    void releaseName;
+    void namespace;
+    loadRelease();
+  });
 </script>
 
 <div class="detail-page">
