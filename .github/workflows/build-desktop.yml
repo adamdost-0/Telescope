@@ -66,3 +66,36 @@ jobs:
             target/release/bundle/nsis/**
           if-no-files-found: warn
           retention-days: 14
+
+  build-macos:
+    name: Build macOS Desktop (Release)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable corepack
+        run: corepack enable
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build desktop (release bundle)
+        run: pnpm -C apps/desktop bundle
+      - name: List build outputs
+        run: |
+          echo "=== Binary ==="
+          ls -lh target/release/telescope-desktop 2>/dev/null || echo "No binary"
+          echo "=== Bundle ==="
+          find target/release/bundle -type f 2>/dev/null || echo "No bundle directory"
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: telescope-macos-app
+          path: |
+            target/release/bundle/dmg/**
+            target/release/bundle/macos/**
+            target/release/telescope-desktop
+          if-no-files-found: warn
+          retention-days: 14

@@ -80,5 +80,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Build desktop (tauri)
-        run: pnpm -C apps/desktop build
+      - name: Build desktop (release bundle)
+        run: pnpm -C apps/desktop bundle
+      - name: Verify bundle outputs
+        shell: bash
+        run: |
+          echo "=== Binary ==="
+          ls -lh target/release/telescope-desktop* 2>/dev/null || echo "No binary found"
+          echo "=== Bundle ==="
+          find target/release/bundle -type f 2>/dev/null || echo "No bundle directory"
