@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { searchResources } from '$lib/api';
+  import { searchResources, setPreference } from '$lib/api';
   import { kindFromGvk, routeForSearchEntry } from '$lib/resource-routing';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
@@ -23,21 +23,23 @@
       label: 'Reload Resources',
       action: () => {
         // Placeholder: would trigger a refresh from backend
-        selectCommand('reload');
       },
     },
     theme: {
       icon: '🎨',
       label: 'Toggle Theme',
       action: () => {
-        selectCommand('theme');
+        const current = document.documentElement.getAttribute('data-theme') ?? 'dark';
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        setPreference('theme', next);
       },
     },
     settings: {
       icon: '⚙️',
       label: 'Settings',
       action: () => {
-        selectCommand('settings');
+        goto('/settings');
       },
     },
   };
@@ -179,9 +181,9 @@
   /** All results in flat form (depends on scope). */
   let allFlatResults = $derived.by(() => {
     if (scopeMode === 'commands') {
-      return flatCommandResults.map(([_, cmd]) => ({
+      return flatCommandResults.map(([key, cmd]) => ({
         type: 'command' as const,
-        id: cmd.label,
+        id: key,
         icon: cmd.icon,
         label: cmd.label,
         data: cmd,
@@ -227,9 +229,9 @@
         !filterText || filterText.length === 0
           ? filterCommands(filterText)
               .slice(0, 2)
-              .map(([_, cmd]) => ({
+              .map(([key, cmd]) => ({
                 type: 'command' as const,
-                id: cmd.label,
+                id: key,
                 icon: cmd.icon,
                 label: cmd.label,
                 data: cmd,
