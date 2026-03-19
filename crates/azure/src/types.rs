@@ -56,7 +56,7 @@ impl AzureCloud {
 }
 
 /// AKS cluster resource identifier
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AksResourceId {
     pub subscription_id: String,
     pub resource_group: String,

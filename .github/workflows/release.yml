@@ -15,11 +15,18 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            platform: windows
             binary: telescope-desktop.exe
-            asset_name: telescope-windows-x64.exe
+            portable_asset: telescope-windows-x64-portable.exe
+            bundle_patterns: |
+              target/release/bundle/msi/*.msi
+              target/release/bundle/nsis/*.exe
           - os: macos-latest
+            platform: macos
             binary: telescope-desktop
-            asset_name: telescope-macos-arm64
+            portable_asset: telescope-macos-arm64-portable
+            bundle_patterns: |
+              target/release/bundle/dmg/*.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -133,66 +140,149 @@ jobs:
       - name: List build outputs
         shell: bash
         run: |
-          echo "=== Release ${RELEASE_TAG} ==="
+          echo "=== Release ${RELEASE_TAG} for ${{ matrix.platform }} ==="
           echo "--- Binary ---"
           ls -lh target/release/${{ matrix.binary }} 2>/dev/null || echo "Binary not found"
           echo "--- Bundle outputs ---"
           find target/release/bundle -type f 2>/dev/null || echo "No bundle dir"
 
-      - name: Rename binary for release
+      - name: Validate required bundle artifacts
         shell: bash
         run: |
-          BASE="${{ matrix.asset_name }}"
-          EXT=""
-          if [[ "$BASE" == *.exe ]]; then
-            EXT=".exe"
-            BASE="${BASE%.exe}"
+          MISSING=""
+          for pattern in ${{ matrix.bundle_patterns }}; do
+            if ! ls $pattern 2>/dev/null | grep -q .; then
+              echo "❌ Missing required artifacts: $pattern"
+              MISSING="${MISSING}${pattern}\n"
+            else
+              echo "✅ Found: $pattern"
+              ls -lh $pattern
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "ERROR: Required bundle artifacts missing for ${{ matrix.platform }}"
+            exit 1
           fi
-          VERSIONED="${BASE}-${RELEASE_TAG}${EXT}"
+
+      - name: Prepare portable binary
+        shell: bash
+        run: |
+          PORTABLE="${{ matrix.portable_asset }}"
+          # Strip extension if present, add version, then add extension back
+          if [[ "$PORTABLE" == *.exe ]]; then
+            BASE="${PORTABLE%.exe}"
+            VERSIONED="${BASE}-${RELEASE_TAG}.exe"
+          else
+            VERSIONED="${PORTABLE}-${RELEASE_TAG}"
+          fi
           cp "target/release/${{ matrix.binary }}" "target/release/${VERSIONED}"
-          echo "VERSIONED_ASSET=${VERSIONED}" >> "$GITHUB_ENV"
+          echo "VERSIONED_PORTABLE=${VERSIONED}" >> "$GITHUB_ENV"
+
+      - name: Rename bundle artifacts
+        shell: bash
+        run: |
+          cd target/release
+
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            # Rename MSI installer
+            MSI_SRC=$(find bundle/msi -name "*.msi" | head -1)
+            if [ -n "$MSI_SRC" ]; then
+              MSI_DEST="telescope-windows-x64-${RELEASE_TAG}.msi"
+              cp "$MSI_SRC" "$MSI_DEST"
+              echo "MSI_ARTIFACT=$MSI_DEST" >> "$GITHUB_ENV"
+              echo "✅ Renamed MSI: $MSI_DEST"
+            fi
+
+            # Rename NSIS installer
+            NSIS_SRC=$(find bundle/nsis -name "*.exe" | head -1)
+            if [ -n "$NSIS_SRC" ]; then
+              NSIS_DEST="telescope-windows-x64-setup-${RELEASE_TAG}.exe"
+              cp "$NSIS_SRC" "$NSIS_DEST"
+              echo "NSIS_ARTIFACT=$NSIS_DEST" >> "$GITHUB_ENV"
+              echo "✅ Renamed NSIS: $NSIS_DEST"
+            fi
+          elif [ "${{ matrix.platform }}" == "macos" ]; then
+            # Rename DMG installer
+            DMG_SRC=$(find bundle/dmg -name "*.dmg" | head -1)
+            if [ -n "$DMG_SRC" ]; then
+              DMG_DEST="telescope-macos-arm64-${RELEASE_TAG}.dmg"
+              cp "$DMG_SRC" "$DMG_DEST"
+              echo "DMG_ARTIFACT=$DMG_DEST" >> "$GITHUB_ENV"
+              echo "✅ Renamed DMG: $DMG_DEST"
+            fi
+          fi
 
       - name: Generate checksums
         shell: bash
         run: |
           cd target/release
-          CHECKSUM_FILE="checksums-${{ matrix.asset_name }}.sha256"
-          sha256sum "${{ env.VERSIONED_ASSET }}" > "$CHECKSUM_FILE"
-          find bundle -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.app.tar.gz" \) 2>/dev/null | while read f; do
-            sha256sum "$f" >> "$CHECKSUM_FILE"
-          done
+          CHECKSUM_FILE="telescope-${{ matrix.platform }}-${RELEASE_TAG}.sha256"
+
+          # Portable binary checksum
+          sha256sum "${{ env.VERSIONED_PORTABLE }}" > "$CHECKSUM_FILE"
+
+          # Renamed bundle artifact checksums
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            [ -n "${{ env.MSI_ARTIFACT }}" ] && sha256sum "${{ env.MSI_ARTIFACT }}" >> "$CHECKSUM_FILE"
+            [ -n "${{ env.NSIS_ARTIFACT }}" ] && sha256sum "${{ env.NSIS_ARTIFACT }}" >> "$CHECKSUM_FILE"
+          elif [ "${{ matrix.platform }}" == "macos" ]; then
+            [ -n "${{ env.DMG_ARTIFACT }}" ] && sha256sum "${{ env.DMG_ARTIFACT }}" >> "$CHECKSUM_FILE"
+          fi
+
           echo "CHECKSUM_FILE=$CHECKSUM_FILE" >> "$GITHUB_ENV"
-          echo "=== Checksums ==="
+          echo "=== Checksums for ${{ matrix.platform }} ==="
           cat "$CHECKSUM_FILE"
 
-      - name: Create GitHub Release (curated changelog)
-        if: ${{ env.HAS_CHANGELOG_RELEASE_NOTES == 'true' }}
+      - name: Create GitHub Release (curated changelog, Windows)
+        if: ${{ env.HAS_CHANGELOG_RELEASE_NOTES == 'true' && matrix.platform == 'windows' }}
         uses: softprops/action-gh-release@v2
         with:
           name: Telescope ${{ env.RELEASE_TAG }}
           body_path: ${{ env.RELEASE_NOTES_PATH }}
           files: |
-            target/release/${{ env.VERSIONED_ASSET }}
+            target/release/${{ env.VERSIONED_PORTABLE }}
             target/release/${{ env.CHECKSUM_FILE }}
-            target/release/bundle/msi/**
-            target/release/bundle/nsis/**
-            target/release/bundle/dmg/**
-            target/release/bundle/macos/**
+            target/release/${{ env.MSI_ARTIFACT }}
+            target/release/${{ env.NSIS_ARTIFACT }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create GitHub Release (autogenerated notes)
-        if: ${{ env.HAS_CHANGELOG_RELEASE_NOTES != 'true' }}
+      - name: Create GitHub Release (curated changelog, macOS)
+        if: ${{ env.HAS_CHANGELOG_RELEASE_NOTES == 'true' && matrix.platform == 'macos' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Telescope ${{ env.RELEASE_TAG }}
+          body_path: ${{ env.RELEASE_NOTES_PATH }}
+          files: |
+            target/release/${{ env.VERSIONED_PORTABLE }}
+            target/release/${{ env.CHECKSUM_FILE }}
+            target/release/${{ env.DMG_ARTIFACT }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release (autogenerated notes, Windows)
+        if: ${{ env.HAS_CHANGELOG_RELEASE_NOTES != 'true' && matrix.platform == 'windows' }}
         uses: softprops/action-gh-release@v2
         with:
           name: Telescope ${{ env.RELEASE_TAG }}
           generate_release_notes: true
           files: |
-            target/release/${{ env.VERSIONED_ASSET }}
+            target/release/${{ env.VERSIONED_PORTABLE }}
             target/release/${{ env.CHECKSUM_FILE }}
-            target/release/bundle/msi/**
-            target/release/bundle/nsis/**
-            target/release/bundle/dmg/**
-            target/release/bundle/macos/**
+            target/release/${{ env.MSI_ARTIFACT }}
+            target/release/${{ env.NSIS_ARTIFACT }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release (autogenerated notes, macOS)
+        if: ${{ env.HAS_CHANGELOG_RELEASE_NOTES != 'true' && matrix.platform == 'macos' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Telescope ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          files: |
+            target/release/${{ env.VERSIONED_PORTABLE }}
+            target/release/${{ env.CHECKSUM_FILE }}
+            target/release/${{ env.DMG_ARTIFACT }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

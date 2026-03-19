@@ -13,5 +13,8 @@ pub use aks::{
 };
 pub use client::ArmClient;
 pub use error::{AzureError, Result};
-pub use resolve::{resolve_aks_identity, resolve_aks_identity_from_preferences};
+pub use resolve::{
+    inspect_aks_identity_preferences, resolve_aks_identity, resolve_aks_identity_from_preferences,
+    unresolved_aks_identity_message, AksIdentityPreferenceStatus,
+};
 pub use types::{AksResourceId, AzureCloud, AKS_API_VERSION};

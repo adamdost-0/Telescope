@@ -22,7 +22,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["dmg", "msi", "nsis"],
     "icon": [
       "../icons/icon.icns",
       "../icons/icon.ico",
@@ -30,6 +30,14 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "wix": {
+        "language": ["en-US"]
+      },
+      "nsis": {
+        "displayLanguageSelector": false
+      }
     }
   }
 }

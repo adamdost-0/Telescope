@@ -1584,9 +1584,30 @@ async fn active_aks_arm_client_for(
     state: &State<'_, AppState>,
     missing_cluster_message: &str,
 ) -> Result<(ArmClient, telescope_azure::AksResourceId), String> {
-    let resource_id = resolve_active_aks_resource_id(state)
-        .await?
-        .ok_or_else(|| missing_cluster_message.to_string())?;
+    let connection = active_connection(state).await?;
+    let info =
+        telescope_engine::client::get_cluster_info(&connection.client, &connection.context_name)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if !info.is_aks {
+        return Err(missing_cluster_message.to_string());
+    }
+
+    let preference_status = {
+        let store_guard = state.store.lock().map_err(|e| e.to_string())?;
+        telescope_azure::inspect_aks_identity_preferences(Some(&store_guard))
+    };
+    let preferred_id = match &preference_status {
+        telescope_azure::AksIdentityPreferenceStatus::Complete(id) => Some(id.clone()),
+        telescope_azure::AksIdentityPreferenceStatus::Missing
+        | telescope_azure::AksIdentityPreferenceStatus::Incomplete { .. } => None,
+    };
+    let resource_id = telescope_azure::resolve_aks_identity(&info.server_url, preferred_id)
+        .await
+        .ok_or_else(|| {
+            telescope_azure::unresolved_aks_identity_message(&info.server_url, &preference_status)
+        })?;
     let cloud = configured_azure_cloud(state).await?;
     let client = ArmClient::new(cloud).map_err(|e| e.to_string())?;
     Ok((client, resource_id))

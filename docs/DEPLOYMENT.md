@@ -4,6 +4,22 @@
 
 ## Desktop Deployment
 
+### Distribution Artifacts
+
+Telescope releases provide platform-specific installers and portable binaries:
+
+**Windows:**
+- **MSI installer** (`telescope-windows-x64-v1.0.x.msi`) — Recommended for most users; provides standard Windows installation experience with Start Menu shortcuts and Add/Remove Programs integration
+- **NSIS installer** (`telescope-windows-x64-setup-v1.0.x.exe`) — Alternative installer format
+- **Portable binary** (`telescope-windows-x64-portable-v1.0.x.exe`) — Standalone executable that requires no installation; useful for USB drives or environments where installation is restricted
+
+**macOS:**
+- **DMG installer** (`telescope-macos-arm64-v1.0.x.dmg`) — Recommended; standard macOS disk image with drag-to-Applications installation
+- **Portable binary** (`telescope-macos-arm64-portable-v1.0.x`) — Standalone executable for advanced users
+
+**Checksums:**
+- Each platform release includes a SHA256 checksum file (`telescope-{platform}-v1.0.x.sha256`) for integrity verification
+
 ### Prerequisites
 
 - **Supported platforms:** macOS, Windows, and Linux.
@@ -40,7 +56,14 @@ To produce native release artifacts for the host platform:
 pnpm -C apps/desktop bundle
 ```
 
-This also rebuilds the frontend and then runs a release Tauri bundle build.
+This rebuilds the frontend and runs a release Tauri bundle build.
+
+**Artifacts produced:**
+
+- **Windows:** MSI installer (`target/release/bundle/msi/*.msi`), NSIS installer (`target/release/bundle/nsis/*.exe`), and portable binary (`target/release/telescope-desktop.exe`)
+- **macOS:** DMG installer (`target/release/bundle/dmg/*.dmg`) and portable binary (`target/release/telescope-desktop`)
+
+**Note:** The release workflow automatically renames these artifacts to standardized names (e.g., `telescope-windows-x64-v1.0.x.msi`) for consistent distribution.
 
 ### Platform-specific notes
 
@@ -48,13 +71,16 @@ This also rebuilds the frontend and then runs a release Tauri bundle build.
 
 - Distribution builds typically need Apple code signing and notarization outside of Telescope itself.
 - Build on macOS hosts with Xcode command-line tools installed.
-- Expect macOS-native artifacts such as `.app` and DMG/PKG-style outputs depending on your signing and packaging setup.
+- The bundle process produces a DMG disk image installer.
+- Unsigned builds may require users to right-click and select "Open" on first launch (Gatekeeper).
 
 #### Windows
 
 - Build on Windows with the Windows SDK available.
-- Tauri bundle builds produce native installer artifacts for Windows distributions.
-- Unsigned builds may trigger Windows Defender / SmartScreen warnings.
+- The bundle process produces both MSI and NSIS installers.
+- **MSI** is the recommended format for enterprise deployments and provides standard Windows Installer integration.
+- **NSIS** is a lighter alternative installer format.
+- Unsigned builds may trigger Windows Defender / SmartScreen warnings; consider code signing certificates for production distribution.
 
 #### Linux
 

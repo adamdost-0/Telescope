@@ -25,8 +25,9 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
     const result = await tauriInvoke<T>(command, args);
     return result;
   } catch (e) {
-    console.error(`[telescope] invoke ${command} FAILED:`, e);
-    throw e;
+    const error = toError(e);
+    console.error(`[telescope] invoke ${command} FAILED:`, error);
+    throw error;
   }
 }
 
@@ -34,6 +35,15 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 
 type ApiErrorListener = (error: { command: string; message: string }) => void;
 const errorListeners: ApiErrorListener[] = [];
+
+function toError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  if (typeof error === 'string') return new Error(error);
+  if (error && typeof error === 'object' && 'message' in error) {
+    return new Error(String(error.message));
+  }
+  return new Error(String(error));
+}
 
 /** Subscribe to API errors that are caught and suppressed by helpers. Returns an unsubscribe function. */
 export function onApiError(listener: ApiErrorListener): () => void {
@@ -45,7 +55,7 @@ export function onApiError(listener: ApiErrorListener): () => void {
 }
 
 function notifyApiError(command: string, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = toError(error).message;
   console.error(`[telescope] ${command} failed:`, message);
   for (const listener of errorListeners) {
     listener({ command, message });
@@ -514,8 +524,9 @@ export async function listAksNodePools(): Promise<AksNodePool[]> {
   try {
     return await invoke<AksNodePool[]>('list_aks_node_pools');
   } catch (e) {
-    notifyApiError('list_aks_node_pools', e);
-    return [];
+    const error = toError(e);
+    notifyApiError('list_aks_node_pools', error);
+    throw error;
   }
 }
 

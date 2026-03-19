@@ -68,7 +68,19 @@
 ## Quick Start
 
 ### Download
+
 Get the latest release from [GitHub Releases](https://github.com/adamdost-0/Telescope/releases).
+
+**Windows:**
+- **Recommended:** `telescope-windows-x64-v1.0.x.msi` — Windows Installer package
+- Alternative: `telescope-windows-x64-setup-v1.0.x.exe` — NSIS installer
+- Portable: `telescope-windows-x64-portable-v1.0.x.exe` — Standalone binary (no installer)
+
+**macOS:**
+- **Recommended:** `telescope-macos-arm64-v1.0.x.dmg` — macOS disk image installer
+- Portable: `telescope-macos-arm64-portable-v1.0.x` — Standalone binary (no installer)
+
+All releases include SHA256 checksums for verification (`telescope-{platform}-v1.0.x.sha256`).
 
 ### Build from Source
 ```bash

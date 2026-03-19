@@ -5,12 +5,21 @@
 
 use crate::types::AksResourceId;
 use serde::Deserialize;
+use telescope_core::store::ResourceStore;
 use tracing::{debug, warn};
 
 /// Preference keys used to store/retrieve Azure identity overrides.
 pub const PREF_AZURE_SUBSCRIPTION: &str = "azure_subscription";
 pub const PREF_AZURE_RESOURCE_GROUP: &str = "azure_resource_group";
 pub const PREF_AZURE_CLUSTER_NAME: &str = "azure_cluster_name";
+
+/// Status of saved AKS identity preferences.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AksIdentityPreferenceStatus {
+    Missing,
+    Incomplete { missing_fields: Vec<&'static str> },
+    Complete(AksResourceId),
+}
 
 /// Resolve the AKS resource identity for a given API server URL.
 ///
@@ -47,29 +56,93 @@ pub async fn resolve_aks_identity(
 
 /// Read saved AKS identity overrides from the resource store.
 pub fn resolve_aks_identity_from_preferences(
-    store: Option<&telescope_core::store::ResourceStore>,
+    store: Option<&ResourceStore>,
 ) -> Option<AksResourceId> {
-    resolve_from_preferences(store)
+    match inspect_aks_identity_preferences(store) {
+        AksIdentityPreferenceStatus::Complete(id) => Some(id),
+        AksIdentityPreferenceStatus::Missing | AksIdentityPreferenceStatus::Incomplete { .. } => {
+            None
+        }
+    }
+}
+
+/// Inspect saved AKS identity preference completeness.
+pub fn inspect_aks_identity_preferences(
+    store: Option<&ResourceStore>,
+) -> AksIdentityPreferenceStatus {
+    let Some(store) = store else {
+        return AksIdentityPreferenceStatus::Missing;
+    };
+
+    let subscription = read_preference(store, PREF_AZURE_SUBSCRIPTION);
+    let resource_group = read_preference(store, PREF_AZURE_RESOURCE_GROUP);
+    let cluster_name = read_preference(store, PREF_AZURE_CLUSTER_NAME);
+
+    let has_any = subscription.is_some() || resource_group.is_some() || cluster_name.is_some();
+    let mut missing_fields = Vec::new();
+    if subscription.is_none() {
+        missing_fields.push("subscription");
+    }
+    if resource_group.is_none() {
+        missing_fields.push("resource group");
+    }
+    if cluster_name.is_none() {
+        missing_fields.push("cluster name");
+    }
+
+    if missing_fields.is_empty() {
+        AksIdentityPreferenceStatus::Complete(AksResourceId {
+            subscription_id: subscription.expect("subscription present when no fields missing"),
+            resource_group: resource_group.expect("resource group present when no fields missing"),
+            cluster_name: cluster_name.expect("cluster name present when no fields missing"),
+        })
+    } else if has_any {
+        AksIdentityPreferenceStatus::Incomplete { missing_fields }
+    } else {
+        AksIdentityPreferenceStatus::Missing
+    }
+}
+
+/// Create an actionable error when an AKS cluster cannot be mapped to an ARM resource.
+pub fn unresolved_aks_identity_message(
+    server_url: &str,
+    preference_status: &AksIdentityPreferenceStatus,
+) -> String {
+    let cluster_hint = extract_fqdn(server_url).unwrap_or_else(|| server_url.to_string());
+    let base = format!(
+        "Connected cluster looks like AKS, but Telescope could not resolve its Azure resource ID for {cluster_hint}."
+    );
+    match preference_status {
+        AksIdentityPreferenceStatus::Incomplete { missing_fields } => format!(
+            "{base} Saved AKS identity settings are incomplete; add {} in Settings, or sign in with Azure CLI so `az aks list` can resolve the cluster.",
+            format_field_list(missing_fields)
+        ),
+        AksIdentityPreferenceStatus::Missing | AksIdentityPreferenceStatus::Complete(_) => format!(
+            "{base} Save Azure subscription, resource group, and cluster name in Settings, or sign in with Azure CLI so `az aks list` can resolve the cluster."
+        ),
+    }
 }
 
 /// Attempt resolution from user-saved preferences in the resource store.
-fn resolve_from_preferences(
-    store: Option<&telescope_core::store::ResourceStore>,
-) -> Option<AksResourceId> {
-    let store = store?;
-    let sub = store.get_preference(PREF_AZURE_SUBSCRIPTION).ok()??;
-    let rg = store.get_preference(PREF_AZURE_RESOURCE_GROUP).ok()??;
-    let name = store.get_preference(PREF_AZURE_CLUSTER_NAME).ok()??;
+fn read_preference(store: &ResourceStore, key: &str) -> Option<String> {
+    store
+        .get_preference(key)
+        .ok()
+        .flatten()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
 
-    if sub.is_empty() || rg.is_empty() || name.is_empty() {
-        return None;
+fn format_field_list(fields: &[&'static str]) -> String {
+    match fields {
+        [] => String::new(),
+        [single] => single.to_string(),
+        [first, second] => format!("{first} and {second}"),
+        _ => {
+            let head = fields[..fields.len() - 1].join(", ");
+            format!("{head}, and {}", fields[fields.len() - 1])
+        }
     }
-
-    Some(AksResourceId {
-        subscription_id: sub,
-        resource_group: rg,
-        cluster_name: name,
-    })
 }
 
 /// Row shape returned by `az aks list`.
@@ -201,5 +274,29 @@ mod tests {
             .unwrap();
         let result = rt.block_on(resolve_aks_identity("https://k8s.example.com:6443", None));
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn unresolved_identity_message_mentions_missing_fields_for_partial_preferences() {
+        let message = unresolved_aks_identity_message(
+            "https://demo.hcp.eastus.azmk8s.io:443",
+            &AksIdentityPreferenceStatus::Incomplete {
+                missing_fields: vec!["resource group", "cluster name"],
+            },
+        );
+
+        assert!(message.contains("demo.hcp.eastus.azmk8s.io"));
+        assert!(message.contains("resource group and cluster name"));
+        assert!(message.contains("`az aks list`"));
+    }
+
+    #[test]
+    fn unresolved_identity_message_mentions_settings_for_missing_preferences() {
+        let message = unresolved_aks_identity_message(
+            "https://demo.hcp.eastus.azmk8s.io:443",
+            &AksIdentityPreferenceStatus::Missing,
+        );
+
+        assert!(message.contains("Save Azure subscription, resource group, and cluster name"));
     }
 }
