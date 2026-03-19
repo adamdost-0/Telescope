@@ -9,6 +9,7 @@ export interface MockTauriScenario {
   upgradeProfiles?: Record<string, PoolUpgradeProfile>;
   resources?: Record<string, ResourceEntry[]>;
   helmReleases?: HelmRelease[];
+  commandErrors?: Record<string, string | { message: string; times?: number }>;
 }
 
 const defaultContexts: ClusterContext[] = [
@@ -170,6 +171,7 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
       upgradeProfiles: clone(input.upgradeProfiles ?? {}),
       resources: clone(input.resources ?? {}),
       helmReleases: clone(input.helmReleases ?? []),
+      commandErrors: clone(input.commandErrors ?? {}),
       calls: [] as Array<{ cmd: string; args: Record<string, unknown> }>,
     };
 
@@ -239,6 +241,28 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
         },
         invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
           state.calls.push({ cmd, args: clone(args) });
+
+          const configuredError = state.commandErrors[cmd];
+          if (configuredError) {
+            const normalized = typeof configuredError === 'string'
+              ? { message: configuredError, times: Number.POSITIVE_INFINITY }
+              : {
+                  message: configuredError.message,
+                  times: configuredError.times ?? Number.POSITIVE_INFINITY,
+                };
+
+            if (normalized.times > 0) {
+              if (typeof configuredError !== 'string' && Number.isFinite(normalized.times)) {
+                const nextTimes = normalized.times - 1;
+                if (nextTimes > 0) {
+                  state.commandErrors[cmd] = { ...configuredError, times: nextTimes };
+                } else {
+                  delete state.commandErrors[cmd];
+                }
+              }
+              throw new Error(normalized.message);
+            }
+          }
 
           switch (cmd) {
             case 'list_contexts':
@@ -442,5 +466,6 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
     upgradeProfiles: scenario.upgradeProfiles ?? defaultUpgradeProfiles,
     resources: scenario.resources ?? defaultResources,
     helmReleases: scenario.helmReleases ?? defaultHelmReleases,
+    commandErrors: scenario.commandErrors ?? {},
   });
 }

@@ -27,3 +27,16 @@
 ### 2026-03-19 — Cross-Agent Audit Summary
 
 All four agents (Dallas, Ripley, Lambert, Kane) completed the K8s capability audit. Results: backend verified against live cluster with zero failures (Ripley). Frontend surface matches backend — 65 API functions, 39 routes, all GVKs reachable (Lambert). All tests green: Rust 176/176, Web 36/36, E2E 16/16 (Kane). Only actionable gap: Helm write ops. Decision: ship v1.0.0 as-is.
+
+### 2026-03-19 — Post-Audit Work Prioritization
+
+- Helm write ops classified as **P1** (should fix, next release), not P0. Rationale: v1.0.0 shipped clean, users have CLI fallback, and chart repo management expands scope if rushed.
+- **Uninstall is the quick win** — simplest Helm write op (no chart input needed), can ship independently. Recommended as immediate parallel work for Ripley + Lambert.
+- Install and upgrade should be designed together since they share chart input UX patterns. Template/dry-run layers on top after those ship.
+- Missing list routes (ReplicaSets, ClusterRoles, ClusterRoleBindings) are P2 — data already watched and accessible, just missing dedicated pages. Lambert can batch these anytime.
+- ARM error handling excluded from this list — Ripley and Lambert already own that work stream separately.
+- Key architectural note for Helm install: start with simple chart reference strings, not a full chart browser/repo manager. Iterate from there.
+
+### 2026-03-19 — ARM Error Handling Session (Lead)
+
+Led prioritization session alongside ARM error handling work by Ripley+Lambert+Kane. ARM error handling delivered: typed backend errors, frontend banner, test coverage, silent-failure bug fix. All tests green. Work priorities decision accepted — Helm writes P1, missing routes P2.

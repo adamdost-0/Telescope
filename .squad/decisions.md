@@ -41,6 +41,47 @@ Only use latest SOTA models for all agent spawns: **Opus 4.6** and **GPT-5.3-Cod
 
 ---
 
+### 2026-03-19: Post-Audit Work Priorities
+
+**Author:** Dallas (Lead)  
+**Status:** Accepted  
+**Type:** Prioritization
+
+**Context:** Prioritized backlog from the K8s capability audit. v1.0.0 shipped clean — these are post-release improvements.
+
+**Items:**
+| ID | Item | Priority | Owner | Depends on |
+|---|---|---|---|---|
+| P1-1 | Helm install | P1 | Ripley + Lambert | — |
+| P1-2 | Helm upgrade | P1 | Ripley + Lambert | P1-1 |
+| P1-3 | Helm uninstall | P1 | Ripley + Lambert | — |
+| P1-4 | Helm template/dry-run | P1 (lower) | Ripley + Lambert | P1-1, P1-2 |
+| P2-1 | ReplicaSets list route | P2 | Lambert | — |
+| P2-2 | ClusterRoles list route | P2 | Lambert | — |
+| P2-3 | ClusterRoleBindings list route | P2 | Lambert | — |
+
+**Decision:** Helm writes are P1, not P0. Recommended sequence: uninstall first (quick win), then install+upgrade together, then template/dry-run. Missing list routes are P2 — batch when convenient.
+
+---
+
+### 2026-03-19: ARM Node Pool Error Handling
+
+**Authors:** Ripley (backend), Lambert (frontend), Kane (tests)  
+**Status:** Accepted  
+**Type:** Bug fix + UX improvement
+
+**Context:** ARM node pool failures were surfaced as generic errors or silently swallowed. `listAksNodePools` returned `[]` on error, hiding failures. `delete_node_pool` polling treated any GET error as successful deletion.
+
+**Changes:**
+- Backend: Typed ARM error variants (TokenExpired, SubscriptionNotFound, ResourceGroupNotFound, ClusterNotFound, PermissionDenied, Timeout) with actionable messages
+- Frontend: Dismissible error banner on node-pools page with guidance mapping; `listAksNodePools` now rethrows after notification
+- Bug fix: `delete_node_pool` only treats `NotFound` as successful disappearance; other errors propagate
+- Tests: Rust unit tests for error mapping, Playwright E2E for error display/dismiss/retry recovery, mock-tauri error injection support
+
+**Decision:** Keep node pool inventory as authoritative ARM `agentPools` reads. Treat ARM failures as first-class user-visible errors with actionable remediation.
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus

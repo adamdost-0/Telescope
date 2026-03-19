@@ -3,6 +3,7 @@
   import {
     getPoolUpgradeProfile,
     listAksNodePools,
+    onApiError,
     scaleAksNodePool,
     updateAksAutoscaler,
     createAksNodePool,
@@ -23,6 +24,8 @@
   let loading = $state(true);
   let refreshing = $state(false);
   let error: string | null = $state(null);
+  let errorDetail: string | null = $state(null);
+  let errorDismissed = $state(false);
   let filterQuery = $state('');
   let lastUpdated: Date | null = $state(null);
   let lastUpdatedText = $state('');
@@ -40,6 +43,65 @@
     | null = $state(null);
   let previewAcknowledged = $state(false);
   let destroyed = false;
+  let listNodePoolApiErrorCount = 0;
+  let unsubApiError: (() => void) | null = null;
+
+  function toErrorMessage(errorValue: unknown, fallback: string): string {
+    return errorValue instanceof Error ? errorValue.message : fallback;
+  }
+
+  function sanitizeErrorDetail(message: string): string {
+    return message.replace(/^error:\s*/i, '').trim();
+  }
+
+  function getAzureNodePoolSuggestion(message: string): string {
+    const normalized = message.toLowerCase();
+    if (
+      normalized.includes('unauthorized') ||
+      normalized.includes('authenticationfailed') ||
+      normalized.includes('invalidauthenticationtoken') ||
+      normalized.includes('expiredauthenticationtoken') ||
+      normalized.includes('aad')
+    ) {
+      return 'Check your Azure sign-in for this cluster, then retry.';
+    }
+    if (
+      normalized.includes('forbidden') ||
+      normalized.includes('authorizationfailed') ||
+      normalized.includes('insufficient privileges') ||
+      normalized.includes('permission')
+    ) {
+      return 'Ensure your account has at least Reader access to the AKS resource and required role assignments for this operation.';
+    }
+    if (
+      normalized.includes('resourcegroupnotfound') ||
+      normalized.includes('resourcenotfound') ||
+      normalized.includes('subscription') ||
+      normalized.includes('not found')
+    ) {
+      return 'Verify subscription, resource group, and cluster name under Settings → Azure.';
+    }
+    if (
+      normalized.includes('timeout') ||
+      normalized.includes('network') ||
+      normalized.includes('dns') ||
+      normalized.includes('connect')
+    ) {
+      return 'Check network access to Azure ARM and try again.';
+    }
+    return 'Check Azure credentials and permissions, then retry.';
+  }
+
+  function setAzureLoadError(rawMessage: string) {
+    error = `Unable to load AKS node pools. ${getAzureNodePoolSuggestion(rawMessage)}`;
+    errorDetail = sanitizeErrorDetail(rawMessage);
+    errorDismissed = false;
+  }
+
+  function toFriendlyArmOperationError(errorValue: unknown, fallback: string): string {
+    const raw = toErrorMessage(errorValue, fallback);
+    return `${fallback}. ${getAzureNodePoolSuggestion(raw)}`;
+  }
 
   // ── Operation state ──────────────────────────────────────────────────
   let operationInProgress = $state(false);
@@ -194,7 +256,7 @@
     } catch (e) {
       upgradeErrors = {
         ...upgradeErrors,
-        [poolName]: e instanceof Error ? e.message : 'Failed to load upgrade profile',
+        [poolName]: toFriendlyArmOperationError(e, 'Failed to load upgrade profile'),
       };
     } finally {
       profileLoading = { ...profileLoading, [poolName]: false };
@@ -235,7 +297,7 @@
     } catch (e) {
       upgradeErrors = {
         ...upgradeErrors,
-        [poolName]: e instanceof Error ? e.message : 'Pool upgrade failed',
+        [poolName]: toFriendlyArmOperationError(e, 'Pool upgrade failed'),
       };
     } finally {
       poolUpgradeBusy = { ...poolUpgradeBusy, [poolName]: false };
@@ -261,14 +323,20 @@
     }
 
     error = null;
+    errorDetail = null;
+    errorDismissed = false;
 
     try {
-      pools = await listAksNodePools();
+      const errorCountBefore = listNodePoolApiErrorCount;
+      const nextPools = await listAksNodePools();
+      if (errorCountBefore !== listNodePoolApiErrorCount) {
+        return;
+      }
+      pools = nextPools;
       lastUpdated = new Date();
       lastUpdatedText = formatTimestamp();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load node pools';
-      pools = [];
+      setAzureLoadError(toErrorMessage(e, 'Failed to load node pools'));
     } finally {
       loading = false;
       refreshing = false;
@@ -297,7 +365,7 @@
       showToast(`Scaling ${scalePoolName} to ${scaleTargetCount} nodes…`);
       await loadPools(true);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Scale operation failed', true);
+      showToast(toFriendlyArmOperationError(e, 'Scale operation failed'), true);
     } finally {
       operationInProgress = false;
     }
@@ -330,7 +398,7 @@
       );
       await loadPools(true);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Autoscaler update failed', true);
+      showToast(toFriendlyArmOperationError(e, 'Autoscaler update failed'), true);
     } finally {
       operationInProgress = false;
     }
@@ -416,7 +484,7 @@
       showToast(`Creating node pool "${createName}"…`);
       await loadPools(true);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Create operation failed', true);
+      showToast(toFriendlyArmOperationError(e, 'Create operation failed'), true);
     } finally {
       operationInProgress = false;
     }
@@ -448,7 +516,7 @@
       showToast(`Deleting node pool "${deletePoolName}"…`);
       await loadPools(true);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Delete operation failed', true);
+      showToast(toFriendlyArmOperationError(e, 'Delete operation failed'), true);
     } finally {
       operationInProgress = false;
     }
@@ -461,6 +529,13 @@
   });
 
   onMount(() => {
+    unsubApiError = onApiError(({ command, message }) => {
+      if (command !== 'list_aks_node_pools') return;
+      listNodePoolApiErrorCount += 1;
+      setAzureLoadError(message);
+      loading = false;
+      refreshing = false;
+    });
     void (async () => {
       const refreshIntervalMs = await getAutoRefreshIntervalMs(10_000);
       if (!destroyed) {
@@ -476,6 +551,7 @@
 
   onDestroy(() => {
     destroyed = true;
+    if (unsubApiError) unsubApiError();
     if (refreshTimer) clearInterval(refreshTimer);
     if (timestampTimer) clearInterval(timestampTimer);
     if (toastTimer) clearTimeout(toastTimer);
@@ -489,6 +565,20 @@
   {/if}
   {#if operationSuccess}
     <div class="toast toast-success" role="status">{operationSuccess}</div>
+  {/if}
+  {#if error && !errorDismissed}
+    <div class="arm-error-banner" role="alert" aria-live="polite">
+      <div class="arm-error-banner-content">
+        <strong>Azure ARM request failed</strong>
+        <p>{error}</p>
+        {#if errorDetail}
+          <p class="arm-error-detail">{errorDetail}</p>
+        {/if}
+      </div>
+      <button type="button" class="arm-error-dismiss" onclick={() => (errorDismissed = true)} aria-label="Dismiss ARM error message">
+        Dismiss
+      </button>
+    </div>
   {/if}
 
   <header>
@@ -521,9 +611,9 @@
     </div>
   {:else if loading}
     <LoadingSkeleton rows={6} columns={10} />
-  {:else if error}
+  {:else if error && !errorDismissed}
     <div role="alert" class="state-card error-card">
-      <p>Failed to load node pools.</p>
+      <p>Failed to load node pools from Azure ARM.</p>
       <p class="hint">{error}</p>
       <button type="button" onclick={() => loadPools(true)}>Retry</button>
     </div>
@@ -984,6 +1074,49 @@
     color: #9e9e9e;
     margin-bottom: 0.5rem;
     font-size: 0.875rem;
+  }
+
+  .arm-error-banner {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0 0 1rem;
+    padding: 0.9rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(239, 83, 80, 0.35);
+    background: rgba(239, 83, 80, 0.12);
+  }
+
+  .arm-error-banner-content strong {
+    color: #ff8a80;
+    font-size: 0.92rem;
+  }
+
+  .arm-error-banner-content p {
+    margin: 0.35rem 0 0;
+    color: #f3f4f6;
+    font-size: 0.85rem;
+  }
+
+  .arm-error-detail {
+    color: #c5c5c5 !important;
+    font-size: 0.78rem !important;
+    word-break: break-word;
+  }
+
+  .arm-error-dismiss {
+    background: transparent;
+    color: #ffd6d6;
+    border: 1px solid rgba(255, 214, 214, 0.45);
+    border-radius: 6px;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .arm-error-dismiss:hover {
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .state-card {

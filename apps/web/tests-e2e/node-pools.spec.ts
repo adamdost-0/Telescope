@@ -8,11 +8,8 @@ async function gotoNodePools(page: Page) {
   await expect(page.getByText('2 node pools')).toBeVisible();
 }
 
-test.beforeEach(async ({ page }) => {
-  await installMockTauri(page);
-});
-
 test('node pools: renders AKS data, filters rows, and surfaces upgrade actions', async ({ page }) => {
+  await installMockTauri(page);
   await gotoNodePools(page);
 
   await expect(page.getByRole('button', { name: '+ Create Pool' })).toBeEnabled();
@@ -41,6 +38,7 @@ test('node pools: renders AKS data, filters rows, and surfaces upgrade actions',
 });
 
 test('node pools: create, scale, autoscale, and delete pool with correct payloads', async ({ page }) => {
+  await installMockTauri(page);
   await gotoNodePools(page);
 
   const systemRow = page.locator('tbody tr').filter({ hasText: 'systempool' }).first();
@@ -97,4 +95,45 @@ test('node pools: create, scale, autoscale, and delete pool with correct payload
 
   await expect(page.getByText('Deleting node pool "burstpool"…')).toBeVisible();
   await expect(page.locator('tbody')).not.toContainText('burstpool');
+});
+
+test('node pools: ARM load errors are user-friendly and dismissible', async ({ page }) => {
+  await installMockTauri(page, {
+    commandErrors: {
+      list_aks_node_pools: 'Your Azure session has expired. Sign in again and retry.',
+    },
+  });
+
+  await page.goto('/azure/node-pools');
+  await expect(page.getByRole('heading', { name: 'Node Pools' })).toBeVisible();
+
+  const armBanner = page.locator('.arm-error-banner[role="alert"]');
+  await expect(armBanner).toBeVisible();
+  await expect(armBanner).toContainText('Azure ARM request failed');
+  await expect(armBanner).toContainText('Unable to load AKS node pools.');
+
+  await armBanner.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(armBanner).toHaveCount(0);
+});
+
+test('node pools: retry recovers after transient ARM load error', async ({ page }) => {
+  await installMockTauri(page, {
+    commandErrors: {
+      list_aks_node_pools: {
+        message: 'Azure API error (403): [AuthorizationFailed] deny',
+        times: 1,
+      },
+    },
+  });
+
+  await page.goto('/azure/node-pools');
+  await expect(page.getByRole('heading', { name: 'Node Pools' })).toBeVisible();
+
+  const errorBanner = page.locator('.error-card[role="alert"]');
+  await expect(errorBanner).toBeVisible();
+  await expect(errorBanner).toContainText('Failed to load node pools from Azure ARM.');
+
+  await errorBanner.getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByText('2 node pools')).toBeVisible();
+  await expect(errorBanner).toHaveCount(0);
 });

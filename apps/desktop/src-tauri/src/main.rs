@@ -201,7 +201,7 @@ async fn list_aks_node_pools(state: State<'_, AppState>) -> Result<Vec<AksNodePo
     let (client, resource_id) = active_aks_arm_client(&state).await?;
     telescope_azure::list_node_pools(&client, &resource_id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| format!("Failed to list AKS node pools via Azure ARM: {e}"))
 }
 
 #[tauri::command]

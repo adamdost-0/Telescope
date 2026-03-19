@@ -14,3 +14,9 @@
 
 Dallas confirmed 29 GVKs, 66 IPC commands, near-complete K8s coverage — only gap is Helm write ops. Ripley verified all kubectl/helm commands against live cluster with zero failures. Kane confirmed all tests green (Rust 176/176, Web 36/36, E2E 16/16). Decision: ship v1.0.0 as-is.
 
+- 2026-03-19: Azure node-pool ARM calls can fail silently when API helpers return fallbacks (`[]`) after `notifyApiError`; subscribing with `onApiError` in route components is necessary for visible failure UX.
+- 2026-03-19: Node pool page now uses a dismissible ARM error banner with actionable guidance (auth, RBAC, resource identity, network) and prevents fallback-empty refresh from being treated as successful data load.
+
+### 2026-03-19 — ARM Error Handling Session
+
+Implemented frontend ARM error display on node-pools page. Added dismissible banner with actionable guidance mapping. Fixed silent `[]` fallback in `listAksNodePools`. Improved ARM operation error messaging across scale/autoscaler/create/delete/upgrade. Ripley delivered backend typed errors, Kane added test coverage. All validation green.

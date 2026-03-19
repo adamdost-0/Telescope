@@ -13,3 +13,8 @@
 ### 2026-03-19 — Cross-Agent Audit Summary
 
 Dallas confirmed 29 GVKs, 66 IPC commands, near-complete coverage — only gap is Helm write ops. Lambert confirmed frontend matches backend: 65 API functions, 39 routes, all GVKs reachable. Kane confirmed all tests green (Rust 176/176, Web 36/36, E2E 16/16). Decision: ship v1.0.0 as-is.
+- 2026-03-19: Verified AKS node pool listing path is true ARM (`managedClusters/{cluster}/agentPools`) via Tauri IPC → azure crate → ArmClient HTTP calls; no K8s label heuristics. Added typed ARM failure variants (token expired, subscription/RG/cluster not found, RBAC denied, timeout) with actionable messages and fixed node-pool deletion polling to stop swallowing non-404 errors.
+
+### 2026-03-19 — ARM Error Handling Session
+
+Delivered typed ARM error variants in `crates/azure` (error.rs, client.rs, aks.rs). Fixed silent-delete bug where non-404 errors were swallowed during node pool deletion polling. Improved IPC error context. Fixed `listAksNodePools` in api.ts to rethrow. Lambert handled frontend banner, Kane added test coverage. All validation green.

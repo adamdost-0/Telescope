@@ -461,7 +461,8 @@ pub async fn delete_node_pool(
     client.delete(&path).await?;
     for _ in 0..ARM_MAX_POLLS {
         match client.get::<Value>(&path).await {
-            Err(_) => return Ok(()),
+            Err(AzureError::NotFound) => return Ok(()),
+            Err(error) => return Err(error),
             Ok(val) => {
                 let state = val
                     .pointer("/properties/provisioningState")
@@ -737,6 +738,40 @@ mod tests {
             serde_json::json!({}),
         );
 
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn node_pool_list_allows_empty_value_array() {
+        let response = serde_json::json!({ "value": [] });
+        let parsed =
+            serde_json::from_value::<ArmListResponse<NamedPropertiesResponse<AksNodePool>>>(
+                response,
+            )
+            .unwrap()
+            .value
+            .into_iter()
+            .map(into_node_pool)
+            .collect::<Vec<_>>();
+
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn node_pool_list_rejects_malformed_items() {
+        let response = serde_json::json!({
+            "value": [
+                {
+                    "name": "systempool",
+                    "properties": "not-an-object"
+                }
+            ]
+        });
+
+        let result =
+            serde_json::from_value::<ArmListResponse<NamedPropertiesResponse<AksNodePool>>>(
+                response,
+            );
         assert!(result.is_err());
     }
 

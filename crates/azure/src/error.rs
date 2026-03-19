@@ -2,8 +2,38 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum AzureError {
-    #[error("Azure authentication failed: {0}")]
+    #[error("Azure authentication failed: {0}. Reconnect your Azure account and retry.")]
     Auth(String),
+
+    #[error("Azure token expired: {0}. Reconnect your Azure account and retry.")]
+    TokenExpired(String),
+
+    #[error(
+        "Azure subscription '{subscription_id}' was not found. Verify the subscription ID and that your account can access it."
+    )]
+    SubscriptionNotFound { subscription_id: String },
+
+    #[error(
+        "Azure resource group '{resource_group}' was not found{subscription_context}. Verify the AKS identity settings and subscription scope."
+    )]
+    ResourceGroupNotFound {
+        resource_group: String,
+        subscription_context: String,
+    },
+
+    #[error(
+        "AKS cluster '{cluster_name}' was not found{resource_group_context}{subscription_context}. Verify cluster name/resource group and Azure cloud selection."
+    )]
+    ClusterNotFound {
+        cluster_name: String,
+        resource_group_context: String,
+        subscription_context: String,
+    },
+
+    #[error(
+        "Azure permission denied for {scope}: {message}. Ensure your identity has at least Reader access to this scope."
+    )]
+    PermissionDenied { scope: String, message: String },
 
     #[error("Azure API error ({status}): [{code}] {message}")]
     Api {
@@ -20,6 +50,9 @@ pub enum AzureError {
 
     #[error("Network error: {0}")]
     Network(String),
+
+    #[error("Azure ARM request timed out: {0}. Check connectivity and retry.")]
+    Timeout(String),
 
     #[error("Serialization error: {0}")]
     Serialization(String),
@@ -46,10 +79,9 @@ mod tests {
     #[test]
     fn error_display_auth() {
         let err = AzureError::Auth("token expired".to_string());
-        assert_eq!(
-            err.to_string(),
-            "Azure authentication failed: token expired"
-        );
+        assert!(err
+            .to_string()
+            .contains("Azure authentication failed: token expired"));
     }
 
     #[test]
@@ -69,6 +101,12 @@ mod tests {
     fn error_display_not_found() {
         let err = AzureError::NotFound;
         assert_eq!(err.to_string(), "Resource not found");
+    }
+
+    #[test]
+    fn error_display_token_expired() {
+        let err = AzureError::TokenExpired("ExpiredAuthenticationToken".to_string());
+        assert!(err.to_string().contains("Azure token expired"));
     }
 
     #[test]

@@ -17,6 +17,13 @@ pub struct ArmClient {
 
 const MAX_RESPONSE_BODY_PREVIEW_CHARS: usize = 256;
 
+#[derive(Default)]
+struct ArmPathContext {
+    subscription_id: Option<String>,
+    resource_group: Option<String>,
+    cluster_name: Option<String>,
+}
+
 fn response_body_preview(body: &str) -> String {
     let trimmed = body.trim();
     if trimmed.is_empty() {
@@ -43,13 +50,130 @@ async fn read_response_text(response: reqwest::Response) -> Result<String> {
     })
 }
 
-fn parse_api_error(status: u16, body: String) -> AzureError {
+fn arm_path_context(path: &str) -> ArmPathContext {
+    let mut context = ArmPathContext::default();
+    let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+    for (idx, part) in parts.iter().enumerate() {
+        match part.to_ascii_lowercase().as_str() {
+            "subscriptions" => {
+                if let Some(value) = parts.get(idx + 1) {
+                    context.subscription_id = Some((*value).to_string());
+                }
+            }
+            "resourcegroups" => {
+                if let Some(value) = parts.get(idx + 1) {
+                    context.resource_group = Some((*value).to_string());
+                }
+            }
+            "managedclusters" => {
+                if let Some(value) = parts.get(idx + 1) {
+                    context.cluster_name = Some((*value).to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    context
+}
+
+fn subscription_context(subscription_id: Option<&str>) -> String {
+    subscription_id
+        .map(|value| format!(" in subscription '{value}'"))
+        .unwrap_or_default()
+}
+
+fn resource_group_context(resource_group: Option<&str>) -> String {
+    resource_group
+        .map(|value| format!(" in resource group '{value}'"))
+        .unwrap_or_default()
+}
+
+fn parse_api_error(status: u16, body: String, request_path: Option<&str>) -> AzureError {
     match serde_json::from_str::<AzureErrorResponse>(&body) {
-        Ok(err) => AzureError::Api {
-            status,
-            code: err.error.code,
-            message: err.error.message,
-        },
+        Ok(err) => {
+            let code = err.error.code;
+            let message = err.error.message;
+            let code_lc = code.to_ascii_lowercase();
+            let message_lc = message.to_ascii_lowercase();
+            let context = request_path.map(arm_path_context).unwrap_or_default();
+
+            if status == 401
+                || code_lc.contains("authentication")
+                || code_lc.contains("unauthorized")
+                || message_lc.contains("authentication")
+            {
+                if code_lc.contains("expired") || message_lc.contains("token expired") {
+                    return AzureError::TokenExpired(message);
+                }
+                return AzureError::Auth(message);
+            }
+
+            if code_lc == "subscriptionnotfound" || code_lc == "invalidsubscriptionid" {
+                return AzureError::SubscriptionNotFound {
+                    subscription_id: context
+                        .subscription_id
+                        .unwrap_or_else(|| "<unknown>".to_string()),
+                };
+            }
+
+            if code_lc == "resourcegroupnotfound" {
+                return AzureError::ResourceGroupNotFound {
+                    resource_group: context
+                        .resource_group
+                        .unwrap_or_else(|| "<unknown>".to_string()),
+                    subscription_context: subscription_context(context.subscription_id.as_deref()),
+                };
+            }
+
+            if status == 403
+                || code_lc == "authorizationfailed"
+                || code_lc == "linkedauthorizationfailed"
+            {
+                let scope = if let Some(cluster_name) = context.cluster_name.as_deref() {
+                    format!(
+                        "AKS cluster '{cluster_name}'{}{}",
+                        resource_group_context(context.resource_group.as_deref()),
+                        subscription_context(context.subscription_id.as_deref())
+                    )
+                } else if let Some(resource_group) = context.resource_group.as_deref() {
+                    format!(
+                        "resource group '{resource_group}'{}",
+                        subscription_context(context.subscription_id.as_deref())
+                    )
+                } else if let Some(subscription_id) = context.subscription_id.as_deref() {
+                    format!("subscription '{subscription_id}'")
+                } else {
+                    "the requested Azure resource scope".to_string()
+                };
+                return AzureError::PermissionDenied { scope, message };
+            }
+
+            if status == 404 || code_lc == "resourcenotfound" || code_lc == "parentresourcenotfound" {
+                if message_lc.contains("managedclusters")
+                    || message_lc.contains("/managedclusters/")
+                    || message_lc.contains("managed cluster")
+                {
+                    return AzureError::ClusterNotFound {
+                        cluster_name: context
+                            .cluster_name
+                            .unwrap_or_else(|| "<unknown>".to_string()),
+                        resource_group_context: resource_group_context(
+                            context.resource_group.as_deref(),
+                        ),
+                        subscription_context: subscription_context(
+                            context.subscription_id.as_deref(),
+                        ),
+                    };
+                }
+                return AzureError::NotFound;
+            }
+
+            AzureError::Api {
+                status,
+                code,
+                message,
+            }
+        }
         Err(parse_error) => AzureError::Api {
             status,
             code: "UnexpectedResponse".to_string(),
@@ -61,10 +185,37 @@ fn parse_api_error(status: u16, body: String) -> AzureError {
     }
 }
 
+fn map_response_error(status: u16, body: String, request_path: Option<&str>) -> AzureError {
+    if status == 409 {
+        return match parse_api_error(status, body, request_path) {
+            AzureError::Api { code, message, .. } => {
+                AzureError::Conflict(format!("[{code}] {message}"))
+            }
+            other => AzureError::Conflict(other.to_string()),
+        };
+    }
+    parse_api_error(status, body, request_path)
+}
+
+fn map_auth_error(message: String) -> AzureError {
+    if message.to_ascii_lowercase().contains("expired") {
+        AzureError::TokenExpired(message)
+    } else {
+        AzureError::Auth(message)
+    }
+}
+
+fn map_network_error(error: reqwest::Error) -> AzureError {
+    if error.is_timeout() {
+        AzureError::Timeout(error.to_string())
+    } else {
+        AzureError::Network(error.to_string())
+    }
+}
+
 impl ArmClient {
     pub fn new(cloud: AzureCloud) -> Result<Self> {
-        let credential =
-            DefaultAzureCredential::new().map_err(|e| AzureError::Auth(e.to_string()))?;
+        let credential = DefaultAzureCredential::new().map_err(|e| map_auth_error(e.to_string()))?;
         Ok(Self {
             credential: credential as Arc<dyn TokenCredential>,
             cloud,
@@ -90,7 +241,7 @@ impl ArmClient {
             .credential
             .get_token(&[scope])
             .await
-            .map_err(|e| AzureError::Auth(e.to_string()))?;
+            .map_err(|e| map_auth_error(e.to_string()))?;
         Ok(response.token.secret().to_string())
     }
 
@@ -103,24 +254,15 @@ impl ArmClient {
         )
     }
 
-    async fn handle_response<T: DeserializeOwned>(&self, response: reqwest::Response) -> Result<T> {
+    async fn handle_response<T: DeserializeOwned>(
+        &self,
+        response: reqwest::Response,
+        path: &str,
+    ) -> Result<T> {
         let status = response.status().as_u16();
-        if status == 404 {
-            return Err(AzureError::NotFound);
-        }
-        if status == 409 {
-            let text = read_response_text(response).await?;
-            let conflict = match parse_api_error(status, text) {
-                AzureError::Api { code, message, .. } => {
-                    AzureError::Conflict(format!("[{code}] {message}"))
-                }
-                other => AzureError::Conflict(other.to_string()),
-            };
-            return Err(conflict);
-        }
         if !response.status().is_success() {
             let text = read_response_text(response).await?;
-            return Err(parse_api_error(status, text));
+            return Err(map_response_error(status, text, Some(path)));
         }
         let body = response.bytes().await.map_err(|error| {
             AzureError::Serialization(format!(
@@ -145,8 +287,8 @@ impl ArmClient {
             .bearer_auth(&token)
             .send()
             .await
-            .map_err(|e| AzureError::Network(e.to_string()))?;
-        self.handle_response(response).await
+            .map_err(map_network_error)?;
+        self.handle_response(response, path).await
     }
 
     pub async fn put<T: DeserializeOwned>(&self, path: &str, body: &impl Serialize) -> Result<T> {
@@ -160,8 +302,8 @@ impl ArmClient {
             .json(body)
             .send()
             .await
-            .map_err(|e| AzureError::Network(e.to_string()))?;
-        self.handle_response(response).await
+            .map_err(map_network_error)?;
+        self.handle_response(response, path).await
     }
 
     pub async fn post(&self, path: &str, body: Option<&impl Serialize>) -> Result<()> {
@@ -175,13 +317,13 @@ impl ArmClient {
         let response = req
             .send()
             .await
-            .map_err(|e| AzureError::Network(e.to_string()))?;
+            .map_err(map_network_error)?;
         if response.status().is_success() {
             return Ok(());
         }
         let status = response.status().as_u16();
         let text = read_response_text(response).await?;
-        Err(parse_api_error(status, text))
+        Err(map_response_error(status, text, Some(path)))
     }
 
     pub async fn delete(&self, path: &str) -> Result<()> {
@@ -194,13 +336,13 @@ impl ArmClient {
             .bearer_auth(&token)
             .send()
             .await
-            .map_err(|e| AzureError::Network(e.to_string()))?;
+            .map_err(map_network_error)?;
         if response.status().is_success() {
             return Ok(());
         }
         let status = response.status().as_u16();
         let text = read_response_text(response).await?;
-        Err(parse_api_error(status, text))
+        Err(map_response_error(status, text, Some(path)))
     }
 }
 
@@ -255,6 +397,7 @@ mod tests {
         let err = parse_api_error(
             400,
             r#"{"error":{"code":"BadRequest","message":"Invalid parameter"}}"#.to_string(),
+            Some("/subscriptions/sub-1"),
         );
 
         match err {
@@ -272,8 +415,71 @@ mod tests {
     }
 
     #[test]
+    fn map_response_error_handles_401_expired_token() {
+        let err = map_response_error(
+            401,
+            r#"{"error":{"code":"ExpiredAuthenticationToken","message":"The access token expired."}}"#
+                .to_string(),
+            Some("/subscriptions/sub-1"),
+        );
+
+        match err {
+            AzureError::TokenExpired(message) => {
+                assert_eq!(message, "The access token expired.");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_response_error_handles_403_forbidden() {
+        let err = map_response_error(
+            403,
+            r#"{"error":{"code":"AuthorizationFailed","message":"Permission denied."}}"#.to_string(),
+            Some(
+                "/subscriptions/sub-123/resourceGroups/rg-a/providers/Microsoft.ContainerService/managedClusters/aks-a"
+            ),
+        );
+
+        match err {
+            AzureError::PermissionDenied { scope, message } => {
+                assert!(scope.contains("aks-a"));
+                assert_eq!(message, "Permission denied.");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_response_error_handles_404_not_found() {
+        let err = map_response_error(
+            404,
+            r#"{"error":{"code":"ResourceNotFound","message":"Cluster missing."}}"#.to_string(),
+            Some("/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ContainerService/managedClusters/aks-1"),
+        );
+
+        assert!(matches!(err, AzureError::NotFound));
+    }
+
+    #[test]
+    fn map_auth_error_maps_expired_tokens() {
+        let err = map_auth_error("The token has expired".to_string());
+        assert!(matches!(err, AzureError::TokenExpired(_)));
+    }
+
+    #[test]
+    fn map_network_error_reports_timeouts() {
+        let err = map_response_error(
+            504,
+            r#"{"error":{"code":"GatewayTimeout","message":"gateway timeout"}}"#.to_string(),
+            None,
+        );
+        assert!(matches!(err, AzureError::Api { status: 504, .. }));
+    }
+
+    #[test]
     fn parse_api_error_reports_unparseable_bodies() {
-        let err = parse_api_error(502, "<html>gateway failure</html>".to_string());
+        let err = parse_api_error(502, "<html>gateway failure</html>".to_string(), None);
 
         match err {
             AzureError::Api {
@@ -296,5 +502,41 @@ mod tests {
         let preview = response_body_preview(&"x".repeat(MAX_RESPONSE_BODY_PREVIEW_CHARS + 8));
         assert!(preview.ends_with('…'));
         assert_eq!(preview.chars().count(), MAX_RESPONSE_BODY_PREVIEW_CHARS + 1);
+    }
+
+    #[test]
+    fn map_response_error_handles_subscription_not_found() {
+        let err = map_response_error(
+            404,
+            r#"{"error":{"code":"SubscriptionNotFound","message":"Subscription missing."}}"#
+                .to_string(),
+            Some("/subscriptions/sub-999/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks"),
+        );
+        match err {
+            AzureError::SubscriptionNotFound { subscription_id } => {
+                assert_eq!(subscription_id, "sub-999");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_response_error_handles_resource_group_not_found() {
+        let err = map_response_error(
+            404,
+            r#"{"error":{"code":"ResourceGroupNotFound","message":"Resource group missing."}}"#
+                .to_string(),
+            Some("/subscriptions/sub-1/resourceGroups/rg-missing/providers/Microsoft.ContainerService/managedClusters/aks"),
+        );
+        match err {
+            AzureError::ResourceGroupNotFound {
+                resource_group,
+                subscription_context,
+            } => {
+                assert_eq!(resource_group, "rg-missing");
+                assert!(subscription_context.contains("sub-1"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }
