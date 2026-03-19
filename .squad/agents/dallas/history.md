@@ -40,3 +40,11 @@ All four agents (Dallas, Ripley, Lambert, Kane) completed the K8s capability aud
 ### 2026-03-19 — ARM Error Handling Session (Lead)
 
 Led prioritization session alongside ARM error handling work by Ripley+Lambert+Kane. ARM error handling delivered: typed backend errors, frontend banner, test coverage, silent-failure bug fix. All tests green. Work priorities decision accepted — Helm writes P1, missing routes P2.
+
+### 2026-03-19 — v1.0.7 Release
+
+- Wrote thorough CHANGELOG entry covering all work since v1.0.5: Helm uninstall end-to-end, three P2 resource list routes, ARM error handling fixes, and E2E test suite doubling.
+- Resolved a merge conflict in `apps/web/src/lib/api.ts` during rebase (kept `toError(e)` wrapper over raw `e` — the more robust error handling path).
+- Pushed main, tagged `v1.0.7`, pushed tag to trigger release automation.
+- CHANGELOG follows Keep a Changelog format with Added, Fixed, Changed, Testing, and Internal sections.
+- Lesson: always `git pull --rebase` before pushing when the remote may have advanced — the squad's parallel work means main moves frequently.
