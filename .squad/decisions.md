@@ -139,6 +139,46 @@ Only use latest SOTA models for all agent spawns: **Opus 4.6** and **GPT-5.3-Cod
 
 ---
 
+### 2026-03-19: GitHub Pages Documentation Site Structure
+
+**Author:** Dallas (Lead)  
+**Status:** Accepted  
+**Type:** Documentation architecture
+
+**Context:** Telescope needed a public-facing documentation site. The `docs/` directory had 11+ markdown files with no navigation, theming, or deployment pipeline.
+
+**Changes:**
+- Theme: `just-the-docs` v0.10.1 via `remote_theme` — searchable, sidebar navigation, native mermaid support
+- Color scheme: Dark mode default (matches the IDE aesthetic)
+- Deployment: GitHub Actions workflow (`docs.yml`) with `actions/deploy-pages@v4`
+- Navigation: 8 public sidebar pages (nav_order 2–9), 3 internal pages (`nav_exclude: true`), AGENTS.md/retrospectives/diagrams excluded from Jekyll
+- Landing page: `docs/index.md` with project overview, navigation table, tech stack links
+- No content changes: Only front matter additions to existing files
+
+**Decision:** `just-the-docs` is the standard for open-source technical docs. Internal planning docs stay accessible by URL but hidden from public navigation. CHANGELOG linked externally to avoid duplication drift.
+
+---
+
+### 2026-03-19: README Cleanup and Restructure
+
+**Author:** Lambert (Frontend Dev)  
+**Status:** Accepted  
+**Type:** Documentation improvement
+
+**Context:** README needed to be cleaner, more scannable, and compatible with both GitHub rendering and GitHub Pages/Jekyll publishing.
+
+**Changes:**
+- Hero section with badges and concise value proposition
+- Feature highlight reel replacing long emoji bullet lists
+- Scannable feature matrix tables for Kubernetes, Azure, and desktop capabilities
+- Streamlined quick start and normalized development commands
+- Clean footer with license, docs, and contributing links
+- Pure markdown throughout (no raw HTML)
+
+**Decision:** All existing information preserved; restructured for scannability. Markdown-only approach reduces rendering risk across GitHub and Jekyll contexts.
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus

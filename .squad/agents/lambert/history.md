@@ -33,3 +33,9 @@ Delivered 3 P2 list routes: ReplicaSets, ClusterRoles, ClusterRoleBindings (P2-1
 ### 2026-03-19 — Helm Uninstall UI + All Gaps Resolved
 
 Wired helm uninstall UI into `apps/web/src/routes/helm/+page.svelte`: per-row Uninstall button, ConfirmDialog, success/error notifications, post-action refresh. All audit gaps now resolved — P0 ARM errors, P1 Helm uninstall (engine + IPC + UI), P2 list routes. Full test coverage: 36 unit, 32 E2E, Rust all green.
+- 2026-03-19: README restructuring for GitHub + GitHub Pages should prefer pure markdown sections/tables (no fragile HTML blocks) while keeping complete feature and command coverage.
+- 2026-03-19: Key docs touchpoints for presentation updates are `README.md`, `docs/` relative links, and footer links to `CONTRIBUTING.md` and `LICENSE`.
+
+### 2026-03-19 — GitHub Pages + README Session (Scribe)
+
+Lambert delivered the README cleanup workstream. Rewrote README.md with badges, hero section, feature matrix tables, streamlined quick start, clean footer. Pure markdown for GitHub + Jekyll compatibility. Dallas ran parallel GitHub Pages structure. Decision merged to decisions.md.

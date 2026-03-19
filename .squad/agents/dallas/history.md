@@ -58,3 +58,7 @@ Led prioritization session alongside ARM error handling work by Ripley+Lambert+K
 - Key file paths: `docs/_config.yml` (Jekyll config), `docs/index.md` (landing page), `docs/Gemfile` (Ruby deps), `.github/workflows/docs.yml` (deploy workflow).
 - Existing content untouched beyond adding YAML front matter blocks — no content was deleted or restructured.
 - CHANGELOG linked from landing page to repo root (external link) rather than duplicated in docs/.
+
+### 2026-03-19 — GitHub Pages + README Session (Scribe)
+
+Dallas led the GitHub Pages docs structure workstream. Created `docs/_config.yml` (just-the-docs, dark mode), `docs/index.md` (landing page), `.github/workflows/docs.yml` (deploy workflow). Added YAML front matter to all 11 docs files — 8 public sidebar, 3 internal nav_exclude. Lambert ran parallel README cleanup. Decision merged to decisions.md.
