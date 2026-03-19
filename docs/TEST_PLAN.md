@@ -1,3 +1,9 @@
+---
+title: Test Plan
+nav_exclude: true
+description: "Aspirational test policy — internal reference"
+---
+
 # Telescope — Test Plan (Policy)
 
 > ⚠️ **Status: Aspirational** — This describes the *target* test policy. Current coverage is minimal — see TESTING.md status note.

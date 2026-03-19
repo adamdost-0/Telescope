@@ -1,3 +1,9 @@
+---
+title: Deployment
+nav_order: 4
+description: "Build, bundle, and distribute the Telescope desktop application"
+---
+
 # Deployment
 
 > **Current status:** Telescope v1.0.0 is a desktop-only Tauri application. There is no hub/web server mode. Deployment guidance focuses on building, bundling, and distributing the native app.

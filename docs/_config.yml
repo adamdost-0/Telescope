@@ -1,0 +1,64 @@
+title: Telescope
+description: >-
+  Desktop-first Kubernetes IDE built with Tauri, SvelteKit, and Rust.
+  AKS-optimized with native Azure ARM integration.
+
+# Theme
+remote_theme: just-the-docs/just-the-docs@v0.10.1
+
+# URL config — GitHub Pages serves from /Telescope/
+url: "https://adamdost-0.github.io"
+baseurl: "/Telescope"
+
+# Color scheme
+color_scheme: dark
+
+# Aux links (top-right corner)
+aux_links:
+  "View on GitHub":
+    - "https://github.com/adamdost-0/Telescope"
+aux_links_new_tab: true
+
+# Footer
+gh_edit_link: true
+gh_edit_link_text: "Edit this page on GitHub"
+gh_edit_repository: "https://github.com/adamdost-0/Telescope"
+gh_edit_source: docs
+gh_edit_view_mode: "edit"
+
+# Search
+search_enabled: true
+search:
+  heading_level: 3
+  previews: 3
+  preview_words_before: 5
+  preview_words_after: 10
+  tokenizer_separator: /[\s/]+/
+
+# Back to top link
+back_to_top: true
+back_to_top_text: "Back to top"
+
+# Heading anchors
+heading_anchors: true
+
+# Mermaid diagram support
+mermaid:
+  version: "11"
+
+# Build settings
+markdown: kramdown
+kramdown:
+  syntax_highlighter: rouge
+  input: GFM
+
+# Exclude files that shouldn't be processed
+exclude:
+  - AGENTS.md
+  - retrospectives/
+  - diagrams/architecture.md
+  - "*.sh"
+  - node_modules/
+
+# Collections for navigation grouping
+nav_external_links: []

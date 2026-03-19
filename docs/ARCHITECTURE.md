@@ -1,3 +1,9 @@
+---
+title: Architecture
+nav_order: 2
+description: "System design, crate layering, watch model, IPC surface, and data flow"
+---
+
 # Telescope — Architecture
 
 This document describes the implemented architecture of Telescope v1.0.0.

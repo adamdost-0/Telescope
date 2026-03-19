@@ -1,3 +1,9 @@
+---
+title: AKS Quick Start
+nav_order: 3
+description: "Connect Telescope to an AKS cluster in under 5 minutes"
+---
+
 # Telescope — AKS Quick Start
 
 ## Prerequisites

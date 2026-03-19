@@ -1,3 +1,9 @@
+---
+title: Roadmap
+nav_order: 7
+description: "Post-v1.0.0 milestones and priorities"
+---
+
 # Telescope — Post-v1.0.0 Roadmap
 
 > **Goal:** keep extending the shipped desktop Kubernetes IDE with deeper operator workflows while preserving the native Tauri-first experience.

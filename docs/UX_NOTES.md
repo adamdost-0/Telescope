@@ -1,3 +1,9 @@
+---
+title: UX Reference
+nav_order: 8
+description: "Route inventory, navigation patterns, and component catalog"
+---
+
 # Telescope — UX Notes
 
 > **Status: v1.0.0** — The route inventory below reflects the actual `apps/web/src/routes/` tree. The Tauri desktop app is the only supported runtime. 39 routes, 25 components.

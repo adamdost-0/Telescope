@@ -1,3 +1,9 @@
+---
+title: Smoke Test
+nav_order: 9
+description: "Local k3d validation checklist for core Kubernetes features"
+---
+
 # Telescope — Local k3d Smoke Test
 
 > **Scope:** This checklist validates core Kubernetes features using a local k3d cluster. Azure ARM features (node pool management, cluster start/stop, upgrades) require a real AKS cluster and are not testable with k3d.

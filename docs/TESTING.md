@@ -1,3 +1,9 @@
+---
+title: Testing
+nav_order: 6
+description: "Test pyramid — Rust unit tests, Vitest, Playwright E2E"
+---
+
 # Telescope — Testing Strategy
 
 > **Status: v1.0.0** — Current test inventory: **133 Rust tests**, **5 Vitest files (40+ test cases)**, and **6 Playwright specs**.

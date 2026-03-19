@@ -1,3 +1,9 @@
+---
+title: Entra ID Auth Feasibility
+nav_exclude: true
+description: "Desktop Entra ID authentication investigation — internal reference"
+---
+
 # Entra ID Authentication Feasibility
 
 > **Status:** Desktop-only feasibility investigation for Telescope.

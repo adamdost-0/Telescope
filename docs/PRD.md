@@ -1,3 +1,9 @@
+---
+title: Product Requirements
+nav_exclude: true
+description: "Product requirements document — internal planning reference"
+---
+
 # Telescope — PRD
 
 > Working title: **Telescope** (aka "Aurora" in earlier drafts)

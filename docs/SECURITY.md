@@ -1,3 +1,9 @@
+---
+title: Security
+nav_order: 5
+description: "Threat model, secret handling, audit logging, and credential management"
+---
+
 # Telescope — Security Notes
 
 > **Status: v1.0.0** — Telescope ships desktop security controls for Kubernetes access, secret handling, audit logging, and Azure ARM authentication.
