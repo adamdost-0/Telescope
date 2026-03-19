@@ -48,3 +48,13 @@ Led prioritization session alongside ARM error handling work by Ripley+Lambert+K
 - Pushed main, tagged `v1.0.7`, pushed tag to trigger release automation.
 - CHANGELOG follows Keep a Changelog format with Added, Fixed, Changed, Testing, and Internal sections.
 - Lesson: always `git pull --rebase` before pushing when the remote may have advanced — the squad's parallel work means main moves frequently.
+
+### 2026-03-19 — GitHub Pages Documentation Site
+
+- Architecture decision: **just-the-docs** theme (v0.10.1) via `remote_theme` — clean sidebar nav, built-in search, mermaid diagram rendering, dark mode default.
+- Navigation hierarchy: 8 public pages ordered by importance (Architecture → Quickstart → Deployment → Security → Testing → Roadmap → UX Reference → Smoke Test). 3 internal pages (PRD, Test Plan, Entra Auth) marked `nav_exclude: true` — accessible by URL but hidden from sidebar.
+- AGENTS.md, retrospectives/, and diagrams/ excluded from Jekyll processing via `_config.yml` exclude list.
+- GitHub Pages deploys from `docs/` folder on push to main, with `actions/deploy-pages@v4` workflow. Mermaid v11 enabled for architecture diagram rendering.
+- Key file paths: `docs/_config.yml` (Jekyll config), `docs/index.md` (landing page), `docs/Gemfile` (Ruby deps), `.github/workflows/docs.yml` (deploy workflow).
+- Existing content untouched beyond adding YAML front matter blocks — no content was deleted or restructured.
+- CHANGELOG linked from landing page to repo root (external link) rather than duplicated in docs/.
