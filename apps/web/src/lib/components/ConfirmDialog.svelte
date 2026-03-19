@@ -61,7 +61,7 @@
   <div class="overlay" role="presentation" onclick={handleOverlayClick} onkeydown={handleKeydown}>
     <div
       class="dialog"
-      role="alertdialog"
+      role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
       aria-describedby={describedBy}

@@ -11,6 +11,7 @@ type RouteCase = {
   columns: string[];
   detailPathPattern: RegExp;
   paletteQuery: string;
+  emptyMessage: string;
 };
 
 const routeCases: RouteCase[] = [
@@ -21,22 +22,25 @@ const routeCases: RouteCase[] = [
     columns: ['Name', 'Namespace', 'Ready', 'Age'],
     detailPathPattern: /\/resources\/replicasets\/default\/nginx-deploy-7f8f9c5c6f/,
     paletteQuery: '@ nginx-deploy-7f8f9c5c6f',
+    emptyMessage: 'No replica sets found in this namespace.',
   },
   {
     title: 'ClusterRoles',
     path: '/resources/clusterroles',
     rowName: 'view',
-    columns: ['Name', 'Rules', 'Age'],
+    columns: ['Name', 'Created', 'Rules'],
     detailPathPattern: /\/resources\/clusterroles\/_cluster\/view/,
     paletteQuery: '@ view',
+    emptyMessage: 'No cluster roles found.',
   },
   {
     title: 'ClusterRoleBindings',
     path: '/resources/clusterrolebindings',
     rowName: 'viewers-binding',
-    columns: ['Name', 'Role Ref', 'Subjects', 'Age'],
+    columns: ['Name', 'Role Ref', 'Subjects', 'Created'],
     detailPathPattern: /\/resources\/clusterrolebindings\/_cluster\/viewers-binding/,
     paletteQuery: '@ viewers-binding',
+    emptyMessage: 'No cluster role bindings found.',
   },
 ];
 
@@ -63,7 +67,7 @@ for (const routeCase of routeCases) {
       ).toBeVisible();
     }
 
-    await page.getByRole('link', { name: routeCase.rowName }).click();
+    await table.getByRole('link', { name: routeCase.rowName, exact: true }).click();
     await expect(page).toHaveURL(routeCase.detailPathPattern);
   });
 
@@ -80,7 +84,7 @@ for (const routeCase of routeCases) {
     await expect(page).toHaveURL(routeCase.detailPathPattern);
   });
 
-  test(`${routeCase.title}: loading and error states render`, async ({ page }) => {
+  test(`${routeCase.title}: loading state renders then table appears`, async ({ page }) => {
     await installMockTauri(page, {
       commandDelays: {
         get_resources: 1000,
@@ -90,14 +94,17 @@ for (const routeCase of routeCases) {
     await expect(page.getByRole('status', { name: 'Loading data' })).toBeVisible();
     await expect(page.getByRole('status', { name: 'Loading data' })).toHaveCount(0);
     await expect(page.getByRole('table', { name: 'Resource list' })).toBeVisible();
+  });
 
+  test(`${routeCase.title}: command errors fall back to empty state`, async ({ page }) => {
     await installMockTauri(page, {
       commandErrors: {
         get_resources: `Failed to load ${routeCase.title.toLowerCase()}`,
       },
     });
     await page.goto(routeCase.path);
-    await expect(page.getByRole('alert')).toBeVisible();
-    await expect(page.getByRole('alert')).toContainText(/failed to load/i);
+    await expect(page.getByRole('table', { name: 'Resource list' })).toHaveCount(0);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByText(routeCase.emptyMessage)).toBeVisible();
   });
 }

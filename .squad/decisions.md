@@ -122,6 +122,23 @@ Only use latest SOTA models for all agent spawns: **Opus 4.6** and **GPT-5.3-Cod
 
 ---
 
+### 2026-03-19: Helm Uninstall UI Wiring
+
+**Authors:** Lambert (frontend)  
+**Status:** Accepted  
+**Type:** Feature implementation (UI layer)
+
+**Context:** Helm uninstall engine + IPC were already delivered (P1-3). This completes the user-facing UI layer — confirmation dialog, success/error notifications, and post-action refresh.
+
+**Changes:**
+- Frontend: Wired `helmUninstall` into `apps/web/src/routes/helm/+page.svelte` with per-row Uninstall action button, `$state`-driven ConfirmDialog, success/error notification banners, and post-action list refresh
+- UX: ConfirmDialog role set to `dialog` for Playwright E2E compatibility
+- Validation: `pnpm build` ✅, `pnpm test` ✅ (36/36), helm uninstall E2E tests pass
+
+**Decision:** Follows the established Helm rollback action pattern. P1-3 (Helm uninstall) is now fully delivered end-to-end: engine → IPC → UI → tests.
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus

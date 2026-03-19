@@ -21,7 +21,12 @@ Added Rust unit tests for ARM error mapping (401/403/404/timeout/malformed) in `
 Dallas confirmed 29 GVKs, 66 IPC commands, near-complete coverage — only gap is Helm write ops. Ripley verified all kubectl/helm commands against live cluster with zero failures. Lambert confirmed frontend matches backend: 65 API functions, 39 routes, all GVKs reachable. Decision: ship v1.0.0 as-is.
 - 2026-03-19: Helm uninstall backend tests are now executable in-engine by stubbing `TELESCOPE_HELM_PATH` to a temporary script; env mutation must be serialized in tests to avoid cross-test interference.
 - 2026-03-19: E2E mocking now supports both one-shot command failures (`commandErrors`) and deterministic latency injection (`commandDelays`) in `apps/web/tests-e2e/helpers/mock-tauri.ts`.
+- 2026-03-19: `apps/web/src/lib/api.ts#getResources` swallows `get_resources` IPC errors and returns `[]`, so resource-list routes render empty states (not `role="alert"` error banners) when backend fetch fails.
 
 ### 2026-03-19 — Helm Uninstall + P2 Routes Session
 
 Added Rust unit tests for helm uninstall (success/not-found/empty-name). Added E2E specs for helm uninstall action/confirm/success/error flows + 3 P2 route specs (load/columns/detail/search-palette/loading/error). Extended mock-tauri with `helm_uninstall` mock + `commandDelays`. Cargo tests green. E2E: 4/11 new specs pass, remainder awaiting full UI wiring merge.
+
+### 2026-03-19 — P2 E2E Fix + All Gaps Resolved
+
+Fixed P2 route E2E test mismatches in `tests-e2e/p2-routes.spec.ts` — aligned assertions to actual route rendering (empty states vs error banners, column labels, detail navigation). All 32 E2E + 36 unit + Rust tests green. All audit gaps now resolved.

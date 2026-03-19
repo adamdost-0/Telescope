@@ -27,3 +27,9 @@ Implemented frontend ARM error display on node-pools page. Added dismissible ban
 ### 2026-03-19 — Helm Uninstall + P2 Routes Session
 
 Delivered 3 P2 list routes: ReplicaSets, ClusterRoles, ClusterRoleBindings (P2-1/2/3 complete). Standard pattern with `getResources(gvk)`, `FilterBar`, `ResourceTable`, Svelte 5 runes. Updated `resource-routing.ts` and nav entry points. `pnpm build` + `pnpm test` green (36/36).
+- 2026-03-19: Helm release list (`apps/web/src/routes/helm/+page.svelte`) now owns uninstall UX with per-row action buttons, ConfirmDialog flow, inline success/error notices, and post-action refresh; this is the pattern for future Helm write actions.
+- 2026-03-19: Playwright helm uninstall tests target `getByRole('dialog')`; keeping ConfirmDialog exposed as `role="dialog"` preserves cross-page confirmation test compatibility.
+
+### 2026-03-19 — Helm Uninstall UI + All Gaps Resolved
+
+Wired helm uninstall UI into `apps/web/src/routes/helm/+page.svelte`: per-row Uninstall button, ConfirmDialog, success/error notifications, post-action refresh. All audit gaps now resolved — P0 ARM errors, P1 Helm uninstall (engine + IPC + UI), P2 list routes. Full test coverage: 36 unit, 32 E2E, Rust all green.

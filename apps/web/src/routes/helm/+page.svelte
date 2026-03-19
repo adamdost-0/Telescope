@@ -213,7 +213,7 @@
   message={`Are you sure you want to uninstall ${uninstallTarget?.name ?? 'this release'}?`}
   confirmText={uninstalling ? 'Uninstalling…' : 'Uninstall'}
   confirmValue={uninstallTarget?.name ?? ''}
-  requireType={true}
+  requireType={false}
   productionContext={uninstallTarget?.namespace === 'production' || uninstallTarget?.namespace === 'prod'}
   onconfirm={confirmUninstall}
   oncancel={() => {
