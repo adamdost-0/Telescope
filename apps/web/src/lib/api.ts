@@ -470,6 +470,11 @@ export async function helmRollback(namespace: string, name: string, revision: nu
   return invoke<string>('helm_rollback', { namespace, name, revision });
 }
 
+/** Uninstall a Helm release from a namespace using the helm CLI. */
+export async function helmUninstall(namespace: string, name: string): Promise<string> {
+  return invoke<string>('helm_uninstall', { namespace, name });
+}
+
 /** List all Custom Resource Definitions installed on the cluster. */
 export async function listCrds(): Promise<CrdInfo[]> {
   try {

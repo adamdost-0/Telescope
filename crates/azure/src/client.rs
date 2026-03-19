@@ -148,7 +148,8 @@ fn parse_api_error(status: u16, body: String, request_path: Option<&str>) -> Azu
                 return AzureError::PermissionDenied { scope, message };
             }
 
-            if status == 404 || code_lc == "resourcenotfound" || code_lc == "parentresourcenotfound" {
+            if status == 404 || code_lc == "resourcenotfound" || code_lc == "parentresourcenotfound"
+            {
                 if message_lc.contains("managedclusters")
                     || message_lc.contains("/managedclusters/")
                     || message_lc.contains("managed cluster")
@@ -215,7 +216,8 @@ fn map_network_error(error: reqwest::Error) -> AzureError {
 
 impl ArmClient {
     pub fn new(cloud: AzureCloud) -> Result<Self> {
-        let credential = DefaultAzureCredential::new().map_err(|e| map_auth_error(e.to_string()))?;
+        let credential =
+            DefaultAzureCredential::new().map_err(|e| map_auth_error(e.to_string()))?;
         Ok(Self {
             credential: credential as Arc<dyn TokenCredential>,
             cloud,
@@ -314,10 +316,7 @@ impl ArmClient {
         if let Some(b) = body {
             req = req.json(b);
         }
-        let response = req
-            .send()
-            .await
-            .map_err(map_network_error)?;
+        let response = req.send().await.map_err(map_network_error)?;
         if response.status().is_success() {
             return Ok(());
         }

@@ -18,3 +18,8 @@ Dallas confirmed 29 GVKs, 66 IPC commands, near-complete coverage — only gap i
 ### 2026-03-19 — ARM Error Handling Session
 
 Delivered typed ARM error variants in `crates/azure` (error.rs, client.rs, aks.rs). Fixed silent-delete bug where non-404 errors were swallowed during node pool deletion polling. Improved IPC error context. Fixed `listAksNodePools` in api.ts to rethrow. Lambert handled frontend banner, Kane added test coverage. All validation green.
+- 2026-03-19: Implemented first Helm write op (`helm uninstall`) end-to-end. Added `telescope_engine::helm::helm_uninstall(namespace, name)` with trusted Helm binary resolution, input validation, CLI execution, and categorized error messaging for release-not-found, permission denied, and timeout cases. Wired new Tauri IPC command `helm_uninstall` in `apps/desktop/src-tauri/src/main.rs` with namespace/name validation and audit logging.
+
+### 2026-03-19 — Helm Uninstall + P2 Routes Session
+
+Delivered helm_uninstall engine API + Tauri IPC command (P1-3 complete). Engine tests 94→97 with uninstall error categorization coverage. Kane added E2E specs for uninstall flows. Cargo clippy + tests green.

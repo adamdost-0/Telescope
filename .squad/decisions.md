@@ -54,11 +54,11 @@ Only use latest SOTA models for all agent spawns: **Opus 4.6** and **GPT-5.3-Cod
 |---|---|---|---|---|
 | P1-1 | Helm install | P1 | Ripley + Lambert | — |
 | P1-2 | Helm upgrade | P1 | Ripley + Lambert | P1-1 |
-| P1-3 | Helm uninstall | P1 | Ripley + Lambert | — |
+| P1-3 | Helm uninstall | P1 ✅ | Ripley | — |
 | P1-4 | Helm template/dry-run | P1 (lower) | Ripley + Lambert | P1-1, P1-2 |
-| P2-1 | ReplicaSets list route | P2 | Lambert | — |
-| P2-2 | ClusterRoles list route | P2 | Lambert | — |
-| P2-3 | ClusterRoleBindings list route | P2 | Lambert | — |
+| P2-1 | ReplicaSets list route | P2 ✅ | Lambert | — |
+| P2-2 | ClusterRoles list route | P2 ✅ | Lambert | — |
+| P2-3 | ClusterRoleBindings list route | P2 ✅ | Lambert | — |
 
 **Decision:** Helm writes are P1, not P0. Recommended sequence: uninstall first (quick win), then install+upgrade together, then template/dry-run. Missing list routes are P2 — batch when convenient.
 
@@ -79,6 +79,46 @@ Only use latest SOTA models for all agent spawns: **Opus 4.6** and **GPT-5.3-Cod
 - Tests: Rust unit tests for error mapping, Playwright E2E for error display/dismiss/retry recovery, mock-tauri error injection support
 
 **Decision:** Keep node pool inventory as authoritative ARM `agentPools` reads. Treat ARM failures as first-class user-visible errors with actionable remediation.
+
+---
+
+### 2026-03-19: Helm Uninstall Implementation
+
+**Authors:** Ripley (engine + IPC), Kane (tests)  
+**Status:** Accepted  
+**Type:** Feature implementation
+
+**Context:** Helm uninstall was prioritized as the first Helm write operation (P1-3) because it is the smallest safe slice — no chart payloads, only release identity and namespace.
+
+**Changes:**
+- Engine: `telescope_engine::helm::helm_uninstall(namespace, name)` with trusted binary resolution, input validation, CLI execution via `tokio::process::Command(kill_on_drop)`, and categorized error messaging (release-not-found, permission denied, timeout)
+- Desktop IPC: `helm_uninstall` Tauri command with namespace/name validation, audit logging, registered in `generate_handler!`
+- Tests: 3 new Rust unit tests for uninstall error categorization (engine tests 94→97); E2E specs for action/confirm/success/error flows
+
+**Decision:** Follows established Helm rollback pattern. Reuses existing Kubernetes-name validator and trusted Helm binary resolution.
+
+---
+
+### 2026-03-19: P2 Resource List Routes (ReplicaSets, ClusterRoles, ClusterRoleBindings)
+
+**Authors:** Lambert (frontend), Kane (tests)  
+**Status:** Accepted  
+**Type:** Feature implementation
+
+**Context:** Per the post-audit P2 backlog, these three resource types were already watched by the backend but lacked dedicated frontend list pages.
+
+**Changes:**
+- Frontend: 3 new list routes under `apps/web/src/routes/resources/` (replicasets, clusterroles, clusterrolebindings) using standard pattern (`getResources`, `FilterBar`, `ResourceTable`, Svelte 5 runes)
+- Routing: Updated `resource-routing.ts` with list/detail mappings for all three types
+- Navigation: Sidebar links and search palette entries for all three types
+- Tests: E2E specs for route rendering, columns, detail click-through, search palette discovery, loading/error states; `commandDelays` mock-tauri support
+
+**Columns:**
+- ReplicaSets: name, namespace, desired/current/ready replicas, age
+- ClusterRoles: name, creation timestamp, rules count
+- ClusterRoleBindings: name, role ref, subjects, creation timestamp
+
+**Decision:** No new API wrappers needed — `getResources(gvk)` covers all three. Completes the P2 backlog from the post-audit prioritization.
 
 ---
 

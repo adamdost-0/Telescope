@@ -10,6 +10,7 @@ export interface MockTauriScenario {
   resources?: Record<string, ResourceEntry[]>;
   helmReleases?: HelmRelease[];
   commandErrors?: Record<string, string | { message: string; times?: number }>;
+  commandDelays?: Record<string, number>;
 }
 
 const defaultContexts: ClusterContext[] = [
@@ -125,6 +126,50 @@ const defaultResources: Record<string, ResourceEntry[]> = {
       updated_at: '2026-01-01T00:00:00Z',
     },
   ],
+  'apps/v1/ReplicaSet': [
+    {
+      gvk: 'apps/v1/ReplicaSet',
+      namespace: 'default',
+      name: 'nginx-deploy-7f8f9c5c6f',
+      resource_version: '2101',
+      content: JSON.stringify({
+        apiVersion: 'apps/v1', kind: 'ReplicaSet',
+        metadata: { name: 'nginx-deploy-7f8f9c5c6f', namespace: 'default', creationTimestamp: '2026-01-03T00:00:00Z', labels: { app: 'nginx' } },
+        spec: { replicas: 2, selector: { matchLabels: { app: 'nginx' } } },
+        status: { replicas: 2, readyReplicas: 2, availableReplicas: 2 },
+      }),
+      updated_at: '2026-01-03T00:00:00Z',
+    },
+  ],
+  'rbac.authorization.k8s.io/v1/ClusterRole': [
+    {
+      gvk: 'rbac.authorization.k8s.io/v1/ClusterRole',
+      namespace: '',
+      name: 'view',
+      resource_version: '4101',
+      content: JSON.stringify({
+        apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'ClusterRole',
+        metadata: { name: 'view', creationTimestamp: '2026-01-01T00:00:00Z' },
+        rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'watch'] }],
+      }),
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ],
+  'rbac.authorization.k8s.io/v1/ClusterRoleBinding': [
+    {
+      gvk: 'rbac.authorization.k8s.io/v1/ClusterRoleBinding',
+      namespace: '',
+      name: 'viewers-binding',
+      resource_version: '4201',
+      content: JSON.stringify({
+        apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'ClusterRoleBinding',
+        metadata: { name: 'viewers-binding', creationTimestamp: '2026-01-01T00:00:00Z' },
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'view' },
+        subjects: [{ kind: 'ServiceAccount', name: 'default', namespace: 'default' }],
+      }),
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ],
   'v1/Node': [
     {
       gvk: 'v1/Node',
@@ -172,6 +217,7 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
       resources: clone(input.resources ?? {}),
       helmReleases: clone(input.helmReleases ?? []),
       commandErrors: clone(input.commandErrors ?? {}),
+      commandDelays: clone(input.commandDelays ?? {}),
       calls: [] as Array<{ cmd: string; args: Record<string, unknown> }>,
     };
 
@@ -241,6 +287,11 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
         },
         invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
           state.calls.push({ cmd, args: clone(args) });
+
+          const commandDelayMs = Number(state.commandDelays[cmd] ?? 0);
+          if (commandDelayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, commandDelayMs));
+          }
 
           const configuredError = state.commandErrors[cmd];
           if (configuredError) {
@@ -351,6 +402,17 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
             }
             case 'get_helm_release_values':
               return '';
+            case 'helm_uninstall': {
+              const releaseName = String(args.name);
+              const ns = String(args.namespace);
+              const releaseIndex = state.helmReleases.findIndex((release) =>
+                release.name === releaseName && release.namespace === ns
+              );
+              if (releaseIndex >= 0) {
+                state.helmReleases.splice(releaseIndex, 1);
+              }
+              return `Uninstalled Helm release ${releaseName} from namespace ${ns}`;
+            }
             case 'apply_resource':
               return { success: true, message: 'Applied successfully (mock)' };
             case 'delete_resource':
@@ -467,5 +529,6 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
     resources: scenario.resources ?? defaultResources,
     helmReleases: scenario.helmReleases ?? defaultHelmReleases,
     commandErrors: scenario.commandErrors ?? {},
+    commandDelays: scenario.commandDelays ?? {},
   });
 }

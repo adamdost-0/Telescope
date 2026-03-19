@@ -768,10 +768,9 @@ mod tests {
             ]
         });
 
-        let result =
-            serde_json::from_value::<ArmListResponse<NamedPropertiesResponse<AksNodePool>>>(
-                response,
-            );
+        let result = serde_json::from_value::<ArmListResponse<NamedPropertiesResponse<AksNodePool>>>(
+            response,
+        );
         assert!(result.is_err());
     }
 

@@ -756,6 +756,35 @@ async fn helm_rollback(
     finish_audited_command(outcome, audit_result)
 }
 
+/// Uninstall a Helm release using the helm CLI.
+#[tauri::command]
+async fn helm_uninstall(
+    state: State<'_, AppState>,
+    namespace: String,
+    name: String,
+) -> Result<String, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let name = validate_k8s_name_param(&name, "name")?;
+    let outcome = telescope_engine::helm::helm_uninstall(&namespace, &name).await;
+    let result_str = if outcome.is_ok() {
+        "success"
+    } else {
+        "failure"
+    };
+    let audit_result = write_audit_entry(
+        &state,
+        None,
+        namespace.clone(),
+        "helm_uninstall",
+        "HelmRelease",
+        name.clone(),
+        result_str,
+        None,
+    )
+    .await;
+    finish_audited_command(outcome, audit_result)
+}
+
 /// List available namespaces from the connected cluster.
 #[tauri::command]
 async fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<String>, String> {
@@ -2328,6 +2357,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             get_helm_release_history,
             get_helm_release_values,
             helm_rollback,
+            helm_uninstall,
             connect_to_context,
             disconnect,
             set_namespace,

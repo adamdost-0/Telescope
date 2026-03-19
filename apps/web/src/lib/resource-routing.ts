@@ -69,14 +69,9 @@ const RESOURCE_ROUTES: ResourceRoute[] = [
   {
     label: 'ReplicaSet',
     gvk: 'apps/v1/ReplicaSet',
-    listHref: null,
-    detailHref: (namespace, name) => {
-      const params = new URLSearchParams({
-        gvk: 'apps/v1/ReplicaSet',
-        label: 'ReplicaSet',
-      });
-      return `/resources/replicaset/${namespaceSegment(namespace)}/${encodeSegment(name)}?${params.toString()}`;
-    },
+    slug: 'replicasets',
+    listHref: '/resources/replicasets',
+    detailHref: (namespace, name) => `/resources/replicasets/${namespaceSegment(namespace)}/${encodeSegment(name)}`,
   },
   {
     label: 'Job',
@@ -166,7 +161,7 @@ const RESOURCE_ROUTES: ResourceRoute[] = [
     label: 'ClusterRole',
     gvk: 'rbac.authorization.k8s.io/v1/ClusterRole',
     slug: 'clusterroles',
-    listHref: '/resources/roles',
+    listHref: '/resources/clusterroles',
     detailHref: (_namespace, name) => `/resources/clusterroles/${CLUSTER_SCOPED_NAMESPACE}/${encodeSegment(name)}`,
   },
   {
@@ -180,7 +175,7 @@ const RESOURCE_ROUTES: ResourceRoute[] = [
     label: 'ClusterRoleBinding',
     gvk: 'rbac.authorization.k8s.io/v1/ClusterRoleBinding',
     slug: 'clusterrolebindings',
-    listHref: '/resources/rolebindings',
+    listHref: '/resources/clusterrolebindings',
     detailHref: (_namespace, name) => `/resources/clusterrolebindings/${CLUSTER_SCOPED_NAMESPACE}/${encodeSegment(name)}`,
   },
   {

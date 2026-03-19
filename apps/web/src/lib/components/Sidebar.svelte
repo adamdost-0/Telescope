@@ -24,6 +24,7 @@
         { label: 'Deployments', href: '/resources/deployments', icon: '🚀' },
         { label: 'StatefulSets', href: '/resources/statefulsets', icon: '🗄️' },
         { label: 'DaemonSets', href: '/resources/daemonsets', icon: '🔄' },
+        { label: 'ReplicaSets', href: '/resources/replicasets', icon: '🧬' },
         { label: 'Jobs', href: '/resources/jobs', icon: '⚙️' },
         { label: 'CronJobs', href: '/resources/cronjobs', icon: '🕐' },
         { label: 'HPAs', href: '/resources/hpas', icon: '📈' },
@@ -71,6 +72,8 @@
     {
       title: 'System',
       items: [
+        { label: 'ClusterRoles', href: '/resources/clusterroles', icon: '🧾' },
+        { label: 'ClusterRoleBindings', href: '/resources/clusterrolebindings', icon: '🔗' },
         { label: 'Settings', href: '/settings', icon: '⚙️' },
       ]
     },

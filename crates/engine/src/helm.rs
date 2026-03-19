@@ -332,6 +332,33 @@ fn validate_k8s_name(name: &str) -> crate::Result<()> {
     Ok(())
 }
 
+fn map_helm_uninstall_error(stderr: &str, stdout: &str) -> String {
+    let detail = if !stderr.trim().is_empty() {
+        stderr.trim().to_string()
+    } else if !stdout.trim().is_empty() {
+        stdout.trim().to_string()
+    } else {
+        "Helm uninstall command failed with no output".to_string()
+    };
+    let detail_lower = detail.to_lowercase();
+
+    if detail_lower.contains("release: not found") || detail_lower.contains("not found") {
+        format!("Helm uninstall failed: release not found. {detail}")
+    } else if detail_lower.contains("forbidden")
+        || detail_lower.contains("unauthorized")
+        || detail_lower.contains("permission denied")
+    {
+        format!("Helm uninstall failed: permission denied. {detail}")
+    } else if detail_lower.contains("timed out waiting")
+        || detail_lower.contains("deadline exceeded")
+        || detail_lower.contains("timeout")
+    {
+        format!("Helm uninstall failed: operation timed out. {detail}")
+    } else {
+        format!("Helm uninstall failed: {detail}")
+    }
+}
+
 /// Keys whose values should be redacted in Helm values display.
 const SENSITIVE_KEYS: &[&str] = &[
     "password",
@@ -441,12 +468,49 @@ pub async fn rollback_release(namespace: &str, name: &str, revision: i32) -> cra
     }
 }
 
+/// Uninstall a Helm release using the `helm` CLI.
+pub async fn helm_uninstall(namespace: &str, name: &str) -> crate::Result<String> {
+    validate_k8s_name(namespace)?;
+    validate_k8s_name(name)?;
+
+    let helm_binary = resolve_helm_binary_path()?;
+    let output = tokio::process::Command::new(&helm_binary)
+        .args(["uninstall", name, "-n", namespace])
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|error| {
+            crate::EngineError::Other(format!(
+                "Failed to execute Helm CLI at {}: {error}",
+                helm_binary.display()
+            ))
+        })?;
+
+    if output.status.success() {
+        Ok(format!(
+            "Uninstalled Helm release {name} from namespace {namespace}"
+        ))
+    } else {
+        let detail = map_helm_uninstall_error(
+            String::from_utf8_lossy(&output.stderr).as_ref(),
+            String::from_utf8_lossy(&output.stdout).as_ref(),
+        );
+        Err(crate::EngineError::Other(format!(
+            "{detail} (via {})",
+            helm_binary.display()
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct TestTempFile {
@@ -472,6 +536,60 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_file(&self.path);
         }
+    }
+
+    struct ScopedEnvVar {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl ScopedEnvVar {
+        fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let previous = std::env::var_os(key);
+            // SAFETY: Tests serialize environment mutation with HELM_ENV_LOCK.
+            unsafe { std::env::set_var(key, value.as_os_str()) };
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for ScopedEnvVar {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                // SAFETY: Tests serialize environment mutation with HELM_ENV_LOCK.
+                unsafe { std::env::set_var(self.key, previous) };
+            } else {
+                // SAFETY: Tests serialize environment mutation with HELM_ENV_LOCK.
+                unsafe { std::env::remove_var(self.key) };
+            }
+        }
+    }
+
+    static HELM_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn helm_env_lock() -> &'static Mutex<()> {
+        HELM_ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn create_mock_helm_binary(name: &str, stderr: &str, exit_code: i32) -> TestTempFile {
+        let binary = TestTempFile::new(name);
+
+        #[cfg(unix)]
+        let script = format!(
+            "#!/bin/sh\n[ -n \"$1\" ] >/dev/null 2>&1\necho \"{stderr}\" 1>&2\nexit {exit_code}\n"
+        );
+        #[cfg(windows)]
+        let script = format!("@echo off\r\nif not \"%~1\"==\"\" set _ARG=%~1\r\necho {stderr} 1>&2\r\nexit /b {exit_code}\r\n");
+
+        std::fs::write(&binary.path, script).unwrap();
+
+        #[cfg(unix)]
+        {
+            let mut perms = std::fs::metadata(&binary.path).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&binary.path, perms).unwrap();
+        }
+
+        binary
     }
 
     fn make_helm_secret_data(json: &str) -> Vec<u8> {
@@ -688,5 +806,69 @@ mod tests {
         let err = resolve_helm_binary_path_with(None, Vec::new()).expect_err("missing binary");
 
         assert!(err.to_string().contains(HELM_BINARY_PATH_ENV));
+    }
+
+    #[test]
+    fn map_helm_uninstall_error_handles_release_not_found() {
+        let msg = map_helm_uninstall_error(
+            "Error: uninstall: Release not loaded: demo: release: not found",
+            "",
+        );
+        assert!(msg.contains("release not found"));
+    }
+
+    #[test]
+    fn map_helm_uninstall_error_handles_permission_denied() {
+        let msg = map_helm_uninstall_error(
+            "Error: uninstall: failed to delete: secrets is forbidden: User cannot delete resource",
+            "",
+        );
+        assert!(msg.contains("permission denied"));
+    }
+
+    #[test]
+    fn map_helm_uninstall_error_handles_timeout() {
+        let msg = map_helm_uninstall_error("Error: context deadline exceeded", "");
+        assert!(msg.contains("operation timed out"));
+    }
+
+    #[tokio::test]
+    async fn helm_uninstall_with_valid_release_name_succeeds() {
+        let _env_lock = helm_env_lock().lock().unwrap();
+        let helm_binary = create_mock_helm_binary("uninstall-success", "", 0);
+        let _env = ScopedEnvVar::set(HELM_BINARY_PATH_ENV, &helm_binary.path);
+
+        let result = helm_uninstall("default", "demo-release").await;
+
+        assert_eq!(
+            result.unwrap(),
+            "Uninstalled Helm release demo-release from namespace default"
+        );
+    }
+
+    #[tokio::test]
+    async fn helm_uninstall_with_nonexistent_release_returns_clear_error() {
+        let _env_lock = helm_env_lock().lock().unwrap();
+        let helm_binary = create_mock_helm_binary(
+            "uninstall-not-found",
+            "Error: uninstall: Release not loaded: missing-release: release: not found",
+            1,
+        );
+        let _env = ScopedEnvVar::set(HELM_BINARY_PATH_ENV, &helm_binary.path);
+
+        let err = helm_uninstall("default", "missing-release")
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("release not found"));
+        assert!(msg.contains("via"));
+    }
+
+    #[tokio::test]
+    async fn helm_uninstall_with_empty_release_name_returns_validation_error() {
+        let err = helm_uninstall("default", "").await.unwrap_err();
+
+        assert!(err.to_string().contains("Invalid name"));
     }
 }

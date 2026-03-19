@@ -9,6 +9,7 @@
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
 - 2026-03-19: Frontend audit confirmed that search/detail routing is centralized in `resource-routing.ts`, giving broad GVK coverage (including cluster-scoped + dynamic CRDs) even when list pages are tabbed or absent.
+- 2026-03-19: Adding new Kubernetes list pages requires coordinated updates in three places: route page under `apps/web/src/routes/resources/*`, `resource-routing.ts` list/detail mappings, and UI entry points (`Sidebar.svelte` + `SearchPalette.svelte`).
 
 ### 2026-03-19 — Cross-Agent Audit Summary
 
@@ -20,3 +21,9 @@ Dallas confirmed 29 GVKs, 66 IPC commands, near-complete K8s coverage — only g
 ### 2026-03-19 — ARM Error Handling Session
 
 Implemented frontend ARM error display on node-pools page. Added dismissible banner with actionable guidance mapping. Fixed silent `[]` fallback in `listAksNodePools`. Improved ARM operation error messaging across scale/autoscaler/create/delete/upgrade. Ripley delivered backend typed errors, Kane added test coverage. All validation green.
+
+- 2026-03-19: Adding P2 list routes confirmed the three-location update pattern: route page + `resource-routing.ts` mappings + nav entry points (sidebar + search palette). No new API wrappers needed.
+
+### 2026-03-19 — Helm Uninstall + P2 Routes Session
+
+Delivered 3 P2 list routes: ReplicaSets, ClusterRoles, ClusterRoleBindings (P2-1/2/3 complete). Standard pattern with `getResources(gvk)`, `FilterBar`, `ResourceTable`, Svelte 5 runes. Updated `resource-routing.ts` and nav entry points. `pnpm build` + `pnpm test` green (36/36).

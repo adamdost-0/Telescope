@@ -33,6 +33,7 @@
     services: { gvk: 'v1/Service', label: 'Service' },
     statefulsets: { gvk: 'apps/v1/StatefulSet', label: 'StatefulSet' },
     daemonsets: { gvk: 'apps/v1/DaemonSet', label: 'DaemonSet' },
+    replicasets: { gvk: 'apps/v1/ReplicaSet', label: 'ReplicaSet' },
     jobs: { gvk: 'batch/v1/Job', label: 'Job' },
     cronjobs: { gvk: 'batch/v1/CronJob', label: 'CronJob' },
     configmaps: { gvk: 'v1/ConfigMap', label: 'ConfigMap' },

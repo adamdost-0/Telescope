@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { listHelmReleases } from '$lib/api';
+  import { helmUninstall, listHelmReleases } from '$lib/api';
   import { isConnected } from '$lib/stores';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import ErrorMessage from '$lib/components/ErrorMessage.svelte';
+  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import type { HelmRelease } from '$lib/tauri-commands';
 
   let releases: HelmRelease[] = $state([]);
@@ -16,6 +17,11 @@
   let filterQuery = $state('');
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
   let timestampTimer: ReturnType<typeof setInterval> | null = null;
+  let uninstallTarget: HelmRelease | null = $state(null);
+  let showUninstallDialog = $state(false);
+  let uninstalling = $state(false);
+  let actionSuccess: string | null = $state(null);
+  let actionError: string | null = $state(null);
 
   let filtered = $derived.by(() => {
     if (!filterQuery) return releases;
@@ -73,6 +79,35 @@
     }
   }
 
+  function requestUninstall(release: HelmRelease) {
+    uninstallTarget = release;
+    showUninstallDialog = true;
+  }
+
+  async function confirmUninstall() {
+    if (!uninstallTarget) return;
+
+    actionSuccess = null;
+    actionError = null;
+    uninstalling = true;
+
+    try {
+      const result = await helmUninstall(uninstallTarget.namespace, uninstallTarget.name);
+      actionSuccess = result || `Uninstalled Helm release ${uninstallTarget.name}.`;
+      showUninstallDialog = false;
+      uninstallTarget = null;
+      await loadReleases(true);
+    } catch (err) {
+      actionError = err instanceof Error
+        ? err.message
+        : `Failed to uninstall Helm release "${uninstallTarget.name}".`;
+      showUninstallDialog = false;
+      uninstallTarget = null;
+    } finally {
+      uninstalling = false;
+    }
+  }
+
   $effect(() => {
     void $isConnected;
     loadReleases();
@@ -112,6 +147,14 @@
   {:else if error}
     <ErrorMessage message={error} onretry={() => loadReleases(true)} />
   {:else}
+    {#if actionSuccess}
+      <div class="notice success" role="status">{actionSuccess}</div>
+    {/if}
+
+    {#if actionError}
+      <div class="notice error" role="alert">{actionError}</div>
+    {/if}
+
     <FilterBar query={filterQuery} onfilter={(q) => filterQuery = q} />
     <p class="count">{filterQuery ? `${filtered.length} of ${releases.length}` : releases.length} release{(filterQuery ? filtered.length : releases.length) !== 1 ? 's' : ''}</p>
     <div class="table-wrapper">
@@ -125,6 +168,7 @@
             <th>Revision</th>
             <th>Status</th>
             <th>Updated</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -141,10 +185,20 @@
                 </span>
               </td>
               <td class="updated">{formatUpdated(release.updated)}</td>
+              <td class="actions">
+                <button
+                  type="button"
+                  class="uninstall-btn"
+                  onclick={() => requestUninstall(release)}
+                  disabled={uninstalling}
+                >
+                  Uninstall
+                </button>
+              </td>
             </tr>
           {:else}
             <tr>
-              <td colspan="7" class="empty">No Helm releases found in this cluster.</td>
+              <td colspan="8" class="empty">No Helm releases found in this cluster.</td>
             </tr>
           {/each}
         </tbody>
@@ -152,6 +206,23 @@
     </div>
   {/if}
 </div>
+
+<ConfirmDialog
+  open={showUninstallDialog}
+  title="Uninstall Helm Release"
+  message={`Are you sure you want to uninstall ${uninstallTarget?.name ?? 'this release'}?`}
+  confirmText={uninstalling ? 'Uninstalling…' : 'Uninstall'}
+  confirmValue={uninstallTarget?.name ?? ''}
+  requireType={true}
+  productionContext={uninstallTarget?.namespace === 'production' || uninstallTarget?.namespace === 'prod'}
+  onconfirm={confirmUninstall}
+  oncancel={() => {
+    if (!uninstalling) {
+      showUninstallDialog = false;
+      uninstallTarget = null;
+    }
+  }}
+/>
 
 <style>
   .resource-page { padding: 1rem; color: #e0e0e0; background: #0f0f23; min-height: 100vh; }
@@ -169,6 +240,23 @@
   .not-connected { text-align: center; padding: 3rem 1rem; color: #757575; }
   .not-connected p { margin: 0.25rem 0; font-size: 1.125rem; }
   .not-connected .hint { font-size: 0.875rem; color: #616161; }
+  .notice {
+    margin-bottom: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    font-size: 0.875rem;
+  }
+  .notice.success {
+    color: #8fd19e;
+    background: rgba(67, 160, 71, 0.16);
+    border-color: rgba(67, 160, 71, 0.32);
+  }
+  .notice.error {
+    color: #ff8a80;
+    background: rgba(239, 83, 80, 0.16);
+    border-color: rgba(239, 83, 80, 0.32);
+  }
 
   .table-wrapper { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
@@ -193,5 +281,17 @@
   .center { text-align: center; }
   .status-badge { font-weight: 500; }
   .updated { color: #8b949e; font-size: 0.8rem; }
+  .actions { text-align: right; }
+  .uninstall-btn {
+    background: #b71c1c;
+    border: 1px solid #d32f2f;
+    color: #fff;
+    padding: 0.3rem 0.65rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .uninstall-btn:hover:not(:disabled) { background: #c62828; }
+  .uninstall-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   .empty { text-align: center; color: #757575; padding: 2rem 0.75rem !important; }
 </style>
