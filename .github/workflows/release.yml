@@ -148,9 +148,12 @@ jobs:
 
       - name: Validate required bundle artifacts
         shell: bash
+        env:
+          BUNDLE_PATTERNS: ${{ matrix.bundle_patterns }}
         run: |
           MISSING=""
-          for pattern in ${{ matrix.bundle_patterns }}; do
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
             if ! ls $pattern 2>/dev/null | grep -q .; then
               echo "❌ Missing required artifacts: $pattern"
               MISSING="${MISSING}${pattern}\n"
@@ -158,7 +161,7 @@ jobs:
               echo "✅ Found: $pattern"
               ls -lh $pattern
             fi
-          done
+          done <<< "$BUNDLE_PATTERNS"
           if [ -n "$MISSING" ]; then
             echo "ERROR: Required bundle artifacts missing for ${{ matrix.platform }}"
             exit 1

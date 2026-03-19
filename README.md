@@ -1,56 +1,90 @@
-# 🔭 Telescope
+# Telescope
 
-**A memory-efficient, AKS-first Kubernetes IDE** — a **desktop-only** Tauri application for operating Kubernetes and AKS clusters with native Azure ARM management-plane support.
+AKS-first Kubernetes IDE for desktop — fast, native, and built with Rust + Tauri.
 
-> ⚡ **No Electron.** Native performance with Tauri's WebView. ~100MB idle vs Lens's ~500MB.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/adamdost-0/Telescope)](https://github.com/adamdost-0/Telescope/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/adamdost-0/Telescope/ci.yml?branch=main&label=CI)](https://github.com/adamdost-0/Telescope/actions/workflows/ci.yml)
 
-## Why Telescope?
+> No Electron. Desktop-only architecture with native performance.  
+> Typical idle memory: ~100MB (vs Lens ~500MB).
 
-| | Telescope | Lens | k9s |
+## Why Telescope
+
+|  | Telescope | Lens | k9s |
 |---|---|---|---|
 | **Memory (idle)** | ~100MB | ~500MB | ~30MB |
 | **Technology** | Rust + Tauri | Electron | Go TUI |
-| **AKS Integration** | ✅ Native | ❌ None | ❌ None |
-| **Azure ARM Ops** | ✅ Built-in | ❌ None | ❌ None |
+| **AKS integration** | ✅ Native | ❌ None | ❌ None |
+| **Azure ARM ops** | ✅ Built-in | ❌ None | ❌ None |
 | **GUI** | ✅ Desktop | ✅ Desktop | ❌ Terminal |
-| **Open Source** | ✅ MIT | ❌ Proprietary | ✅ Apache 2.0 |
+| **Open source** | ✅ MIT | ❌ Proprietary | ✅ Apache 2.0 |
 | **Helm** | ✅ Built-in | ✅ Extension | ❌ No |
 | **Metrics** | ✅ Built-in | ✅ Built-in | ✅ Built-in |
 
-## Features
+## Feature Highlights
 
-### Cluster connection and navigation
-- 🔌 **Full cluster connection and context management** — Discover kubeconfig contexts, connect/disconnect, track connection state, and switch namespaces
-- 🔎 **Search and settings** — Search cached resources quickly and manage user-facing preferences from the UI
-- 🧾 **Audit logging** — Record key local actions for traceability in the desktop app
+- **AKS-first workflows:** Native Azure ARM management-plane operations for cluster lifecycle and node pool management.
+- **Deep Kubernetes coverage:** 28+ watched resource types with real-time navigation, filtering, and detail views.
+- **Built-in operator tooling:** Logs, exec, port-forward, resource actions, Helm workflows, and metrics in one app.
+- **Desktop-native architecture:** Rust backend + Tauri IPC + SvelteKit UI, optimized for responsiveness and memory use.
+- **Production-aware UX:** Guardrails for destructive actions, identity visibility, and audit-oriented local action logging.
 
-### Kubernetes operations
-- 📦 **Broad resource coverage** — Browse and manage workloads, networking, configuration, storage, policy, RBAC, and admission resources with 28+ watched Kubernetes resource types
-- 🧩 **CRD browsing** — Explore installed CustomResourceDefinitions and dynamic resources with schema/details support
-- 📋 **Pod operations** — View logs, exec into containers, and start port-forwards
-- 🗑️ **Resource actions** — Scale workloads, delete resources, create namespaces, apply YAML, and trigger rollout operations with safety checks
-- ⛵ **Helm release management** — List releases, inspect history/values, and support Helm rollback workflows
-- 📊 **Node management and metrics** — Inspect nodes plus pod and node metrics for cluster health
+For deep-dive docs and expanded feature guides, see [`docs/`](docs/).
 
-### Azure ARM management plane
-- ☁️ **Native ARM client** — Manage AKS from the desktop app without leaving Telescope
-- 🧱 **Node pool CRUD** — List, create, scale, autoscale, upgrade, and delete AKS node pools
-- ⏯️ **Cluster lifecycle control** — Start and stop AKS clusters, inspect upgrade profiles, and manage cluster upgrades
-- 🩺 **ARM-sourced diagnostics** — View maintenance configs, upgrade readiness, and platform diagnostics sourced from Azure management APIs
-- 🌍 **Multi-cloud support** — Works across Azure Commercial, Government, Secret, and Top Secret cloud environments
+## Full Feature Matrix
 
-### Desktop experience
-- 🖥️ **Native Tauri app** — Rust backend commands over IPC with 60+ desktop commands exposed to the UI
-- 🎨 **SvelteKit frontend** — `apps/web` contains the frontend source that is packaged into the desktop application by Tauri
-- 🧹 **Ephemeral local cache** — Telescope clears the SQLite resource cache on startup, disconnect, and app exit; Secrets stay on-demand only, and cached Pod env literal values are redacted before they hit disk
+### Cluster Connection and Navigation
 
-### AKS-first experience
-- 🔑 **Auth detection** — Identifies exec/token/certificate auth and provides kubelogin guidance
-- 🏷️ **Node pool grouping** — Nodes organized by AKS agent pool with VM size, OS, and mode
-- 🛡️ **Add-on status** — Container Insights, Azure Policy, Key Vault CSI, KEDA, and Flux health
-- 🌐 **Azure Portal links** — One-click navigation for AKS clusters
-- 🔐 **Workload identity visibility** — Azure identity bindings shown on pod detail views
-- 🚨 **Production guardrails** — Red banner and type-to-confirm flows for destructive ops in production
+| Capability | Details |
+|---|---|
+| Full cluster connection and context management | Discover kubeconfig contexts, connect/disconnect, track connection state, and switch namespaces |
+| Search and settings | Search cached resources quickly and manage user-facing preferences from the UI |
+| Audit logging | Record key local actions for traceability in the desktop app |
+
+### Kubernetes Operations
+
+| Capability | Details |
+|---|---|
+| Broad resource coverage | Browse and manage workloads, networking, configuration, storage, policy, RBAC, and admission resources with 28+ watched Kubernetes resource types |
+| CRD browsing | Explore installed CustomResourceDefinitions and dynamic resources with schema/details support |
+| Pod operations | View logs, exec into containers, and start port-forwards |
+| Resource actions | Scale workloads, delete resources, create namespaces, apply YAML, and trigger rollout operations with safety checks |
+| Helm release management | List releases, inspect history/values, and support Helm rollback workflows |
+| Node management and metrics | Inspect nodes plus pod and node metrics for cluster health |
+
+### Azure ARM Management Plane
+
+| Capability | Details |
+|---|---|
+| Native ARM client | Manage AKS from the desktop app without leaving Telescope |
+| Node pool CRUD | List, create, scale, autoscale, upgrade, and delete AKS node pools |
+| Cluster lifecycle control | Start and stop AKS clusters, inspect upgrade profiles, and manage cluster upgrades |
+| ARM-sourced diagnostics | View maintenance configs, upgrade readiness, and platform diagnostics sourced from Azure management APIs |
+| Multi-cloud support | Works across Azure Commercial, Government, Secret, and Top Secret cloud environments |
+
+### Desktop Experience
+
+| Capability | Details |
+|---|---|
+| Native Tauri app | Rust backend commands over IPC with 60+ desktop commands exposed to the UI |
+| SvelteKit frontend | `apps/web` contains the frontend source that is packaged into the desktop application by Tauri |
+| Ephemeral local cache | Telescope clears the SQLite resource cache on startup, disconnect, and app exit; Secrets stay on-demand only, and cached Pod env literal values are redacted before they hit disk |
+
+### AKS-First Experience
+
+| Capability | Details |
+|---|---|
+| Auth detection | Identifies exec/token/certificate auth and provides kubelogin guidance |
+| Node pool grouping | Nodes organized by AKS agent pool with VM size, OS, and mode |
+| Add-on status | Container Insights, Azure Policy, Key Vault CSI, KEDA, and Flux health |
+| Azure Portal links | One-click navigation for AKS clusters |
+| Workload identity visibility | Azure identity bindings shown on pod detail views |
+| Production guardrails | Red banner and type-to-confirm flows for destructive ops in production |
+
+## Screenshots
+
+<!-- TODO: screenshots -->
 
 ## Project Structure
 
@@ -67,22 +101,18 @@
 
 ## Quick Start
 
-### Download
+### 1) Download a Release
 
-Get the latest release from [GitHub Releases](https://github.com/adamdost-0/Telescope/releases).
+Get the latest build from [GitHub Releases](https://github.com/adamdost-0/Telescope/releases).
 
-**Windows:**
-- **Recommended:** `telescope-windows-x64-v1.0.x.msi` — Windows Installer package
-- Alternative: `telescope-windows-x64-setup-v1.0.x.exe` — NSIS installer
-- Portable: `telescope-windows-x64-portable-v1.0.x.exe` — Standalone binary (no installer)
+- **Windows (recommended):** `telescope-windows-x64-v1.0.x.msi`
+- **Windows alternatives:** `telescope-windows-x64-setup-v1.0.x.exe`, `telescope-windows-x64-portable-v1.0.x.exe`
+- **macOS (recommended):** `telescope-macos-arm64-v1.0.x.dmg`
+- **macOS portable:** `telescope-macos-arm64-portable-v1.0.x`
+- **Verification:** every release includes SHA256 checksums as `telescope-{platform}-v1.0.x.sha256`
 
-**macOS:**
-- **Recommended:** `telescope-macos-arm64-v1.0.x.dmg` — macOS disk image installer
-- Portable: `telescope-macos-arm64-portable-v1.0.x` — Standalone binary (no installer)
+### 2) Build from Source
 
-All releases include SHA256 checksums for verification (`telescope-{platform}-v1.0.x.sha256`).
-
-### Build from Source
 ```bash
 # Prerequisites: Rust, Node.js 22+, pnpm
 git clone https://github.com/adamdost-0/Telescope.git
@@ -92,15 +122,17 @@ pnpm -C apps/desktop dev     # Development mode
 pnpm -C apps/desktop bundle  # Release build
 ```
 
-### Connect to a Cluster
-1. Launch Telescope
-2. Your kubeconfig contexts appear automatically
-3. Select a context — pods, resources, and ARM-backed AKS details load in real time
-4. Navigate using the sidebar: Workloads, Network, Config, Storage, Policy, RBAC, Nodes, Events, Helm, and Azure management views
+### 3) Connect to a Cluster
+
+1. Launch Telescope.
+2. Your kubeconfig contexts appear automatically.
+3. Select a context — pods, resources, and ARM-backed AKS details load in real time.
+4. Navigate using the sidebar: Workloads, Network, Config, Storage, Policy, RBAC, Nodes, Events, Helm, and Azure management views.
 
 ## Development
 
 ### Prerequisites
+
 - Rust (stable)
 - Node.js 22+
 - pnpm 9.15+
@@ -111,7 +143,8 @@ pnpm -C apps/desktop bundle  # Release build
 
 Linux builds do not require system OpenSSL development packages for the Azure path; the remaining OpenSSL dependency is vendored during the build.
 
-### Commands
+### Command Reference
+
 ```bash
 # Rust
 cargo fmt --all -- --check
@@ -128,17 +161,16 @@ pnpm -C apps/desktop dev      # Dev mode
 pnpm -C apps/desktop build    # Debug desktop build
 pnpm -C apps/desktop bundle   # Release bundle
 
-# k3d Testing
+# k3d testing
 ./scripts/k3d-setup.sh        # Create local cluster
 K3D_TEST=1 cargo test -p telescope-engine --test integration_k3d
 ./scripts/k3d-teardown.sh
 ```
 
-### Architecture
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed diagrams.
+## Architecture and Roadmap
 
-## Roadmap
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the broader milestone plan.
+- Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
 Today Telescope ships as a **desktop-only Tauri application** with deep Kubernetes coverage and native Azure ARM management for AKS operations.
 
@@ -149,5 +181,8 @@ Current priorities:
 - **UX polish and testing** — keep improving performance, usability, and coverage across Rust, frontend, and desktop flows
 - **Extensibility over time** — leave room for future integrations without reintroducing a separate web or hub mode
 
-## License
-MIT
+## License and Links
+
+- License: [MIT](LICENSE)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Documentation index: [`docs/`](docs/)
