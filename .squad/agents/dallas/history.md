@@ -70,3 +70,10 @@ Dallas led the GitHub Pages docs structure workstream. Created `docs/_config.yml
 - **Pattern / preference:** When docs disagree with code or CI, the code wins. Prefer small, surgical doc fixes that reference concrete files.
 - **Outcome:** Documentation now accurately reflects the desktop-only shipped system and workspace shape.
 
+
+### 2026-03-20 — Merged architecture-doc-current-state decision
+
+- Merged decision from .squad/decisions/inbox/dallas-architecture-doc-current-state.md into .squad/decisions.md
+- Files produced: docs/ARCHITECTURE.md, .squad/agents/dallas/history.md
+- Outcome: Documentation aligned to shipped desktop architecture; small surgical doc edits preferred when code/CI disagree.
+
