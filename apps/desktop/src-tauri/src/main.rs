@@ -2138,7 +2138,7 @@ async fn start_port_forward(
     pod: String,
     local_port: u16,
     remote_port: u16,
-) -> Result<u16, String> {
+) -> Result<telescope_engine::portforward::PortForwardResponse, String> {
     let namespace = validate_namespace_param(&namespace)?;
     let pod = validate_k8s_name_param(&pod, "pod")?;
     let client = active_client(&state).await?;
@@ -2150,6 +2150,43 @@ async fn start_port_forward(
     };
     telescope_engine::portforward::start_port_forward(&client, &req)
         .await
+        .map_err(|e| e.to_string())
+}
+
+/// List all active port-forward sessions.
+#[tauri::command]
+async fn list_port_forward_sessions(
+) -> Result<Vec<telescope_engine::portforward::PortForwardSession>, String> {
+    Ok(telescope_engine::portforward::list_port_forward_sessions().await)
+}
+
+/// Stop a port-forward session by ID.
+#[tauri::command]
+async fn stop_port_forward_session(session_id: String) -> Result<(), String> {
+    telescope_engine::portforward::stop_port_forward_session(&session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get saved port-forward profiles from preferences.
+#[tauri::command]
+fn get_port_forward_profiles(state: State<'_, AppState>) -> Result<String, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    Ok(store
+        .get_preference("port_forward_profiles")
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| "[]".to_string()))
+}
+
+/// Save port-forward profiles to preferences.
+#[tauri::command]
+fn save_port_forward_profiles(
+    state: State<'_, AppState>,
+    profiles_json: String,
+) -> Result<(), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store
+        .set_preference("port_forward_profiles", &profiles_json)
         .map_err(|e| e.to_string())
 }
 
@@ -2366,6 +2403,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             list_containers,
             start_log_stream,
             start_port_forward,
+            list_port_forward_sessions,
+            stop_port_forward_session,
+            get_port_forward_profiles,
+            save_port_forward_profiles,
             scale_resource,
             delete_resource,
             apply_resource,

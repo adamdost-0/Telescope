@@ -1,12 +1,15 @@
 //! Port forwarding for Kubernetes pods.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use k8s_openapi::api::core::v1::Pod;
 use kube::{Api, Client};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
+use tokio::sync::{Mutex, RwLock};
 
 /// Maximum number of concurrent port-forward sessions.
 static ACTIVE_FORWARDS: AtomicUsize = AtomicUsize::new(0);
@@ -14,6 +17,115 @@ const MAX_FORWARDS: usize = 10;
 
 /// Idle timeout for the accept loop (1 hour).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(3600);
+
+/// Global registry of active port-forward sessions.
+static SESSION_REGISTRY: once_cell::sync::Lazy<Arc<RwLock<PortForwardRegistry>>> =
+    once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(PortForwardRegistry::new())));
+
+/// Unique identifier for a port-forward session.
+pub type SessionId = String;
+
+/// Active port-forward session information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortForwardSession {
+    pub id: SessionId,
+    pub namespace: String,
+    pub pod: String,
+    pub local_port: u16,
+    pub remote_port: u16,
+    pub started_at: String, // ISO 8601 timestamp
+    pub status: SessionStatus,
+}
+
+/// Status of a port-forward session.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SessionStatus {
+    Active,
+    Stopping,
+    Stopped,
+}
+
+/// Internal session tracking with task handle.
+struct SessionEntry {
+    info: PortForwardSession,
+    cancel_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
+}
+
+/// Registry of active port-forward sessions.
+struct PortForwardRegistry {
+    sessions: HashMap<SessionId, SessionEntry>,
+    next_id: usize,
+}
+
+impl PortForwardRegistry {
+    fn new() -> Self {
+        Self {
+            sessions: HashMap::new(),
+            next_id: 1,
+        }
+    }
+
+    fn generate_id(&mut self) -> SessionId {
+        let id = format!("pf-{}", self.next_id);
+        self.next_id += 1;
+        id
+    }
+
+    fn add_session(
+        &mut self,
+        namespace: String,
+        pod: String,
+        local_port: u16,
+        remote_port: u16,
+        cancel_tx: tokio::sync::oneshot::Sender<()>,
+    ) -> SessionId {
+        let id = self.generate_id();
+        let started_at = chrono::Utc::now().to_rfc3339();
+
+        let info = PortForwardSession {
+            id: id.clone(),
+            namespace,
+            pod,
+            local_port,
+            remote_port,
+            started_at,
+            status: SessionStatus::Active,
+        };
+
+        self.sessions.insert(
+            id.clone(),
+            SessionEntry {
+                info,
+                cancel_tx: Arc::new(Mutex::new(Some(cancel_tx))),
+            },
+        );
+
+        id
+    }
+
+    fn get_session(&self, id: &str) -> Option<PortForwardSession> {
+        self.sessions.get(id).map(|e| e.info.clone())
+    }
+
+    fn list_sessions(&self) -> Vec<PortForwardSession> {
+        self.sessions.values().map(|e| e.info.clone()).collect()
+    }
+
+    async fn stop_session(&mut self, id: &str) -> bool {
+        if let Some(entry) = self.sessions.get_mut(id) {
+            entry.info.status = SessionStatus::Stopping;
+            if let Some(tx) = entry.cancel_tx.lock().await.take() {
+                let _ = tx.send(());
+                return true;
+            }
+        }
+        false
+    }
+
+    fn remove_session(&mut self, id: &str) {
+        self.sessions.remove(id);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortForwardRequest {
@@ -38,13 +150,46 @@ pub fn active_forward_count() -> usize {
     ACTIVE_FORWARDS.load(Ordering::Relaxed)
 }
 
+/// List all active port-forward sessions.
+pub async fn list_port_forward_sessions() -> Vec<PortForwardSession> {
+    SESSION_REGISTRY.read().await.list_sessions()
+}
+
+/// Get a specific port-forward session by ID.
+pub async fn get_port_forward_session(id: &str) -> Option<PortForwardSession> {
+    SESSION_REGISTRY.read().await.get_session(id)
+}
+
+/// Stop a port-forward session by ID.
+pub async fn stop_port_forward_session(id: &str) -> crate::Result<()> {
+    let stopped = SESSION_REGISTRY.write().await.stop_session(id).await;
+    if stopped {
+        Ok(())
+    } else {
+        Err(crate::EngineError::Other(format!(
+            "Session not found or already stopped: {}",
+            id
+        )))
+    }
+}
+
+/// Response from starting a port forward, includes session ID.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortForwardResponse {
+    pub session_id: SessionId,
+    pub local_port: u16,
+}
+
 /// Start port forwarding from `local_port` to `remote_port` on a pod.
 /// Pass `local_port = 0` to auto-assign a free port.
-/// Returns the actual local port that was bound.
+/// Returns the session ID and actual local port that was bound.
 ///
 /// Rejects the request if more than [`MAX_FORWARDS`] sessions are already active,
 /// if `remote_port` is 0, or if the accept loop has been idle for [`IDLE_TIMEOUT`].
-pub async fn start_port_forward(client: &Client, req: &PortForwardRequest) -> crate::Result<u16> {
+pub async fn start_port_forward(
+    client: &Client,
+    req: &PortForwardRequest,
+) -> crate::Result<PortForwardResponse> {
     // Validate remote port range (1–65535)
     if req.remote_port == 0 {
         return Err(crate::EngineError::Other(
@@ -86,46 +231,74 @@ pub async fn start_port_forward(client: &Client, req: &PortForwardRequest) -> cr
 
     let pod_name = req.pod.clone();
     let remote_port = req.remote_port;
+    let namespace = req.namespace.clone();
+
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
+
+    // Register session in the registry
+    let session_id = {
+        let mut registry = SESSION_REGISTRY.write().await;
+        registry.add_session(
+            namespace,
+            pod_name.clone(),
+            actual_port,
+            remote_port,
+            cancel_tx,
+        )
+    };
+
+    let session_id_clone = session_id.clone();
 
     // Spawn the forwarding loop — accepts connections and pipes them to the pod.
     // The loop is wrapped in an idle timeout so abandoned forwards are cleaned up.
     tokio::spawn(async move {
-        let result = tokio::time::timeout(IDLE_TIMEOUT, async {
-            loop {
-                match listener.accept().await {
-                    Ok((tcp_stream, _addr)) => {
-                        let pods_clone = pods.clone();
-                        let pod_clone = pod_name.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) =
-                                handle_connection(&pods_clone, &pod_clone, remote_port, tcp_stream)
-                                    .await
-                            {
-                                tracing::error!("Port forward connection error: {}", e);
-                            }
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!("Port forward accept error: {}", e);
-                        break;
+        let _result = tokio::select! {
+            _ = &mut cancel_rx => {
+                tracing::info!("Port forward session {} cancelled", session_id_clone);
+                Ok(())
+            }
+            result = tokio::time::timeout(IDLE_TIMEOUT, async {
+                loop {
+                    match listener.accept().await {
+                        Ok((tcp_stream, _addr)) => {
+                            let pods_clone = pods.clone();
+                            let pod_clone = pod_name.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) =
+                                    handle_connection(&pods_clone, &pod_clone, remote_port, tcp_stream)
+                                        .await
+                                {
+                                    tracing::error!("Port forward connection error: {}", e);
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            tracing::error!("Port forward accept error: {}", e);
+                            break;
+                        }
                     }
                 }
+            }) => {
+                if result.is_err() {
+                    tracing::warn!(
+                        "Port forward idle timeout reached ({} secs), closing listener",
+                        IDLE_TIMEOUT.as_secs()
+                    );
+                }
+                result
             }
-        })
-        .await;
+        };
 
-        if result.is_err() {
-            tracing::warn!(
-                "Port forward idle timeout reached ({} secs), closing listener",
-                IDLE_TIMEOUT.as_secs()
-            );
-        }
-
-        // Decrement active-forward counter when the task ends
+        // Remove session from registry and decrement active-forward counter
+        SESSION_REGISTRY.write().await.remove_session(&session_id_clone);
         ACTIVE_FORWARDS.fetch_sub(1, Ordering::SeqCst);
     });
 
-    Ok(actual_port)
+    Ok(PortForwardResponse {
+        session_id,
+        local_port: actual_port,
+    })
 }
 
 /// Handle a single forwarded TCP connection by piping it to the pod via

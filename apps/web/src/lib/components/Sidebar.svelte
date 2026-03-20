@@ -38,6 +38,7 @@
         { label: 'Ingresses', href: '/resources/ingresses', icon: '🚪' },
         { label: 'NetworkPolicies', href: '/resources/networkpolicies', icon: '🔰' },
         { label: 'EndpointSlices', href: '/resources/endpointslices', icon: '🧭' },
+        { label: 'Connectivity', href: '/connectivity', icon: '🔌' },
       ]
     },
     {
