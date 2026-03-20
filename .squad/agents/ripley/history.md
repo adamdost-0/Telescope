@@ -23,3 +23,5 @@ Delivered typed ARM error variants in `crates/azure` (error.rs, client.rs, aks.r
 ### 2026-03-19 — Helm Uninstall + P2 Routes Session
 
 Delivered helm_uninstall engine API + Tauri IPC command (P1-3 complete). Engine tests 94→97 with uninstall error categorization coverage. Kane added E2E specs for uninstall flows. Cargo clippy + tests green.
+- 2026-03-20: Cluster vitals polling cadence is centralized in `apps/web/src/lib/realMetrics.ts` (`POLL_INTERVAL_MS`) and consumed by `ClusterVitals.svelte` via `startMetricsPolling()`. When changing cadence, update timer-driven assertions in `apps/web/src/lib/realMetrics.test.ts` (`vi.advanceTimersByTimeAsync(...)`) to keep behavior and tests aligned.
+- 2026-03-20: Decision recorded and implemented: set `POLL_INTERVAL_MS` to `5_000` and updated tests to advance timers by `5_000`. Files changed: `apps/web/src/lib/realMetrics.ts`, `apps/web/src/lib/realMetrics.test.ts`. Validation: targeted tests and build passed.

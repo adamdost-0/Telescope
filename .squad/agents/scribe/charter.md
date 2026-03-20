@@ -35,7 +35,7 @@
 
 ## Model
 
-- **Preferred:** claude-haiku-4.5
+- **Preferred:** gpt-5-mini
 - **Rationale:** Mechanical file ops — cheapest possible
 - **Fallback:** Fast chain
 

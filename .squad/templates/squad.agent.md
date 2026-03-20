@@ -263,7 +263,7 @@ After routing determines WHO handles work, select the response MODE based on tas
 **Lightweight Mode exemplars** (one agent, minimal prompt):
 - "Fix the typo in README" → Spawn one agent, no charter, no history read.
 - "Add a comment to line 42" → Small scoped edit, minimal context needed.
-- "What does this function do?" → `agent_type: "explore"` (Haiku model, fast).
+- "What does this function do?" → `agent_type: "explore"` (fast model).
 - Follow-up edits after a Standard/Full response — context is fresh, skip ceremony.
 
 **Standard Mode exemplars** (one agent, full ceremony):
@@ -310,7 +310,7 @@ For read-only queries, use the explore agent: `agent_type: "explore"` with `"You
 
 Before spawning an agent, determine which model to use. Check these layers in order — first match wins:
 
-**Layer 1 — User Override:** Did the user specify a model? ("use opus", "save costs", "use gpt-5.2-codex for this"). If yes, use that model. Session-wide directives ("always use haiku") persist until contradicted.
+**Layer 1 — User Override:** Did the user specify a model? ("use opus", "save costs", "use gpt-5.2-codex for this"). If yes, use that model. Session-wide directives ("always use gpt-5-mini") persist until contradicted.
 
 **Layer 2 — Charter Preference:** Does the agent's charter have a `## Model` section with `Preferred` set to a specific model (not `auto`)? If yes, use that model.
 
@@ -320,7 +320,7 @@ Before spawning an agent, determine which model to use. Check these layers in or
 |-------------|-------|------|------|
 | Writing code (implementation, refactoring, test code, bug fixes) | `claude-sonnet-4.5` | Standard | Quality and accuracy matter for code. Use standard tier. |
 | Writing prompts or agent designs (structured text that functions like code) | `claude-sonnet-4.5` | Standard | Prompts are executable — treat like code. |
-| NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | `claude-haiku-4.5` | Fast | Cost first. Haiku handles non-code tasks. |
+| NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | `gpt-5-mini` | Fast | Cost first. gpt-5-mini handles non-code tasks. |
 | Visual/design work requiring image analysis | `claude-opus-4.5` | Premium | Vision capability required. Overrides cost rule. |
 
 **Role-to-model mapping** (applying cost-first principle):
@@ -328,14 +328,14 @@ Before spawning an agent, determine which model to use. Check these layers in or
 | Role | Default Model | Why | Override When |
 |------|--------------|-----|---------------|
 | Core Dev / Backend / Frontend | `claude-sonnet-4.5` | Writes code — quality first | Heavy code gen → `gpt-5.2-codex` |
-| Tester / QA | `claude-sonnet-4.5` | Writes test code — quality first | Simple test scaffolding → `claude-haiku-4.5` |
-| Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → haiku |
-| Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → sonnet; research/analysis → haiku |
-| Copilot SDK Expert | `claude-sonnet-4.5` | Technical analysis that often touches code | Pure research → `claude-haiku-4.5` |
+| Tester / QA | `claude-sonnet-4.5` | Writes test code — quality first | Simple test scaffolding → `gpt-5-mini` |
+| Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → gpt-5-mini |
+| Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → sonnet; research/analysis → gpt-5-mini |
+| Copilot SDK Expert | `claude-sonnet-4.5` | Technical analysis that often touches code | Pure research → `gpt-5-mini` |
 | Designer / Visual | `claude-opus-4.5` | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
-| DevRel / Writer | `claude-haiku-4.5` | Docs and writing — not code | — |
-| Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops — cheapest possible | — (never bump Scribe) |
-| Git / Release | `claude-haiku-4.5` | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
+| DevRel / Writer | `gpt-5-mini` | Docs and writing — not code | — |
+| Scribe / Logger | `gpt-5-mini` | Mechanical file ops — cheapest possible | — (never bump Scribe) |
+| Git / Release | `gpt-5-mini` | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
 
 **Task complexity adjustments** (apply at most ONE — no cascading):
 - **Bump UP to premium:** architecture proposals, reviewer gates, security audits, multi-agent coordination (output feeds 3+ agents)
@@ -343,7 +343,7 @@ Before spawning an agent, determine which model to use. Check these layers in or
 - **Switch to code specialist (`gpt-5.2-codex`):** large multi-file refactors, complex implementation from spec, heavy code generation (500+ lines)
 - **Switch to analytical diversity (`gemini-3-pro-preview`):** code reviews where a second perspective helps, security reviews, architecture reviews after a rejection
 
-**Layer 4 — Default:** If nothing else matched, use `claude-haiku-4.5`. Cost wins when in doubt, unless code is being produced.
+**Layer 4 — Default:** If nothing else matched, use `gpt-5-mini`. Cost wins when in doubt, unless code is being produced.
 
 **Fallback chains — when a model is unavailable:**
 
@@ -352,7 +352,7 @@ If a spawn fails because the selected model is unavailable (plan restriction, or
 ```
 Premium:  claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.5 → (omit model param)
 Standard: claude-sonnet-4.5 → gpt-5.2-codex → claude-sonnet-4 → gpt-5.2 → (omit model param)
-Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini → (omit model param)
+Fast:     gpt-5-mini → gpt-5.1-codex-mini → gpt-4.1 → (omit model param)
 ```
 
 `(omit model param)` = call the `task` tool WITHOUT the `model` parameter. The platform uses its built-in default. This is the nuclear fallback — it always works.
@@ -386,9 +386,9 @@ When spawning, include the model in your acknowledgment:
 ```
 🔧 Fenster (claude-sonnet-4.5) — refactoring auth module
 🎨 Redfoot (claude-opus-4.5 · vision) — designing color system
-📋 Scribe (claude-haiku-4.5 · fast) — logging session
+📋 Scribe (gpt-5-mini · fast) — logging session
 ⚡ Keaton (claude-opus-4.6 · bumped for architecture) — reviewing proposal
-📝 McManus (claude-haiku-4.5 · fast) — updating docs
+📝 McManus (gpt-5-mini · fast) — updating docs
 ```
 
 Include tier annotation only when the model was bumped or a specialist was chosen. Default-tier spawns just show the model name.
@@ -397,7 +397,7 @@ Include tier annotation only when the model was bumped or a specialist was chose
 
 Premium: `claude-opus-4.6`, `claude-opus-4.6-fast`, `claude-opus-4.5`
 Standard: `claude-sonnet-4.5`, `claude-sonnet-4`, `gpt-5.2-codex`, `gpt-5.2`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1`, `gpt-5`, `gemini-3-pro-preview`
-Fast/Cheap: `claude-haiku-4.5`, `gpt-5.1-codex-mini`, `gpt-5-mini`, `gpt-4.1`
+Fast/Cheap: `gpt-5-mini`, `gpt-5.1-codex-mini`, `gpt-4.1`
 
 ### Client Compatibility
 
@@ -707,7 +707,7 @@ After each batch of agent work:
 
 ```
 agent_type: "general-purpose"
-model: "claude-haiku-4.5"
+model: "gpt-5-mini"
 mode: "background"
 description: "📋 Scribe: Log session & merge decisions"
 prompt: |

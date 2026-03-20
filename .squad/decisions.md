@@ -179,6 +179,36 @@ Only use latest SOTA models for all agent spawns: **Opus 4.6** and **GPT-5.3-Cod
 
 ---
 
+---
+
+### 2026-03-20: Ripley Decision: cluster-metrics polling at 5s
+
+**Authors:** Ripley (agent)  
+**Requested by:** Adam Dost  
+**Status:** Accepted  
+**Scope:** `apps/web/src/lib/realMetrics.ts`, `apps/web/src/lib/realMetrics.test.ts`
+
+## Context
+
+Cluster vitals polling cadence was set to 10 seconds in `realMetrics.ts`. The task required moving cluster metrics polling to 5 seconds while keeping runtime behavior stable and tests consistent.
+
+## Decision
+
+Set `POLL_INTERVAL_MS` from `10_000` to `5_000` in `apps/web/src/lib/realMetrics.ts`, and updated timer-based unit test expectations in `apps/web/src/lib/realMetrics.test.ts` to advance fake timers by `5_000`.
+
+## Why this is safe
+
+- Polling deduplication remains intact via `inFlightPoll`, preventing overlapping fetches under slower API responses.
+- Unavailable metrics behavior still resets history buffers without throwing.
+- Existing ring buffer size and update logic are unchanged.
+
+## Validation
+
+- `pnpm -C apps/web test -- --run src/lib/realMetrics.test.ts` ✅
+- `pnpm -C apps/web build` ✅
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus
