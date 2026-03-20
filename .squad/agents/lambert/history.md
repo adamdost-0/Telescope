@@ -8,6 +8,7 @@
 ## Learnings
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
+- 2026-03-20: Real cluster metrics polling cadence lives in `apps/web/src/lib/realMetrics.ts` (`POLL_INTERVAL_MS`), and cadence-sensitive behavior checks live in `apps/web/src/lib/realMetrics.test.ts`; keep timer advances exactly aligned with runtime interval (now 5 seconds) to avoid false regressions.
 - 2026-03-20: Completed metrics-format helpers (apps/web/src/lib/metrics-format.ts, metrics-format.test.ts); updated metrics UI to stable CPU millicore formatting and binary memory units; reverted unrelated polling interval changes after scope check; SQL todo metrics-display-stability marked done.
 - 2026-03-20: Metrics UI should use shared formatting helpers in `apps/web/src/lib/metrics-format.ts` — keep CPU in millicores (`m`) to avoid unit-threshold flicker and use binary byte units (`KiB`/`MiB`/`GiB`) from raw bytes.
 - 2026-03-19: Frontend audit confirmed that search/detail routing is centralized in `resource-routing.ts`, giving broad GVK coverage (including cluster-scoped + dynamic CRDs) even when list pages are tabbed or absent.
