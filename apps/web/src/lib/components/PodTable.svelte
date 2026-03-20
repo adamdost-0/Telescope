@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatBinaryBytes, formatCpuMillicores } from '$lib/metrics-format';
   import type { ResourceEntry, PodMetrics } from '$lib/tauri-commands';
 
   interface PodInfo {
@@ -161,20 +162,6 @@
     return `${diffDays}d`;
   }
 
-  function formatCpu(millicores: number | null): string {
-    if (millicores === null) return '—';
-    if (millicores < 1000) return `${millicores}m`;
-    return `${(millicores / 1000).toFixed(1)}`;
-  }
-
-  function formatMemory(bytes: number | null): string {
-    if (bytes === null) return '—';
-    const mi = bytes / (1024 * 1024);
-    if (mi < 1024) return `${Math.round(mi)}Mi`;
-    return `${(mi / 1024).toFixed(1)}Gi`;
-  }
-
-
 </script>
 
 {#if parsedPods.length === 0}
@@ -201,8 +188,8 @@
             <td>{pod.ready}</td>
             <td><span class={pod.statusClass}>{pod.status}</span></td>
             <td class="image-cell" title={pod.image}>{pod.image}</td>
-            <td class="metric">{formatCpu(pod.cpuMillicores)}</td>
-            <td class="metric">{formatMemory(pod.memoryBytes)}</td>
+            <td class="metric">{formatCpuMillicores(pod.cpuMillicores)}</td>
+            <td class="metric">{formatBinaryBytes(pod.memoryBytes)}</td>
             <td>{pod.restarts}</td>
             <td>{pod.age}</td>
           </tr>

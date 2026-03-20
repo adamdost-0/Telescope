@@ -4,7 +4,7 @@ import type { NodeMetricsData, ResourceEntry } from '$lib/tauri-commands';
 import { derived, readonly, writable } from 'svelte/store';
 
 const HISTORY_LIMIT = 20;
-const POLL_INTERVAL_MS = 10_000;
+const POLL_INTERVAL_MS = 5_000;
 
 export interface Metrics {
   cpuUsage: number[];

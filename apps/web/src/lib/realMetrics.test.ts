@@ -112,7 +112,7 @@ describe('realMetrics', () => {
     expect(get(realMetrics.memoryCurrent)).toBe(84);
     expect(get(realMetrics.restartsCurrent)).toBe(5);
 
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(5_000);
     await flushPoll();
 
     expect(get(realMetrics.metricsAvailable)).toBe(false);
@@ -141,7 +141,7 @@ describe('realMetrics', () => {
     await flushPoll();
 
     for (let i = 0; i < 25; i += 1) {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(5_000);
       await flushPoll();
     }
 

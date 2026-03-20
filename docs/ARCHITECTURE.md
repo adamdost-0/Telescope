@@ -6,7 +6,7 @@ description: "System design, crate layering, watch model, IPC surface, and data 
 
 # Telescope — Architecture
 
-This document describes the implemented architecture of Telescope v1.0.0.
+This document describes the implemented architecture of the current Telescope v1.x desktop release line.
 
 ## Goals
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getResources, getNodeMetrics, checkMetricsAvailable } from '$lib/api';
+  import { formatBinaryBytes, formatCpuMillicores, formatPercent } from '$lib/metrics-format';
   import { isConnected } from '$lib/stores';
   import ResourceTable from '$lib/components/ResourceTable.svelte';
   import NodePoolHeader from '$lib/components/NodePoolHeader.svelte';
@@ -131,7 +132,7 @@
     { key: 'cpu_used', label: 'CPU Used', extract: (c: any) => {
       const m = metricsMap[c?.metadata?.name ?? ''];
       if (!m) return '—';
-      return `${m.cpu_millicores}m (${m.cpu_percent}%)`;
+      return `${formatCpuMillicores(m.cpu_millicores)} (${formatPercent(m.cpu_percent)})`;
     }, colorFn: (c: any) => {
       const m = metricsMap[c?.metadata?.name ?? ''];
       return m ? usageColor(m.cpu_percent) : null;
@@ -139,8 +140,7 @@
     { key: 'mem_used', label: 'Mem Used', extract: (c: any) => {
       const m = metricsMap[c?.metadata?.name ?? ''];
       if (!m) return '—';
-      const mib = Math.round(m.memory_bytes / (1024 * 1024));
-      return `${mib}Mi (${m.memory_percent}%)`;
+      return `${formatBinaryBytes(m.memory_bytes)} (${formatPercent(m.memory_percent)})`;
     }, colorFn: (c: any) => {
       const m = metricsMap[c?.metadata?.name ?? ''];
       return m ? usageColor(m.memory_percent) : null;

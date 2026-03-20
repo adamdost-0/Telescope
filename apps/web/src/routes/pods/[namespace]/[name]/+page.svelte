@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
   import { getPods, getEvents, deleteResource, listContainers, applyResource, startPortForward, getPodMetrics, checkMetricsAvailable } from '$lib/api';
+  import { formatBinaryBytes, formatCpuMillicores } from '$lib/metrics-format';
   import Tabs from '$lib/components/Tabs.svelte';
   import LogViewer from '$lib/components/LogViewer.svelte';
   import EventsTable from '$lib/components/EventsTable.svelte';
@@ -45,7 +46,7 @@
       const podMetric = allMetrics.find((m) => m.name === podName);
       if (podMetric) {
         cpuHistory = [...cpuHistory, podMetric.cpu_millicores].slice(-MAX_SPARKLINE_POINTS);
-        memoryHistory = [...memoryHistory, podMetric.memory_bytes / (1024 * 1024)].slice(-MAX_SPARKLINE_POINTS);
+        memoryHistory = [...memoryHistory, podMetric.memory_bytes].slice(-MAX_SPARKLINE_POINTS);
       }
     } catch {
       // Silently skip metrics poll failures
@@ -260,14 +261,14 @@
               <div class="sparkline-card">
                 <span class="sparkline-label">CPU (m)</span>
                 <Sparkline data={cpuHistory} color="#58a6ff" />
-                <span class="sparkline-value">{cpuHistory[cpuHistory.length - 1]?.toFixed(0) ?? '—'}m</span>
+                <span class="sparkline-value">{formatCpuMillicores(cpuHistory[cpuHistory.length - 1])}</span>
               </div>
             {/if}
             {#if memoryHistory.length > 1}
               <div class="sparkline-card">
-                <span class="sparkline-label">Memory (MiB)</span>
+                <span class="sparkline-label">Memory</span>
                 <Sparkline data={memoryHistory} color="#a371f7" />
-                <span class="sparkline-value">{memoryHistory[memoryHistory.length - 1]?.toFixed(1) ?? '—'} MiB</span>
+                <span class="sparkline-value">{formatBinaryBytes(memoryHistory[memoryHistory.length - 1])}</span>
               </div>
             {/if}
           </div>

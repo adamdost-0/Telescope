@@ -16,6 +16,7 @@
     stopAksCluster,
     upgradeAksCluster,
   } from '$lib/api';
+  import { formatBinaryBytes, formatCpuMillicores } from '$lib/metrics-format';
   import { getAutoRefreshIntervalMs } from '$lib/preferences';
   import { selectedContext, selectedNamespace, isConnected, isAks } from '$lib/stores';
   import ErrorMessage from '$lib/components/ErrorMessage.svelte';
@@ -862,8 +863,8 @@
               <tr>
                 <th>Namespace</th>
                 <th>Pods</th>
-                <th>CPU (millicores)</th>
-                <th>Memory (MiB)</th>
+                <th>CPU</th>
+                <th>Memory</th>
               </tr>
             </thead>
             <tbody>
@@ -871,8 +872,8 @@
                 <tr>
                   <td class="cell-object">{ns.namespace}</td>
                   <td>{ns.pods}</td>
-                  <td>{ns.cpuMillicores.toFixed(0)}</td>
-                  <td>{(ns.memoryBytes / (1024 * 1024)).toFixed(1)}</td>
+                  <td>{formatCpuMillicores(ns.cpuMillicores)}</td>
+                  <td>{formatBinaryBytes(ns.memoryBytes)}</td>
                 </tr>
               {/each}
             </tbody>

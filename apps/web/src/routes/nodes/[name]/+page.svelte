@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import { onMount, onDestroy } from 'svelte';
   import { getResources, getNodeMetrics, checkMetricsAvailable, cordonNode, uncordonNode, drainNode, addNodeTaint, removeNodeTaint } from '$lib/api';
+  import { formatBinaryBytes, formatCpuMillicores, formatPercent } from '$lib/metrics-format';
   import type { DrainOptions, DrainResult } from '$lib/api';
   import Tabs from '$lib/components/Tabs.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
@@ -128,7 +129,7 @@
       const nodeMetric = allMetrics.find((m) => m.name === nodeName);
       if (nodeMetric) {
         cpuHistory = [...cpuHistory, nodeMetric.cpu_millicores].slice(-MAX_SPARKLINE_POINTS);
-        memoryHistory = [...memoryHistory, nodeMetric.memory_bytes / (1024 * 1024)].slice(-MAX_SPARKLINE_POINTS);
+        memoryHistory = [...memoryHistory, nodeMetric.memory_bytes].slice(-MAX_SPARKLINE_POINTS);
       }
     } catch {
       // Silently skip metrics poll failures
@@ -457,14 +458,14 @@
                 <div class="sparkline-card">
                   <span class="sparkline-label">CPU Trend (m)</span>
                   <Sparkline data={cpuHistory} color="#58a6ff" />
-                  <span class="sparkline-value">{cpuHistory[cpuHistory.length - 1]?.toFixed(0) ?? '—'}m</span>
+                  <span class="sparkline-value">{formatCpuMillicores(cpuHistory[cpuHistory.length - 1])}</span>
                 </div>
               {/if}
               {#if memoryHistory.length > 1}
                 <div class="sparkline-card">
-                  <span class="sparkline-label">Memory Trend (MiB)</span>
+                  <span class="sparkline-label">Memory Trend</span>
                   <Sparkline data={memoryHistory} color="#a371f7" />
-                  <span class="sparkline-value">{memoryHistory[memoryHistory.length - 1]?.toFixed(0) ?? '—'} MiB</span>
+                  <span class="sparkline-value">{formatBinaryBytes(memoryHistory[memoryHistory.length - 1])}</span>
                 </div>
               {/if}
             </div>
@@ -473,22 +474,22 @@
           <div class="metrics-grid">
             <div class="metric-card">
               <div class="metric-label">CPU Usage</div>
-              <div class="metric-value" style="color: {usageColor(metrics.cpu_percent)}">{metrics.cpu_millicores}m / {metrics.cpu_allocatable}m</div>
+              <div class="metric-value" style="color: {usageColor(metrics.cpu_percent)}">{formatCpuMillicores(metrics.cpu_millicores)} / {formatCpuMillicores(metrics.cpu_allocatable)}</div>
               <div class="metric-bar">
                 <div class="metric-bar-fill" style="width: {Math.min(metrics.cpu_percent, 100)}%; background: {usageColor(metrics.cpu_percent)}"></div>
               </div>
               <div class="metric-detail">
-                <span style="color: {usageColor(metrics.cpu_percent)}">{metrics.cpu_percent}%</span> of allocatable — {usageLabel(metrics.cpu_percent)}
+                <span style="color: {usageColor(metrics.cpu_percent)}">{formatPercent(metrics.cpu_percent)}</span> of allocatable — {usageLabel(metrics.cpu_percent)}
               </div>
             </div>
             <div class="metric-card">
               <div class="metric-label">Memory Usage</div>
-              <div class="metric-value" style="color: {usageColor(metrics.memory_percent)}">{Math.round(metrics.memory_bytes / (1024 * 1024))}Mi / {Math.round(metrics.memory_allocatable / (1024 * 1024))}Mi</div>
+              <div class="metric-value" style="color: {usageColor(metrics.memory_percent)}">{formatBinaryBytes(metrics.memory_bytes)} / {formatBinaryBytes(metrics.memory_allocatable)}</div>
               <div class="metric-bar">
                 <div class="metric-bar-fill" style="width: {Math.min(metrics.memory_percent, 100)}%; background: {usageColor(metrics.memory_percent)}"></div>
               </div>
               <div class="metric-detail">
-                <span style="color: {usageColor(metrics.memory_percent)}">{metrics.memory_percent}%</span> of allocatable — {usageLabel(metrics.memory_percent)}
+                <span style="color: {usageColor(metrics.memory_percent)}">{formatPercent(metrics.memory_percent)}</span> of allocatable — {usageLabel(metrics.memory_percent)}
               </div>
             </div>
           </div>
@@ -507,17 +508,17 @@
             <tbody>
               <tr>
                 <td>CPU</td>
-                <td>{metrics.cpu_millicores}m</td>
-                <td>{metrics.cpu_allocatable}m</td>
+                <td>{formatCpuMillicores(metrics.cpu_millicores)}</td>
+                <td>{formatCpuMillicores(metrics.cpu_allocatable)}</td>
                 <td>{node?.status?.capacity?.cpu ?? 'N/A'}</td>
-                <td style="color: {usageColor(metrics.cpu_percent)}">{metrics.cpu_percent}%</td>
+                <td style="color: {usageColor(metrics.cpu_percent)}">{formatPercent(metrics.cpu_percent)}</td>
               </tr>
               <tr>
                 <td>Memory</td>
-                <td>{Math.round(metrics.memory_bytes / (1024 * 1024))}Mi</td>
-                <td>{Math.round(metrics.memory_allocatable / (1024 * 1024))}Mi</td>
+                <td>{formatBinaryBytes(metrics.memory_bytes)}</td>
+                <td>{formatBinaryBytes(metrics.memory_allocatable)}</td>
                 <td>{node?.status?.capacity?.memory ?? 'N/A'}</td>
-                <td style="color: {usageColor(metrics.memory_percent)}">{metrics.memory_percent}%</td>
+                <td style="color: {usageColor(metrics.memory_percent)}">{formatPercent(metrics.memory_percent)}</td>
               </tr>
             </tbody>
           </table>
