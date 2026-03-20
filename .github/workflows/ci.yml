@@ -90,12 +90,29 @@ jobs:
         shell: bash
         run: |
           APP_PATH=$(find target/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "❌ No .app bundle found under target/release/bundle/macos"
+          if [ -n "$APP_PATH" ]; then
+            test -f "$APP_PATH/Contents/_CodeSignature/CodeResources"
+            codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+            exit 0
+          fi
+
+          DMG_PATH=$(find target/release/bundle/dmg -name "*.dmg" | head -1)
+          if [ -z "$DMG_PATH" ]; then
+            echo "❌ No .app or .dmg artifact available for signature verification"
             exit 1
           fi
-          test -f "$APP_PATH/Contents/_CodeSignature/CodeResources"
-          codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+
+          MOUNT_DIR=$(hdiutil attach "$DMG_PATH" -nobrowse -readonly | tail -n1 | awk '{print $3}')
+          APP_IN_DMG=$(find "$MOUNT_DIR" -maxdepth 2 -name "*.app" | head -1)
+          if [ -z "$APP_IN_DMG" ]; then
+            echo "❌ No .app found inside DMG: $DMG_PATH"
+            hdiutil detach "$MOUNT_DIR" || true
+            exit 1
+          fi
+
+          test -f "$APP_IN_DMG/Contents/_CodeSignature/CodeResources"
+          codesign --verify --deep --strict --verbose=4 "$APP_IN_DMG"
+          hdiutil detach "$MOUNT_DIR"
       - name: Verify bundle outputs
         shell: bash
         run: |
