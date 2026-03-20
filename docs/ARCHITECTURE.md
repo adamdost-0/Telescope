@@ -109,7 +109,7 @@ graph TB
 
 **Desktop (`apps/desktop`)** — Tauri 2 shell exposing 66 IPC commands across nine groups: context/connection (7), Azure ARM/AKS (18), resource queries (8), secrets (2), Helm (4), namespaces (3), logs (3), resource actions/node ops (15), exec/portforward/metrics (6). State is held in `AppState` (SQLite store + connection state + watch handle).
 
-**Frontend (`apps/web`)** — SvelteKit 2 frontend (Svelte 5 runes). 25 components, 39 routes, Svelte writable/derived stores for context, namespace, and connection state. `api.ts` wraps Tauri command invocations for the desktop shell.
+**Frontend (`apps/web`)** — SvelteKit frontend (Svelte 5 runes). 25 components, 39 routes, Svelte writable/derived stores for context, namespace, and connection state. `api.ts` wraps Tauri command invocations for the desktop shell.
 
 ---
 

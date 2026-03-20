@@ -62,3 +62,11 @@ Led prioritization session alongside ARM error handling work by Ripley+Lambert+K
 ### 2026-03-19 — GitHub Pages + README Session (Scribe)
 
 Dallas led the GitHub Pages docs structure workstream. Created `docs/_config.yml` (just-the-docs, dark mode), `docs/index.md` (landing page), `.github/workflows/docs.yml` (deploy workflow). Added YAML front matter to all 11 docs files — 8 public sidebar, 3 internal nav_exclude. Lambert ran parallel README cleanup. Decision merged to decisions.md.
+
+### 2026-03-20 — architecture-doc-current-state
+
+- **Docs alignment:** Audited `docs/` and top-level guidance files and reconciled content against the shipped code and CI. Updated `docs/ARCHITECTURE.md` to remove an incorrect SvelteKit version marker and to clarify the frontend packaging and workspace shape.
+- **Authoritative files confirmed:** `crates/core`, `crates/engine`, `crates/azure`, `apps/web`, `apps/desktop/src-tauri/src/main.rs`, `crates/engine/src/watcher.rs`, `apps/web/src/lib/api.ts`.
+- **Pattern / preference:** When docs disagree with code or CI, the code wins. Prefer small, surgical doc fixes that reference concrete files.
+- **Outcome:** Documentation now accurately reflects the desktop-only shipped system and workspace shape.
+
