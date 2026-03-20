@@ -68,13 +68,15 @@ Steps:
 1. Extract version from tag
 2. Stamp version into `Cargo.toml` manifests and `tauri.conf.json`
 3. `pnpm install --frozen-lockfile`
-4. `pnpm -C apps/desktop bundle` — full release build
-5. Rename binary with version tag
-6. Create GitHub Release via `softprops/action-gh-release@v2`
+4. Configure macOS signing/notarization env (Developer ID + notarization when secrets are present, ad-hoc fallback otherwise)
+5. `pnpm -C apps/desktop bundle` — full release build
+6. Verify macOS `.app` signature integrity and app signature inside DMG
+7. Rename binary with version tag
+8. Create GitHub Release via `softprops/action-gh-release@v2`
 
 **Release artifacts:**
 - Windows: versioned `.exe`, MSI installer, NSIS installer
-- macOS: versioned binary, DMG, `.app` bundle
+- macOS: versioned binary and DMG (with signature integrity checks enforced in CI)
 
 **Version stamping targets:**
 - `apps/desktop/src-tauri/Cargo.toml`

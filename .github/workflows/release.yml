@@ -49,6 +49,49 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - name: Configure macOS signing and notarization
+        if: ${{ matrix.platform == 'macos' }}
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "${APPLE_CERTIFICATE}" ] && [ -n "${APPLE_CERTIFICATE_PASSWORD}" ] && [ -n "${APPLE_SIGNING_IDENTITY}" ]; then
+            echo "✅ Developer ID signing secrets detected."
+            {
+              echo "APPLE_CERTIFICATE<<EOF"
+              echo "${APPLE_CERTIFICATE}"
+              echo "EOF"
+              echo "APPLE_CERTIFICATE_PASSWORD=${APPLE_CERTIFICATE_PASSWORD}"
+              echo "APPLE_SIGNING_IDENTITY=${APPLE_SIGNING_IDENTITY}"
+              echo "MACOS_SIGNING_MODE=developer-id"
+            } >> "$GITHUB_ENV"
+
+            if [ -n "${APPLE_ID}" ] && [ -n "${APPLE_PASSWORD}" ] && [ -n "${APPLE_TEAM_ID}" ]; then
+              echo "✅ Apple notarization credentials detected."
+              {
+                echo "APPLE_ID=${APPLE_ID}"
+                echo "APPLE_PASSWORD=${APPLE_PASSWORD}"
+                echo "APPLE_TEAM_ID=${APPLE_TEAM_ID}"
+                echo "MACOS_NOTARIZATION_ENABLED=true"
+              } >> "$GITHUB_ENV"
+            else
+              echo "⚠️ Apple notarization credentials missing; build will be signed but not notarized."
+              echo "MACOS_NOTARIZATION_ENABLED=false" >> "$GITHUB_ENV"
+            fi
+          else
+            echo "⚠️ Developer ID signing secrets not configured; using ad-hoc signing to avoid invalid app signatures."
+            {
+              echo "APPLE_SIGNING_IDENTITY=-"
+              echo "MACOS_SIGNING_MODE=adhoc"
+              echo "MACOS_NOTARIZATION_ENABLED=false"
+            } >> "$GITHUB_ENV"
+          fi
+
       - name: Stamp release version into build configs
         shell: bash
         run: |
@@ -137,6 +180,26 @@ jobs:
       - name: Build artifacts
         run: pnpm -C apps/desktop bundle
 
+      - name: Verify macOS app signature integrity
+        if: ${{ matrix.platform == 'macos' }}
+        shell: bash
+        run: |
+          APP_PATH=$(find target/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No .app bundle produced under target/release/bundle/macos"
+            exit 1
+          fi
+
+          echo "Checking app bundle: $APP_PATH"
+          if [ ! -f "$APP_PATH/Contents/_CodeSignature/CodeResources" ]; then
+            echo "❌ Missing CodeResources. App bundle is not properly signed."
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | grep -E "Identifier=|Signature=|TeamIdentifier=|Authority=" || true
+          spctl -a -vv "$APP_PATH" || true
+
       - name: List build outputs
         shell: bash
         run: |
@@ -214,6 +277,37 @@ jobs:
               echo "✅ Renamed DMG: $DMG_DEST"
             fi
           fi
+
+      - name: Verify signed app inside DMG
+        if: ${{ matrix.platform == 'macos' }}
+        shell: bash
+        run: |
+          DMG_PATH="target/release/${{ env.DMG_ARTIFACT }}"
+          if [ ! -f "$DMG_PATH" ]; then
+            echo "❌ DMG artifact not found: $DMG_PATH"
+            exit 1
+          fi
+
+          MOUNT_DIR=$(hdiutil attach "$DMG_PATH" -nobrowse -readonly | tail -n1 | awk '{print $3}')
+          APP_PATH=$(find "$MOUNT_DIR" -maxdepth 2 -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No .app found inside mounted DMG"
+            hdiutil detach "$MOUNT_DIR" || true
+            exit 1
+          fi
+
+          echo "Checking DMG app bundle: $APP_PATH"
+          codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+
+          if [ "${MACOS_NOTARIZATION_ENABLED}" = "true" ]; then
+            echo "Notarization expected; validating with spctl and stapler."
+            spctl -a -vv "$APP_PATH"
+            xcrun stapler validate "$DMG_PATH"
+          else
+            spctl -a -vv "$APP_PATH" || true
+          fi
+
+          hdiutil detach "$MOUNT_DIR"
 
       - name: Generate checksums
         shell: bash

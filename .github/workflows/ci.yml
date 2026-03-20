@@ -80,8 +80,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install
         run: pnpm install --frozen-lockfile
+      - name: Configure macOS ad-hoc signing
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
       - name: Build desktop (release bundle)
         run: pnpm -C apps/desktop bundle
+      - name: Verify macOS app signature integrity
+        if: ${{ matrix.os == 'macos-latest' }}
+        shell: bash
+        run: |
+          APP_PATH=$(find target/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No .app bundle found under target/release/bundle/macos"
+            exit 1
+          fi
+          test -f "$APP_PATH/Contents/_CodeSignature/CodeResources"
+          codesign --verify --deep --strict --verbose=4 "$APP_PATH"
       - name: Verify bundle outputs
         shell: bash
         run: |

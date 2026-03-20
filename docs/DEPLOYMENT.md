@@ -75,10 +75,17 @@ This rebuilds the frontend and runs a release Tauri bundle build.
 
 #### macOS
 
-- Distribution builds typically need Apple code signing and notarization outside of Telescope itself.
+- Distribution builds require valid app bundle signing to avoid Gatekeeper corruption errors.
+- The release workflow now enforces bundle signature integrity checks on macOS artifacts.
+- Preferred production path is **Developer ID signing + Apple notarization**. Configure these repository secrets:
+  - `APPLE_CERTIFICATE` (base64-encoded `.p12`)
+  - `APPLE_CERTIFICATE_PASSWORD`
+  - `APPLE_SIGNING_IDENTITY` (e.g., `Developer ID Application: ...`)
+  - `APPLE_ID`, `APPLE_PASSWORD` (app-specific password), `APPLE_TEAM_ID` (for notarization)
+- If signing secrets are missing, CI falls back to ad-hoc signing (`APPLE_SIGNING_IDENTITY=-`) so artifacts are structurally valid but **not notarized**.
 - Build on macOS hosts with Xcode command-line tools installed.
 - The bundle process produces a DMG disk image installer.
-- Unsigned builds may require users to right-click and select "Open" on first launch (Gatekeeper).
+- Non-notarized builds may still require users to right-click and select "Open" on first launch (Gatekeeper).
 
 #### Windows
 
