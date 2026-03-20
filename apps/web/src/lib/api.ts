@@ -414,9 +414,69 @@ export async function scaleResource(gvk: string, namespace: string, name: string
   return invoke<string>('scale_resource', { gvk, namespace, name, replicas });
 }
 
-/** Start a port-forward session to a pod. Returns the local port number. */
-export async function startPortForward(namespace: string, pod: string, localPort: number, remotePort: number): Promise<number> {
-  return invoke<number>('start_port_forward', { namespace, pod, localPort, remotePort });
+export interface PortForwardResponse {
+  session_id: string;
+  local_port: number;
+}
+
+export interface PortForwardSession {
+  id: string;
+  namespace: string;
+  pod: string;
+  local_port: number;
+  remote_port: number;
+  started_at: string;
+  status: 'Active' | 'Stopping' | 'Stopped';
+}
+
+/** Start a port-forward session to a pod. Returns session ID and local port. */
+export async function startPortForward(
+  namespace: string,
+  pod: string,
+  localPort: number,
+  remotePort: number
+): Promise<PortForwardResponse> {
+  return invoke<PortForwardResponse>('start_port_forward', { namespace, pod, localPort, remotePort });
+}
+
+/** List all active port-forward sessions. */
+export async function listPortForwardSessions(): Promise<PortForwardSession[]> {
+  try {
+    return await invoke<PortForwardSession[]>('list_port_forward_sessions');
+  } catch (e) {
+    notifyApiError('list_port_forward_sessions', e);
+    return [];
+  }
+}
+
+/** Stop a port-forward session by ID. */
+export async function stopPortForwardSession(sessionId: string): Promise<void> {
+  return invoke<void>('stop_port_forward_session', { sessionId });
+}
+
+export interface PortForwardProfile {
+  name: string;
+  namespace: string;
+  pod: string;
+  localPort: number;
+  remotePort: number;
+}
+
+/** Get saved port-forward profiles. */
+export async function getPortForwardProfiles(): Promise<PortForwardProfile[]> {
+  try {
+    const json = await invoke<string>('get_port_forward_profiles');
+    return JSON.parse(json);
+  } catch (e) {
+    notifyApiError('get_port_forward_profiles', e);
+    return [];
+  }
+}
+
+/** Save port-forward profiles. */
+export async function savePortForwardProfiles(profiles: PortForwardProfile[]): Promise<void> {
+  const json = JSON.stringify(profiles);
+  return invoke<void>('save_port_forward_profiles', { profilesJson: json });
 }
 
 /** Fetch pod-level CPU/memory metrics from the metrics-server API. */

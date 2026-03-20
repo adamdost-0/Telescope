@@ -150,7 +150,8 @@
   async function handlePortForward(localPort: number, remotePort: number) {
     showPortForward = false;
     try {
-      await startPortForward(namespace, podName, localPort, remotePort);
+      const response = await startPortForward(namespace, podName, localPort, remotePort);
+      console.log(`Port forward started: session ${response.session_id}, localhost:${response.local_port}`);
     } catch (e) {
       console.error('Port forward failed:', e);
     }
