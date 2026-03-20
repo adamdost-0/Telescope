@@ -8,6 +8,7 @@
 ## Learnings
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
+- 2026-03-20: The `apps/web` validation gate is stable as `pnpm -C apps/web test` → `pnpm -C apps/web build` → `pnpm -C apps/web e2e`; current baseline is 49 Vitest tests and 32 Playwright specs passing, with E2E anchored in `apps/web/tests-e2e/`.
 - 2026-03-19: `cargo test --workspace --exclude telescope-desktop --all-features` currently reports 176/176 passing, but `crates/engine/tests/integration_k3d.rs` only exercises real cluster paths when `K3D_TEST=1`; otherwise it exits early and passes.
 - 2026-03-19: E2E Kubernetes UI confidence is strongest for mocked AKS node-pool lifecycle flows (`tests-e2e/node-pools.spec.ts`) and is backed by 45 mocked IPC commands in `apps/web/tests-e2e/helpers/mock-tauri.ts`.
 - 2026-03-19: ARM error-path coverage now includes Azure client status mapping tests (401/403/404 + network + malformed payloads) and Node Pool E2E checks for user-friendly ARM errors, dismiss behavior, and retry recovery using configurable mock IPC failures.
@@ -30,3 +31,7 @@ Added Rust unit tests for helm uninstall (success/not-found/empty-name). Added E
 ### 2026-03-19 — P2 E2E Fix + All Gaps Resolved
 
 Fixed P2 route E2E test mismatches in `tests-e2e/p2-routes.spec.ts` — aligned assertions to actual route rendering (empty states vs error banners, column labels, detail navigation). All 32 E2E + 36 unit + Rust tests green. All audit gaps now resolved.
+
+- 2026-03-20: E2E validation run by Kane: executed `pnpm -C apps/web test`, `pnpm -C apps/web build`, and `pnpm -C apps/web e2e`. All checks passed (test, build, and E2E). Session log: `.squad/log/20260320-120000-e2e-validation-suite.md`. Orchestration record: `.squad/orchestration-log/20260320-120000-kane.md`.
+- 2026-03-20: Learning: The `apps/web` validation gate remains stable for this run; no new flaky specs observed.
+
