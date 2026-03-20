@@ -58,6 +58,7 @@
         'e': '/events',
         'h': '/helm',
         'c': '/crds',
+        'f': '/connectivity',
         't': '/settings',
       };
       if (routes[e.key]) {
