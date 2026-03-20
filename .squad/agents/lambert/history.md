@@ -8,6 +8,8 @@
 ## Learnings
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
+- 2026-03-20T06:38:49Z: Spawned task 'metrics precision tuning for CPU/memory display' — formatter tuning implemented in apps/web/src/lib/metrics-format.ts; tests expanded in metrics-format.test.ts; inbox decision merged into .squad/decisions.md; web build tested.  
+
 - 2026-03-20: Metrics precision tuning implemented in `apps/web/src/lib/metrics-format.ts` using hysteresis thresholds: CPU shows 1 decimal below 100m (e.g., "5.3m") and rounds above (e.g., "251m"); memory uses 95% threshold before unit transitions (972 B stays in B, 973 B → 1.0 KiB) to reduce visual jitter while preserving truthful values.
 - 2026-03-20: Real cluster metrics polling cadence lives in `apps/web/src/lib/realMetrics.ts` (`POLL_INTERVAL_MS`), and cadence-sensitive behavior checks live in `apps/web/src/lib/realMetrics.test.ts`; keep timer advances exactly aligned with runtime interval (now 5 seconds) to avoid false regressions.
 - 2026-03-20: Completed metrics-format helpers (apps/web/src/lib/metrics-format.ts, metrics-format.test.ts); updated metrics UI to stable CPU millicore formatting and binary memory units; reverted unrelated polling interval changes after scope check; SQL todo metrics-display-stability marked done.

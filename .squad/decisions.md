@@ -209,35 +209,53 @@ Set `POLL_INTERVAL_MS` from `10_000` to `5_000` in `apps/web/src/lib/realMetrics
 
 ---
 
-### 2026-03-20: Lambert Decision: metrics formatting stability
+### 2026-03-20: Lambert Decision: Metrics Precision Tuning
 
 **Authors:** Lambert  
 **Status:** Accepted  
-**Type:** Frontend presentation
+**Type:** UX Improvement
 
 **Context:**
 
-Metrics displays were visually unstable when CPU values crossed display thresholds and memory was rendered in fixed Mi-based formats that hid small values. The task required stable CPU presentation and correct binary memory units including KiB.
+CPU and memory metrics displays were experiencing visual instability (jitter/boomeranging) when values crossed formatting thresholds. This created a poor UX where metrics would rapidly flip between display formats even when underlying values changed minimally.
 
 **Decision:**
 
-Adopt shared frontend helpers for metrics formatting:
+Implemented precision tuning in `apps/web/src/lib/metrics-format.ts` using hysteresis thresholds and consistent percent precision:
 
-- Keep CPU display in millicores (`m`) across metrics UI to avoid unit-switch boomerang around 1000m.
-- Format memory from raw bytes into binary units (`B`, `KiB`, `MiB`, `GiB`, `TiB`, `PiB`) with consistent output style.
-- Use one-decimal percent formatting for stable metric labels.
+CPU Formatting:
+- Small values (< 100m): display with 1 decimal place (e.g., "5.3m", "99.9m")
+- Large values (≥ 100m): round to nearest integer (e.g., "100m", "251m", "1000m")
 
-**Why this is safe**
+Memory Formatting:
+- Use binary units (`B`, `KiB`, `MiB`, ...)
+- Hysteresis threshold: only transition to the next unit at 95% of the unit boundary (e.g., 972.8 bytes for 1 KiB)
+- Effect: values remain in the lower unit until passing the hysteresis point, reducing rapid unit switching
 
-- Raw values remain untouched in data flow; only presentation formatting changed.
-- Shared helper usage reduces drift between pod, node, and overview metrics surfaces.
-- Existing color/threshold logic still uses numeric values, not formatted strings.
+Percent Formatting:
+- Always format percentages with 1 decimal place (e.g., "35.7%", "100.0%")
 
-**Validation**
+**Testing:**
+
+- Added 12 unit tests covering CPU decimal threshold behavior, memory hysteresis across unit boundaries, percent formatting consistency, and edge cases (null, undefined, NaN, Infinity, negative values).
+- Tests targeted at `apps/web/src/lib/metrics-format.test.ts` and all pass in CI.
+
+**Files Changed:**
+
+- `apps/web/src/lib/metrics-format.ts` — Added hysteresis constants and conditional decimal logic
+- `apps/web/src/lib/metrics-format.test.ts` — Expanded test coverage
+
+**Impact:**
+
+- UX: metrics displays now stable and easier to read
+- Truthfulness: raw values remain unchanged; only presentation formatting improved
+- Consistency: all metrics surfaces use shared formatters
+- Production-safe: no breaking changes to data flow or existing display contracts
+
+**Validation:**
 
 - `pnpm -C apps/web test -- --run src/lib/metrics-format.test.ts` ✅
 - `pnpm -C apps/web build` ✅
-
 
 ## Governance
 
