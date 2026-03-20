@@ -8,6 +8,7 @@
 ## Learnings
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
+- 2026-03-20: Completed metrics-format helpers (apps/web/src/lib/metrics-format.ts, metrics-format.test.ts); updated metrics UI to stable CPU millicore formatting and binary memory units; reverted unrelated polling interval changes after scope check; SQL todo metrics-display-stability marked done.
 - 2026-03-20: Metrics UI should use shared formatting helpers in `apps/web/src/lib/metrics-format.ts` — keep CPU in millicores (`m`) to avoid unit-threshold flicker and use binary byte units (`KiB`/`MiB`/`GiB`) from raw bytes.
 - 2026-03-19: Frontend audit confirmed that search/detail routing is centralized in `resource-routing.ts`, giving broad GVK coverage (including cluster-scoped + dynamic CRDs) even when list pages are tabbed or absent.
 - 2026-03-19: Adding new Kubernetes list pages requires coordinated updates in three places: route page under `apps/web/src/routes/resources/*`, `resource-routing.ts` list/detail mappings, and UI entry points (`Sidebar.svelte` + `SearchPalette.svelte`).

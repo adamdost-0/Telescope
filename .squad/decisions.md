@@ -209,6 +209,36 @@ Set `POLL_INTERVAL_MS` from `10_000` to `5_000` in `apps/web/src/lib/realMetrics
 
 ---
 
+### 2026-03-20: Lambert Decision: metrics formatting stability
+
+**Authors:** Lambert  
+**Status:** Accepted  
+**Type:** Frontend presentation
+
+**Context:**
+
+Metrics displays were visually unstable when CPU values crossed display thresholds and memory was rendered in fixed Mi-based formats that hid small values. The task required stable CPU presentation and correct binary memory units including KiB.
+
+**Decision:**
+
+Adopt shared frontend helpers for metrics formatting:
+
+- Keep CPU display in millicores (`m`) across metrics UI to avoid unit-switch boomerang around 1000m.
+- Format memory from raw bytes into binary units (`B`, `KiB`, `MiB`, `GiB`, `TiB`, `PiB`) with consistent output style.
+- Use one-decimal percent formatting for stable metric labels.
+
+**Why this is safe**
+
+- Raw values remain untouched in data flow; only presentation formatting changed.
+- Shared helper usage reduces drift between pod, node, and overview metrics surfaces.
+- Existing color/threshold logic still uses numeric values, not formatted strings.
+
+**Validation**
+
+- `pnpm -C apps/web test -- --run src/lib/metrics-format.test.ts` ✅
+- `pnpm -C apps/web build` ✅
+
+
 ## Governance
 
 - All meaningful changes require team consensus
