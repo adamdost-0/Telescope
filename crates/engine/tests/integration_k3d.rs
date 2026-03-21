@@ -5,9 +5,8 @@
 
 use std::sync::Arc;
 
-fn should_run() -> bool {
-    std::env::var("K3D_TEST").unwrap_or_default() == "1"
-}
+mod common;
+use common::should_run;
 
 #[tokio::test]
 async fn connects_to_cluster() {
