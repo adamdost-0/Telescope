@@ -417,3 +417,29 @@ Percent Formatting:
 **Validation:**
 - `cargo test -p telescope-engine insights_context` [ok]
 - `cargo test -p telescope-engine insights` [ok]
+
+---
+
+### 2026-03-24: AI Insights Deficiency Fixes (Tasks 2-3)
+
+**Authors:** Ripley (fixes), Dallas (review), Kane (QA acceptance)
+**Status:** Accepted
+**Type:** Bug fix + test gap closure
+
+**Context:** Post-acceptance review of the AI Insights implementation identified three deficiency classes: (1) `response_format_json()` in `crates/azure/src/openai.rs` serialized `"description": null` when the field was `None`, which Azure OpenAI's structured output API rejects; (2) HTTP 408/504 timeouts and 429 rate-limit responses fell through to the generic `OpenAiApi` catch-all instead of mapping to their correct error variants; (3) cap enforcement tests for pod, event, node, and Helm release categories and cross-namespace filtering for pods and events were missing from `crates/engine/src/insights_context.rs`.
+
+**Changes:**
+- Fix 1 (schema serialization): `response_format_json()` now conditionally inserts the `"description"` key only when `Some`, preventing a `null` value on the wire. The struct-level `#[serde(skip_serializing_if)]` annotation is redundant but harmless since manual `Value` construction controls the wire path.
+- Fix 2 (HTTP status classification): `classify_openai_response_error()` now explicitly branches on 408 and 504 to return `AzureError::OpenAiTimeout`, and on 429 to return `OpenAiApi` with code `"TooManyRequests"`. Ordering is safe -- these checks follow 401/403/404 branches.
+- Fix 3 (test gap closure): Five new tests in `insights_context.rs` cover cross-namespace pod/event filtering, and individual cap enforcement for pod, event, node, and Helm release categories. All use contract constants (`AI_INSIGHTS_POD_CAP`, etc.) and assert both `total_count` and `items.len()`.
+
+**Review outcomes:**
+- Dallas approved: all three fixes are narrow, correctly targeted, contract-aligned, and have dual-path or boundary-condition coverage
+- Kane approved: all 37 targeted tests pass with no false positives detected
+
+**Validation:**
+- `cargo test -p telescope-azure` 76 passed
+- `cargo test -p telescope-engine` 130 passed (115 lib + integration)
+- `cargo test -p telescope-core` 40 passed
+- `pnpm -C apps/web test` 11 passed
+- `pnpm -C apps/web build` [ok]

@@ -32,3 +32,10 @@ Delivered helm_uninstall engine API + Tauri IPC command (P1-3 complete). Engine 
 - 2026-03-24: Azure OpenAI sovereign-cloud support is incomplete unless the selected `AzureCloud` controls both endpoint suffix validation and the Azure-login authority host for `DefaultAzureCredential`.
 - 2026-03-24: The AI Insights context builder should stay pure over `ResourceStore` plus explicit `ConnectionState`, Helm release summaries, and a narrow AKS summary input so `crates/engine` stays independent from Tauri orchestration and the Azure transport crate.
 - 2026-03-24: Namespace-scoped AI Insights requests must omit cluster-only sections like node posture and AKS posture, and allowlist-only shaping needs deterministic caps, stable ordering, and explicit redaction for token-like, kubeconfig-like, and connection-string text even in otherwise safe summary fields.
+
+### 2026-03-24 -- AI Insights Deficiency Fixes
+
+- Fixed `response_format_json()` to conditionally insert the `description` key only when `Some`, preventing Azure OpenAI from rejecting a `null` value on the structured output wire format. The struct-level `#[serde(skip_serializing_if)]` is redundant since manual `Value` construction controls the wire path.
+- Added explicit HTTP 408/504 branches in `classify_openai_response_error()` mapping to `AzureError::OpenAiTimeout`, and HTTP 429 mapping to `OpenAiApi` with code `"TooManyRequests"`. Ordering is safe after 401/403/404.
+- Added 5 new engine tests for cross-namespace pod/event filtering and per-category cap enforcement (pod, event, node, Helm release). All use contract constants for cap values.
+- Dallas and Kane approved all fixes on first review pass.

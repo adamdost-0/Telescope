@@ -95,3 +95,9 @@ Dallas led the GitHub Pages docs structure workstream. Created `docs/_config.yml
 - Azure OpenAI sovereign-cloud correctness requires the selected cloud to configure both endpoint validation and `DefaultAzureCredential` authority construction.
 - Provider-side 401s need separate AI-specific classification from local credential acquisition failures so Settings guidance stays accurate.
 
+### 2026-03-24 — AI Insights Deficiency Fix Review
+
+- Reviewed and approved three deficiency fixes: JSON schema null-description serialization in `response_format_json()`, HTTP 408/504/429 classification in `classify_openai_response_error()`, and five new context-builder cap and filtering tests.
+- Key review finding: the `#[serde(skip_serializing_if)]` on `AzureOpenAiResponseFormatJsonSchema.description` is redundant since the struct is never directly serialized to the wire -- the manual `Value` builder controls the actual payload. Harmless but could mislead contributors.
+- All fixes are narrow, contract-aligned, and correctly ordered (408/504/429 branches follow 401/403/404 checks). No regressions.
+

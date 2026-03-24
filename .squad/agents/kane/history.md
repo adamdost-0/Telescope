@@ -43,3 +43,12 @@ Fixed P2 route E2E test mismatches in `tests-e2e/p2-routes.spec.ts` — aligned 
 - 2026-03-24: Task 3 AI Insights context-builder acceptance is satisfied by targeted Rust coverage for allowlist-only shaping, redaction, stable ordering, namespace scope, and deterministic caps, even if broader workspace checks still have unrelated pre-existing failures outside the engine slice.
 - 2026-03-24: Low-risk follow-up gaps after initial context-builder acceptance are explicit cap-overrun coverage for pod, event, node, and Helm collections and an explicit namespace-filtering regression test for cross-namespace pods and events.
 
+### 2026-03-24 -- AI Insights Deficiency Fix QA
+
+- Accepted deficiency fix batch: 37 targeted tests pass, 0 failures, no false positives detected.
+- Fix 1 (null description): both positive and negative tests exercise the real `build_wire_request` code path, confirming key presence/absence.
+- Fix 2 (408/504/429): tests use `map_openai_response_error` (full classification path including JSON parsing), not the inner classifier directly, confirming end-to-end behavior.
+- Fix 3 (5 new context tests): closes the remaining cap-overrun and cross-namespace filtering gaps identified during Task 3 acceptance.
+- Observation: the redundant `#[serde(skip_serializing_if)]` annotation on `AzureOpenAiResponseFormatJsonSchema.description` is cosmetic and does not affect correctness.
+- All previously identified low-risk follow-up gaps are now resolved.
+
