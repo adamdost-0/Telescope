@@ -1,6 +1,6 @@
 ---
 title: Smoke Test
-nav_order: 9
+nav_order: 11
 description: "Local k3d validation checklist for core Kubernetes features"
 ---
 

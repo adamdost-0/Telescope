@@ -1,6 +1,6 @@
 ---
 title: Security
-nav_order: 5
+nav_order: 6
 description: "Threat model, secret handling, audit logging, and credential management"
 ---
 

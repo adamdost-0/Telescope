@@ -1,6 +1,6 @@
 ---
 title: Architecture
-nav_order: 2
+nav_order: 3
 description: "System design, crate layering, watch model, IPC surface, and data flow"
 ---
 

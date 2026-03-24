@@ -1,6 +1,6 @@
 ---
 title: Deployment
-nav_order: 4
+nav_order: 5
 description: "Build, bundle, and distribute the Telescope desktop application"
 ---
 

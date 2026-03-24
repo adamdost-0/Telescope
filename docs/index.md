@@ -37,14 +37,23 @@ Telescope is a **shipped v1.0.0 desktop application** that gives Kubernetes oper
 
 ## Documentation
 
-### Core
+### Getting Started
+{: .text-delta }
+
+| Document | Description |
+|:---------|:------------|
+| [Features]({{ site.baseurl }}/FEATURES) | Full feature matrix — Kubernetes, Azure ARM, Helm, and desktop capabilities |
+| [AKS Quick Start]({{ site.baseurl }}/AKS_QUICKSTART) | Connect Telescope to an AKS cluster in under 5 minutes |
+| [Deployment]({{ site.baseurl }}/DEPLOYMENT) | Download, build, bundle, and distribute the desktop application |
+| [Development]({{ site.baseurl }}/DEVELOPMENT) | Prerequisites, build commands, and local development workflow |
+
+### Architecture and Design
 {: .text-delta }
 
 | Document | Description |
 |:---------|:------------|
 | [Architecture]({{ site.baseurl }}/ARCHITECTURE) | System design, crate layering, watch model, IPC surface, and data flow |
-| [AKS Quick Start]({{ site.baseurl }}/AKS_QUICKSTART) | Connect Telescope to an AKS cluster in under 5 minutes |
-| [Deployment]({{ site.baseurl }}/DEPLOYMENT) | Build, bundle, and distribute the desktop application |
+| [UX Reference]({{ site.baseurl }}/UX_NOTES) | Route inventory, navigation patterns, component catalog |
 
 ### Operations
 {: .text-delta }
@@ -61,8 +70,8 @@ Telescope is a **shipped v1.0.0 desktop application** that gives Kubernetes oper
 | Document | Description |
 |:---------|:------------|
 | [Roadmap]({{ site.baseurl }}/ROADMAP) | Post-v1.0.0 milestones and priorities |
-| [UX Reference]({{ site.baseurl }}/UX_NOTES) | Route inventory, navigation patterns, component catalog |
 | [Changelog](https://github.com/adamdost-0/Telescope/blob/main/CHANGELOG.md) | Release history and version notes |
+| [Contributing](https://github.com/adamdost-0/Telescope/blob/main/CONTRIBUTING.md) | How to contribute to Telescope |
 
 ---
 

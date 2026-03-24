@@ -1,6 +1,6 @@
 ---
 title: UX Reference
-nav_order: 8
+nav_order: 10
 description: "Route inventory, navigation patterns, and component catalog"
 ---
 

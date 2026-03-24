@@ -1,6 +1,6 @@
 ---
 title: Testing
-nav_order: 6
+nav_order: 7
 description: "Test pyramid — Rust unit tests, Vitest, Playwright E2E"
 ---
 

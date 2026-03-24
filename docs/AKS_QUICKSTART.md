@@ -1,6 +1,6 @@
 ---
 title: AKS Quick Start
-nav_order: 3
+nav_order: 4
 description: "Connect Telescope to an AKS cluster in under 5 minutes"
 ---
 
