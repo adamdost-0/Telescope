@@ -3,6 +3,7 @@
  * All calls go through Tauri invoke — no HTTP fallback.
  */
 import {
+  AI_INSIGHTS_SETTINGS_KEYS,
   type ClusterContext,
   type ClusterInfo,
   type CrdInfo,
@@ -17,6 +18,10 @@ import {
   type AksUpgradeProfile,
   type AksMaintenanceConfig,
   type PoolUpgradeProfile,
+  type AiInsightsSettings,
+  createDefaultAiInsightsSettings,
+  parseAiInsightsAuthMode,
+  parseAiInsightsCloudProfile,
 } from './tauri-commands';
 
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -510,6 +515,45 @@ export async function getPreference(key: string): Promise<string | null> {
 /** Write a single user preference. */
 export async function setPreference(key: string, value: string): Promise<void> {
   await invoke<void>('set_preference', { key, value });
+}
+
+async function getStoredAiInsightsCloudProfile(): Promise<
+  ReturnType<typeof parseAiInsightsCloudProfile>
+> {
+  return parseAiInsightsCloudProfile(
+    await getPreference(AI_INSIGHTS_SETTINGS_KEYS.cloudProfile),
+  );
+}
+
+/** Load the non-secret AI Insights settings contract from persisted preferences. */
+export async function getAiInsightsSettings(): Promise<AiInsightsSettings> {
+  const [endpoint, deploymentName, authMode, cloudProfile, modelName] = await Promise.all([
+    getPreference(AI_INSIGHTS_SETTINGS_KEYS.endpoint),
+    getPreference(AI_INSIGHTS_SETTINGS_KEYS.deploymentName),
+    getPreference(AI_INSIGHTS_SETTINGS_KEYS.authMode),
+    getStoredAiInsightsCloudProfile(),
+    getPreference(AI_INSIGHTS_SETTINGS_KEYS.modelName),
+  ]);
+
+  return {
+    ...createDefaultAiInsightsSettings(cloudProfile),
+    endpoint: endpoint ?? '',
+    deploymentName: deploymentName ?? '',
+    authMode: parseAiInsightsAuthMode(authMode),
+    cloudProfile,
+    modelName: modelName === '' ? null : modelName,
+  };
+}
+
+/** Persist the non-secret AI Insights settings contract using dedicated AI preference keys. */
+export async function setAiInsightsSettings(settings: AiInsightsSettings): Promise<void> {
+  await Promise.all([
+    setPreference(AI_INSIGHTS_SETTINGS_KEYS.endpoint, settings.endpoint),
+    setPreference(AI_INSIGHTS_SETTINGS_KEYS.deploymentName, settings.deploymentName),
+    setPreference(AI_INSIGHTS_SETTINGS_KEYS.authMode, settings.authMode),
+    setPreference(AI_INSIGHTS_SETTINGS_KEYS.cloudProfile, settings.cloudProfile),
+    setPreference(AI_INSIGHTS_SETTINGS_KEYS.modelName, settings.modelName ?? ''),
+  ]);
 }
 
 // ── AKS identity resolution ─────────────────────────────────────────────

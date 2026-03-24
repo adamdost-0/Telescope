@@ -1,6 +1,7 @@
 pub mod aks;
 pub mod client;
 pub mod error;
+pub mod openai;
 pub mod resolve;
 pub mod types;
 
@@ -12,9 +13,16 @@ pub use aks::{
     PoolUpgradeProfile, PowerState, UpgradeProfile,
 };
 pub use client::ArmClient;
-pub use error::{AzureError, Result};
+pub use error::{AzureAiProviderErrorClass, AzureError, Result};
+pub use openai::{
+    AzureOpenAiAuth, AzureOpenAiChatCompletion, AzureOpenAiChatCompletionsRequest,
+    AzureOpenAiChatMessage, AzureOpenAiChatRole, AzureOpenAiClient,
+    AzureOpenAiClientOptions, AzureOpenAiConnectionTestResult, AzureOpenAiEndpoint,
+    AzureOpenAiResponseFormat, AzureOpenAiResponseFormatJsonSchema,
+    AzureOpenAiTokenUsage,
+};
 pub use resolve::{
     inspect_aks_identity_preferences, resolve_aks_identity, resolve_aks_identity_from_preferences,
     unresolved_aks_identity_message, AksIdentityPreferenceStatus,
 };
-pub use types::{AksResourceId, AzureCloud, AKS_API_VERSION};
+pub use types::{AksResourceId, AzureCloud, AKS_API_VERSION, AZURE_OPENAI_API_VERSION};

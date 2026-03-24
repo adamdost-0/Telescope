@@ -3,6 +3,44 @@
  * These match the #[tauri::command] functions in src-tauri/src/main.rs.
  */
 
+export {
+  AI_INSIGHTS_AUTH_MODES,
+  AI_INSIGHTS_CLOUD_PROFILES,
+  AI_INSIGHTS_PROVIDER_ERROR_CLASSES,
+  AI_INSIGHTS_SETTINGS_KEYS,
+  AZURE_CLOUD_PROFILES,
+  DEFAULT_AI_INSIGHTS_AUTH_MODE,
+  DEFAULT_AZURE_CLOUD_PROFILE,
+  createDefaultAiInsightsSettings,
+  isAiInsightsAuthMode,
+  isAiInsightsCloudProfile,
+  isAiInsightsDevDiagnostics,
+  isAiInsightsProviderErrorClass,
+  isAiInsightsResponse,
+  isAzureCloudProfile,
+  parseAiInsightsAuthMode,
+  parseAiInsightsCloudProfile,
+  parseAzureCloudProfile,
+} from './insights';
+
+export type {
+  AiInsightsAuthMode,
+  AiInsightsCloudProfile,
+  AiInsightsContextSize,
+  AiInsightsDevDiagnostics,
+  AiInsightsObservation,
+  AiInsightsProviderErrorClass,
+  AiInsightsRecommendation,
+  AiInsightsReference,
+  AiInsightsResponse,
+  AiInsightsRisk,
+  AiInsightsRiskImpact,
+  AiInsightsSchemaValidationFailure,
+  AiInsightsSettings,
+  AiInsightsSettingsKey,
+  AzureCloudProfile,
+} from './insights';
+
 export interface ClusterContext {
   name: string;
   cluster_server: string | null;

@@ -14,3 +14,8 @@ telescope-core = { path = "../core" }
 tokio = { version = "1", features = ["full", "process"] }
 tracing = "0.1"
 thiserror = "2"
+
+[dev-dependencies]
+async-trait = "0.1.89"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+typespec_client_core = "0.1.0"

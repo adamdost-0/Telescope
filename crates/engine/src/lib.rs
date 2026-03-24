@@ -8,6 +8,8 @@ pub mod dynamic;
 pub mod error;
 pub mod exec;
 pub mod helm;
+pub mod insights;
+pub mod insights_context;
 pub mod kubeconfig;
 pub mod logs;
 pub mod metrics;

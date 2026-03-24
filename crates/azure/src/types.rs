@@ -53,6 +53,24 @@ impl AzureCloud {
             Self::UsGovTopSecret => "https://management.azure.microsoft.eaglex.ic.gov/.default",
         }
     }
+
+    pub fn openai_host_suffix(&self) -> &str {
+        match self {
+            Self::Commercial => "openai.azure.com",
+            Self::UsGovernment => "openai.azure.us",
+            Self::UsGovSecret => "openai.azure.microsoft.scloud",
+            Self::UsGovTopSecret => "openai.azure.microsoft.eaglex.ic.gov",
+        }
+    }
+
+    pub fn openai_token_scope(&self) -> &str {
+        match self {
+            Self::Commercial => "https://ai.azure.com/.default",
+            Self::UsGovernment => "https://ai.azure.us/.default",
+            Self::UsGovSecret => "https://ai.azure.microsoft.scloud/.default",
+            Self::UsGovTopSecret => "https://ai.azure.microsoft.eaglex.ic.gov/.default",
+        }
+    }
 }
 
 /// AKS cluster resource identifier
@@ -85,6 +103,7 @@ impl AksResourceId {
 }
 
 pub const AKS_API_VERSION: &str = "2024-09-01";
+pub const AZURE_OPENAI_API_VERSION: &str = "2024-10-21";
 
 #[cfg(test)]
 mod tests {
@@ -131,6 +150,46 @@ mod tests {
         assert_eq!(
             AzureCloud::UsGovernment.token_scope(),
             "https://management.usgovcloudapi.net/.default"
+        );
+    }
+
+    #[test]
+    fn cloud_openai_host_suffixes() {
+        assert_eq!(
+            AzureCloud::Commercial.openai_host_suffix(),
+            "openai.azure.com"
+        );
+        assert_eq!(
+            AzureCloud::UsGovernment.openai_host_suffix(),
+            "openai.azure.us"
+        );
+        assert_eq!(
+            AzureCloud::UsGovSecret.openai_host_suffix(),
+            "openai.azure.microsoft.scloud"
+        );
+        assert_eq!(
+            AzureCloud::UsGovTopSecret.openai_host_suffix(),
+            "openai.azure.microsoft.eaglex.ic.gov"
+        );
+    }
+
+    #[test]
+    fn cloud_openai_token_scopes() {
+        assert_eq!(
+            AzureCloud::Commercial.openai_token_scope(),
+            "https://ai.azure.com/.default"
+        );
+        assert_eq!(
+            AzureCloud::UsGovernment.openai_token_scope(),
+            "https://ai.azure.us/.default"
+        );
+        assert_eq!(
+            AzureCloud::UsGovSecret.openai_token_scope(),
+            "https://ai.azure.microsoft.scloud/.default"
+        );
+        assert_eq!(
+            AzureCloud::UsGovTopSecret.openai_token_scope(),
+            "https://ai.azure.microsoft.eaglex.ic.gov/.default"
         );
     }
 

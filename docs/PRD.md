@@ -146,3 +146,132 @@ Telescope is an open-source **desktop Kubernetes IDE** built with **Tauri + Svel
 | **M8** | Resource Breadth + Operator Workflows | [x] Complete | Expanded built-in resource coverage, generic actions, cluster-wide inventory depth, and desktop workflow consolidation |
 | **M9** | Desktop Resource Expansion | [x] Complete | 16 primary Kubernetes resource blades and 28+ watched resource types shipped in the desktop cache |
 | **M10** | Azure ARM Management Plane | [x] Complete | `telescope-azure` ARM client, AKS node-pool CRUD, cluster start/stop, upgrade management, and ARM-backed diagnostics |
+
+## 9) Planned Addendum — AI Insights
+
+> Status: Planned. This section defines the intended v1 scope for AI-generated operational insights. It does not describe shipped behavior.
+
+### Summary
+AI Insights will provide a separate route in the desktop app that summarizes current Kubernetes and AKS state, highlights notable risks, and suggests next actions using Azure OpenAI. The feature is advisory only: it does not execute changes, it must respect existing RBAC and namespace scope, and it must avoid sending secrets or unsafe raw payloads to the model.
+
+### Product intent
+- Give operators a fast, grounded readout of cluster posture without replacing deterministic troubleshooting views.
+- Use the existing local cache, watcher state, and AKS ARM detail as the source material for synthesis.
+- Make insight generation feel first-party and operator-oriented, not like a generic chatbot bolted onto the product.
+
+### v1 decisions
+- **Authentication:** support two user-selectable auth paths in v1: Azure login context via Azure RBAC when available, or API key fallback.
+- **Provider scope:** Azure OpenAI is the only in-scope provider for v1.
+- **Cloud environment pinning:** tenant pinning is not required in v1, but the product should expose cloud profile selection in the UI and support future Azure Government / Secret / Top Secret endpoint handling.
+- **UI placement:** AI Insights ships as a separate route, not as an additional tab inside Overview.
+- **Prompt preview:** no user-facing sanitized prompt preview in v1.
+- **Persistence:** persist generated insights in encrypted local history, retaining only the last 3 entries per cluster.
+- **Context shaping:** prefer broad contextual coverage across the available cluster and AKS state, while still enforcing hard size limits before provider calls.
+- **Redaction:** use an allowlist-only input policy; send curated summary fields rather than raw resource objects.
+- **Diagnostics:** expose dev-mode metadata only, not a general-user debugging panel.
+
+### Goals
+- Generate a concise summary of cluster and AKS state using local product context.
+- Surface risks, observations, and recommended next actions with references back to real resources.
+- Fail safely and clearly when AI configuration or provider access is unavailable.
+
+### Non-goals
+- General-purpose chat assistant behavior.
+- Auto-remediation or direct execution of model-suggested actions.
+- Persisting raw prompts or raw model outputs by default.
+- Cross-tenant AI routing logic in v1.
+
+### Functional outline
+- Add a dedicated route for Insights in the desktop UI.
+- Provide Settings support for Azure OpenAI endpoint, deployment/model name, cloud profile, and auth mode configuration.
+- During the "Test connection" flow, use the configured endpoint and the selected auth mode to validate a real chat-completions-capable request path.
+- Build a scoped context payload from cached Kubernetes resources, recent failures, cluster conditions, Helm state, and AKS ARM details when available, with broad coverage and deterministic size caps.
+- Redact or omit secrets, token-like values, kubeconfigs, and other sensitive fields before any model call using an allowlist-only context builder.
+- Return structured output that the UI can render deterministically: summary, risks, observations, recommendations, and related resource references.
+- Persist generated insights locally in encrypted storage for offline review and later comparison, retaining only the last 3 entries per cluster and exposing a clear-all control for the current cluster.
+
+### Data and trust boundaries
+- Use only data already available to the app through the current user context, watcher cache, and authorized ARM reads.
+- Never expand scope just for the AI feature.
+- Never include Kubernetes Secret payloads, service-account tokens, connection strings, or obvious credential material in model input.
+- Prefer sending normalized summaries and selected safe fields over raw Kubernetes object bodies.
+- Treat AI output as advisory text that must link back to product-visible state.
+
+### Authentication and configuration intent
+The v1 design should support two user-selectable authentication paths:
+
+1. **Azure login context:** use an existing authenticated Azure user context and Azure RBAC when it is already available to the app environment.
+2. **API key:** fallback path for local development, explicit service configuration, and environments without a usable Azure login context.
+
+This should be a UX-visible setting rather than an implicit transport decision. For Azure login context, the product should use `DefaultAzureCredential()` to authenticate against the user-provided Azure OpenAI endpoint during the "Test connection" flow. If the credential resolves successfully but the user lacks RBAC to perform the chat completions request, the product must fail gracefully, explain that Azure RBAC access to the endpoint is insufficient, and suggest switching to API key authentication. The configuration surface should also expose cloud profile selection so sovereign cloud variants can be added without redesigning the feature.
+
+### Context shaping intent
+The model should receive broad but curated context, not a narrow incident snapshot and not an unbounded dump of raw objects. The goal is to give the model enough surrounding signal to reason about interacting issues while still constraining payload size and protecting sensitive data.
+
+This implies:
+
+- broad coverage across workloads, events, node conditions, Helm state, and AKS posture when available;
+- fixed deterministic caps per category before serialization;
+- normalized summaries and rankings over raw object blobs;
+- stable ordering so repeated requests produce comparable inputs.
+
+### System prompt intent
+The system prompt is not meant to be a hidden personality layer or an open-ended assistant instruction set. Its purpose is to enforce product behavior and response boundaries. The intent is to make the model act like a constrained Kubernetes and AKS operations summarizer that:
+
+- prioritizes accuracy over completeness;
+- grounds every conclusion in the provided context only;
+- avoids speculation when evidence is weak or missing;
+- never asks the user for secrets or additional credentials;
+- never recommends destructive action without naming the observed condition that justifies it;
+- produces output in a strict, renderable schema.
+
+In other words, the prompt should shape the model into a deterministic synthesis step inside Telescope, not a freeform chat persona.
+
+### Proposed system prompt contract
+The exact wording can change during implementation, but the prompt should encode these rules:
+
+```text
+You are Telescope AI Insights, an operations summarizer for a desktop Kubernetes IDE.
+
+Your job is to analyze the provided Kubernetes and AKS context and return a concise, evidence-based assessment for the current cluster or namespace scope.
+
+Rules:
+- Use only the supplied context. If something is missing, say that it is not available.
+- Do not invent resources, states, incidents, or metrics.
+- Treat all output as advisory. Do not claim an action has been executed.
+- Never request secrets, credentials, tokens, kubeconfigs, or hidden configuration.
+- Prefer concrete observations over generic best practices.
+- If recommending an action, explain why it follows from the observed state.
+- If risk is uncertain, lower confidence and say why.
+- Respect the provided scope. If the context is namespace-limited, do not make cluster-wide claims.
+- Return valid JSON matching the required schema.
+
+Output schema:
+{
+	"summary": string,
+	"risks": [{"title": string, "detail": string, "impact": "low" | "medium" | "high"}],
+	"observations": [{"area": string, "detail": string}],
+	"recommendations": [{"action": string, "rationale": string, "confidence": number}],
+	"references": [{"kind": string, "name": string, "namespace": string | null}]
+}
+```
+
+### Why this prompt shape is the right intent
+- It keeps the model subordinate to Telescope's actual data model.
+- It reduces hallucination risk by banning unstated assumptions.
+- It makes UI rendering stable because the output contract is explicit.
+- It supports future provider changes because the prompt describes product behavior, not vendor-specific tricks.
+- It fits the product direction: first-party operator workflow, not a generic conversational assistant.
+
+### Diagnostics intent
+Because v1 excludes prompt preview, supportability should come from dev-mode metadata only. That metadata should be shown on the Settings page in dev mode and include prompt version, redaction policy version, cloud profile, auth mode, context-size statistics, schema-validation failures, and provider error classification without exposing prompt bodies or sensitive payloads.
+
+### Acceptance criteria for planning
+- The implementation plan supports Azure login context and API key authentication paths, selectable in the UI.
+- The route architecture assumes a dedicated Insights page.
+- The prompt contract is schema-first and evidence-bound.
+- Cloud profile selection is exposed in v1 and configuration design does not block sovereign cloud endpoint support.
+- Persistence behavior assumes encrypted local history, retaining only the last 3 entries per cluster, with a clear-all control for the current cluster.
+- The context builder uses allowlist-only serialization and fixed deterministic per-category caps even when broad contextual coverage is enabled.
+- Azure login path uses `DefaultAzureCredential()` during test-connect validation and surfaces explicit RBAC failure guidance when chat completions access is denied.
+- Debug support is limited to dev-mode metadata on the Settings page and excludes prompt preview.
