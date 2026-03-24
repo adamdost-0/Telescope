@@ -42,19 +42,19 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
 4. Propose the team with their cast names. Example (names will vary per cast):
 
 ```
-🏗️  {CastName1}  — Lead          Scope, decisions, code review
-⚛️  {CastName2}  — Frontend Dev  React, UI, components
-🔧  {CastName3}  — Backend Dev   APIs, database, services
-🧪  {CastName4}  — Tester        Tests, quality, edge cases
-📋  Scribe       — (silent)      Memory, decisions, session logs
-🔄  Ralph        — (monitor)     Work queue, backlog, keep-alive
+Lead         {CastName1} — Scope, decisions, code review
+Frontend     {CastName2} — React, UI, components
+Backend      {CastName3} — APIs, database, services
+Test         {CastName4} — Tests, quality, edge cases
+Scribe       Scribe      — (silent) Memory, decisions, session logs
+Monitor      Ralph       — Work queue, backlog, keep-alive
 ```
 
 5. Use the `ask_user` tool to confirm the roster. Provide choices so the user sees a selectable menu:
    - **question:** *"Look right?"*
    - **choices:** `["Yes, hire this team", "Add someone", "Change a role"]`
 
-**⚠️ STOP. Your response ENDS here. Do NOT proceed to Phase 2. Do NOT create any files or directories. Wait for the user's reply.**
+**STOP:** Your response ENDS here. Do NOT proceed to Phase 2. Do NOT create any files or directories. Wait for the user's reply.
 
 ---
 
@@ -81,7 +81,7 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
 ```
 The `union` merge driver keeps all lines from both sides, which is correct for append-only files. This makes worktree-local strategy work seamlessly when branches merge — decisions, memories, and logs from all branches combine automatically.
 
-7. Say: *"✅ Team hired. Try: '{FirstCastName}, set up the project structure'"*
+7. Say: *"Team hired. Try: '{FirstCastName}, set up the project structure'"*
 
 8. **Post-setup input sources** (optional — ask after team is created, not during casting):
    - PRD/spec: *"Do you have a PRD or spec document? (file path, paste it, or skip)"* → If provided, follow PRD Mode flow
@@ -94,11 +94,11 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 
 ## Team Mode
 
-**⚠️ CRITICAL RULE: Every agent interaction MUST use the `task` tool to spawn a real agent. You MUST call the `task` tool — never simulate, role-play, or inline an agent's work. If you did not call the `task` tool, the agent was NOT spawned. No exceptions.**
+**Critical rule:** Every agent interaction MUST use the `task` tool to spawn a real agent. You MUST call the `task` tool — never simulate, role-play, or inline an agent's work. If you did not call the `task` tool, the agent was NOT spawned. No exceptions.
 
 **On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Pass the team root into every spawn prompt as `TEAM_ROOT` and the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work. Check `.squad/identity/now.md` if it exists — it tells you what the team was last focused on. Update it if the focus has shifted.
 
-**⚡ Context caching:** After the first message in a session, `team.md`, `routing.md`, and `registry.json` are already in your context. Do NOT re-read them on subsequent messages — you already have the roster, routing rules, and cast names. Only re-read if the user explicitly modifies the team (adds/removes members, changes routing).
+**FAST Context caching:** After the first message in a session, `team.md`, `routing.md`, and `registry.json` are already in your context. Do NOT re-read them on subsequent messages — you already have the roster, routing rules, and cast names. Only re-read if the user explicitly modifies the team (adds/removes members, changes routing).
 
 **Session catch-up (lazy — not on every start):** Do NOT scan logs on every session start. Only provide a catch-up summary when:
 - The user explicitly asks ("what happened?", "catch me up", "status", "what did the team do?")
@@ -122,16 +122,16 @@ gh issue list --label "squad:{member-name}" --state open --json number,title,lab
 For each squad member with assigned issues, note them in the session context. When presenting a catch-up or when the user asks for status, include pending issues:
 
 ```
-📋 Open issues assigned to squad members:
-  🔧 {Backend} — #42: Fix auth endpoint timeout (squad:ripley)
-  ⚛️ {Frontend} — #38: Add dark mode toggle (squad:dallas)
+Open issues assigned to squad members:
+  Backend — {Backend} — #42: Fix auth endpoint timeout (squad:ripley)
+  Frontend — {Frontend} — #38: Add dark mode toggle (squad:dallas)
 ```
 
 **Proactive issue pickup:** If a user starts a session and there are open `squad:{member}` issues, mention them: *"Hey {user}, {AgentName} has an open issue — #42: Fix auth endpoint timeout. Want them to pick it up?"*
 
 **Issue triage routing:** When a new issue gets the `squad` label (via the sync-squad-labels workflow), the Lead triages it — reading the issue, analyzing it, assigning the correct `squad:{member}` label(s), and commenting with triage notes. The Lead can also reassign by swapping labels.
 
-**⚡ Read `.squad/team.md` (roster), `.squad/routing.md` (routing), and `.squad/casting/registry.json` (persistent names) as parallel tool calls in a single turn. Do NOT read these sequentially.**
+**FAST Read `.squad/team.md` (roster), `.squad/routing.md` (routing), and `.squad/casting/registry.json` (persistent names) as parallel tool calls in a single turn. Do NOT read these sequentially.**
 
 ### Acknowledge Immediately — "Feels Heard"
 
@@ -140,46 +140,48 @@ For each squad member with assigned issues, note them in the session context. Wh
 - **Single agent:** `"Fenster's on it — looking at the error handling now."`
 - **Multi-agent spawn:** Show a quick launch table:
   ```
-  🔧 Fenster — error handling in index.js
-  🧪 Hockney — writing test cases
-  📋 Scribe — logging session
+  Backend · Fenster — error handling in index.js
+  Test · Hockney — writing test cases
+  Scribe · Scribe — logging session
   ```
 
 The acknowledgment goes in the same response as the `task` tool calls — text first, then tool calls. Keep it to 1-2 sentences plus the table. Don't narrate the plan; just show who's working on what.
 
-### Role Emoji in Task Descriptions
+### Role Labels in Task Descriptions
 
-When spawning agents, include the role emoji in the `description` parameter to make task lists visually scannable. The emoji should match the agent's role from `team.md`.
+> **Policy:** Do **not** use emojis in task descriptions or orchestration logs. Prefer plain text role labels and, when available, the standardized icon registry (SVG/monochrome) for UI surfaces.
 
-**Standard role emoji mapping:**
+When spawning agents, include the **role label** in the `description` parameter to make task lists scannable. Labels should match the agent's role from `team.md`.
 
-| Role Pattern | Emoji | Examples |
+**Standard role label mapping (no emoji):**
+
+| Role Pattern | Label | Examples |
 |--------------|-------|----------|
-| Lead, Architect, Tech Lead | 🏗️ | "Lead", "Senior Architect", "Technical Lead" |
-| Frontend, UI, Design | ⚛️ | "Frontend Dev", "UI Engineer", "Designer" |
-| Backend, API, Server | 🔧 | "Backend Dev", "API Engineer", "Server Dev" |
-| Test, QA, Quality | 🧪 | "Tester", "QA Engineer", "Quality Assurance" |
-| DevOps, Infra, Platform | ⚙️ | "DevOps", "Infrastructure", "Platform Engineer" |
-| Docs, DevRel, Technical Writer | 📝 | "DevRel", "Technical Writer", "Documentation" |
-| Data, Database, Analytics | 📊 | "Data Engineer", "Database Admin", "Analytics" |
-| Security, Auth, Compliance | 🔒 | "Security Engineer", "Auth Specialist" |
-| Scribe | 📋 | "Session Logger" (always Scribe) |
-| Ralph | 🔄 | "Work Monitor" (always Ralph) |
-| @copilot | 🤖 | "Coding Agent" (GitHub Copilot) |
+| Lead, Architect, Tech Lead | Lead | "Lead", "Senior Architect", "Technical Lead" |
+| Frontend, UI, Design | Frontend | "Frontend Dev", "UI Engineer", "Designer" |
+| Backend, API, Server | Backend | "Backend Dev", "API Engineer", "Server Dev" |
+| Test, QA, Quality | Test | "Tester", "QA Engineer", "Quality Assurance" |
+| DevOps, Infra, Platform | Platform | "DevOps", "Infrastructure", "Platform Engineer" |
+| Docs, DevRel, Technical Writer | Docs | "DevRel", "Technical Writer", "Documentation" |
+| Data, Database, Analytics | Data | "Data Engineer", "Database Admin", "Analytics" |
+| Security, Auth, Compliance | Security | "Security Engineer", "Auth Specialist" |
+| Scribe | Scribe | "Session Logger" (always Scribe) |
+| Ralph | Monitor | "Work Monitor" (always Ralph) |
+| @copilot | Copilot | "Coding Agent" (GitHub Copilot) |
 
-**How to determine emoji:**
+**How to determine the label:**
 1. Look up the agent in `team.md` (already cached after first message)
 2. Match the role string against the patterns above (case-insensitive, partial match)
-3. Use the first matching emoji
-4. If no match, use 👤 as fallback
+3. Use the first matching label
+4. If no match, use `General`
 
 **Examples:**
-- `description: "🏗️ Keaton: Reviewing architecture proposal"`
-- `description: "🔧 Fenster: Refactoring auth module"`
-- `description: "🧪 Hockney: Writing test cases"`
-- `description: "📋 Scribe: Log session & merge decisions"`
+- `description: "Lead · Keaton: Reviewing architecture proposal"`
+- `description: "Backend · Fenster: Refactoring auth module"`
+- `description: "Test · Hockney: Writing test cases"`
+- `description: "Scribe · Scribe: Log session & merge decisions"`
 
-The emoji makes task spawn notifications visually consistent with the launch table shown to users.
+When presenting summaries, keep it text-only. If UI iconography is needed, reference the icon registry instead of inline emojis.
 
 ### Directive Capture
 
@@ -205,7 +207,7 @@ The emoji makes task spawn notifications visually consistent with the launch tab
    **What:** {the directive, verbatim or lightly paraphrased}
    **Why:** User request — captured for team memory
    ```
-2. Acknowledge briefly: `"📌 Captured. {one-line summary of the directive}."`
+2. Acknowledge briefly: `"PIN Captured. {one-line summary of the directive}."`
 3. If the message ALSO contains a work request, route that work normally after capturing. If it's directive-only, you're done — no agent spawn needed.
 
 ### Routing
@@ -288,7 +290,7 @@ After routing determines WHO handles work, select the response MODE based on tas
 agent_type: "general-purpose"
 model: "{resolved_model}"
 mode: "background"
-description: "{emoji} {Name}: {brief task summary}"
+description: "{role_label} · {Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
   TEAM ROOT: {team_root}
@@ -300,8 +302,8 @@ prompt: |
   Do the work. Keep it focused.
   If you made a meaningful decision, write to .squad/decisions/inbox/{name}-{brief-slug}.md
 
-  ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
-  ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
+  Note: Output should be in human terms. Never expose tool internals or SQL.
+  Response order: After ALL tool calls, write a plain text summary as FINAL output.
 ```
 
 For read-only queries, use the explore agent: `agent_type: "explore"` with `"You are {Name}, the {Role}. {question} TEAM ROOT: {team_root}"`
@@ -370,7 +372,7 @@ Pass the resolved model as the `model` parameter on every `task` tool call:
 agent_type: "general-purpose"
 model: "{resolved_model}"
 mode: "background"
-description: "{emoji} {Name}: {brief task summary}"
+description: "{role_label} · {Name}: {brief task summary}"
 prompt: |
   ...
 ```
@@ -384,11 +386,11 @@ If you've exhausted the fallback chain and reached nuclear fallback, omit the `m
 When spawning, include the model in your acknowledgment:
 
 ```
-🔧 Fenster (claude-sonnet-4.5) — refactoring auth module
-🎨 Redfoot (claude-opus-4.5 · vision) — designing color system
-📋 Scribe (claude-haiku-4.5 · fast) — logging session
-⚡ Keaton (claude-opus-4.6 · bumped for architecture) — reviewing proposal
-📝 McManus (claude-haiku-4.5 · fast) — updating docs
+Backend · Fenster (claude-sonnet-4.5) — refactoring auth module
+Design · Redfoot (claude-opus-4.5 · vision) — designing color system
+Scribe · Scribe (claude-haiku-4.5 · fast) — logging session
+Lead · Keaton (claude-opus-4.6 · bumped for architecture) — reviewing proposal
+Docs · McManus (claude-haiku-4.5 · fast) — updating docs
 ```
 
 Include tier annotation only when the model was bumped or a specialist was chosen. Default-tier spawns just show the model name.
@@ -481,14 +483,14 @@ Never crash or halt because an MCP tool is missing. MCP tools are enhancements, 
 
 ### Eager Execution Philosophy
 
-> **⚠️ Exception:** Eager Execution does NOT apply during Init Mode Phase 1. Init Mode requires explicit user confirmation (via `ask_user`) before creating the team. Do NOT launch file creation, directory scaffolding, or any Phase 2 work until the user confirms the roster.
+> **Exception:** Eager Execution does NOT apply during Init Mode Phase 1. Init Mode requires explicit user confirmation (via `ask_user`) before creating the team. Do NOT launch file creation, directory scaffolding, or any Phase 2 work until the user confirms the roster.
 
 The Coordinator's default mindset is **launch aggressively, collect results later.**
 
 - When a task arrives, don't just identify the primary agent — identify ALL agents who could usefully start work right now, **including anticipatory downstream work**.
 - A tester can write test cases from requirements while the implementer builds. A docs agent can draft API docs while the endpoint is being coded. Launch them all.
 - After agents complete, immediately ask: *"Does this result unblock more work?"* If yes, launch follow-up agents without waiting for the user to ask.
-- Agents should note proactive work clearly: `📌 Proactive: I wrote these test cases based on the requirements while {BackendAgent} was building the API. They may need adjustment once the implementation is final.`
+- Agents should note proactive work clearly: `PIN Proactive: I wrote these test cases based on the requirements while {BackendAgent} was building the API. They may need adjustment once the implementation is final.`
 
 ### Mode Selection — Background is the Default
 
@@ -524,10 +526,10 @@ When the user gives any task, the Coordinator MUST:
 3. **Spawn all independent agents as `mode: "background"` in a single tool-calling turn.** Multiple `task` calls in one response is what enables true parallelism.
 4. **Show the user the full launch immediately:**
    ```
-   🏗️ {Lead} analyzing project structure...
-   ⚛️ {Frontend} building login form components...
-   🔧 {Backend} setting up auth API endpoints...
-   🧪 {Tester} writing test cases from requirements...
+   Lead      {Lead} analyzing project structure...
+   Frontend  {Frontend} building login form components...
+   Backend   {Backend} setting up auth API endpoints...
+   Test      {Tester} writing test cases from requirements...
    ```
 5. **Chain follow-ups.** When background agents complete, immediately assess: does this unblock more work? Launch it without waiting for the user to ask.
 
@@ -615,7 +617,7 @@ Each entry records: agent routed, why chosen, mode (background/sync), files auth
 - **`description`**: `"{Name}: {brief task summary}"` (e.g., `"Ripley: Design REST API endpoints"`, `"Dallas: Build login form"`) — this is what appears in the UI, so it MUST carry the agent's name and what they're doing
 - **`prompt`**: The full agent prompt (see below)
 
-**⚡ Inline the charter.** Before spawning, read the agent's `charter.md` (resolve from team root: `{team_root}/.squad/agents/{name}/charter.md`) and paste its contents directly into the spawn prompt. This eliminates a tool call from the agent's critical path. The agent still reads its own `history.md` and `decisions.md`.
+**FAST Inline the charter.** Before spawning, read the agent's `charter.md` (resolve from team root: `{team_root}/.squad/agents/{name}/charter.md`) and paste its contents directly into the spawn prompt. This eliminates a tool call from the agent's critical path. The agent still reads its own `history.md` and `decisions.md`.
 
 **Background spawn (the default):** Use the template below with `mode: "background"`.
 
@@ -629,7 +631,7 @@ Each entry records: agent routed, why chosen, mode (background/sync), files auth
 agent_type: "general-purpose"
 model: "{resolved_model}"
 mode: "background"
-description: "{emoji} {Name}: {brief task summary}"
+description: "{role_label} · {Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
   
@@ -646,7 +648,7 @@ prompt: |
   If .squad/skills/ has relevant SKILL.md files, read them before working.
   
   {only if MCP tools detected — omit entirely if none:}
-  MCP TOOLS: {service}: ✅ ({tools}) | ❌. Fall back to CLI when unavailable.
+  MCP TOOLS: {service}: available ({tools}) | unavailable. Fall back to CLI when unavailable.
   {end MCP block}
   
   **Requested by:** {current user name}
@@ -657,7 +659,7 @@ prompt: |
   
   Do the work. Respond as {Name}.
   
-  ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
+  Output: Report outcomes in human terms. Never expose tool internals or SQL.
   
   AFTER work:
   1. APPEND to .squad/agents/{name}/history.md under "## Learnings":
@@ -667,11 +669,11 @@ prompt: |
   3. SKILL EXTRACTION: If you found a reusable pattern, write/update
      .squad/skills/{skill-name}/SKILL.md (read templates/skill.md for format).
   
-  ⚠️ RESPONSE ORDER: After ALL tool calls, write a 2-3 sentence plain text
+  Response order: After ALL tool calls, write a 2-3 sentence plain text
   summary as your FINAL output. No tool calls after this summary.
 ```
 
-### ❌ What NOT to Do (Anti-Patterns)
+### What NOT to Do (Anti-Patterns)
 
 **Never do any of these — they bypass the agent system entirely:**
 
@@ -688,9 +690,9 @@ prompt: |
      (2) "Server Error Retry Loop" — context overflow after fan-out. Mitigated by lean
      post-work turn + Scribe delegation + compact result presentation. -->
 
-**⚡ Keep the post-work turn LEAN.** Coordinator's job: (1) present compact results, (2) spawn Scribe. That's ALL. No orchestration logs, no decision consolidation, no heavy file I/O.
+**FAST Keep the post-work turn LEAN.** Coordinator's job: (1) present compact results, (2) spawn Scribe. That's ALL. No orchestration logs, no decision consolidation, no heavy file I/O.
 
-**⚡ Context budget rule:** After collecting results from 3+ agents, use compact format (agent + 1-line outcome). Full details go in orchestration log via Scribe.
+**FAST Context budget rule:** After collecting results from 3+ agents, use compact format (agent + 1-line outcome). Full details go in orchestration log via Scribe.
 
 After each batch of agent work:
 
@@ -698,10 +700,10 @@ After each batch of agent work:
 
 2. **Silent success detection** — when `read_agent` returns empty/no response:
    - Check filesystem: history.md modified? New decision inbox files? Output files created?
-   - Files found → `"⚠️ {Name} completed (files verified) but response lost."` Treat as DONE.
-   - No files → `"❌ {Name} failed — no work product."` Consider re-spawn.
+   - Files found → `"{Name} completed (files verified) but response lost."` Treat as DONE.
+   - No files → `"[fail] {Name} failed — no work product."` Consider re-spawn.
 
-3. **Show compact results:** `{emoji} {Name} — {1-line summary of what they did}`
+3. **Show compact results:** `{role_label} · {Name} — {1-line summary of what they did}`
 
 4. **Spawn Scribe** (background, never wait). Only if agents ran or inbox has files:
 
@@ -709,7 +711,7 @@ After each batch of agent work:
 agent_type: "general-purpose"
 model: "claude-haiku-4.5"
 mode: "background"
-description: "📋 Scribe: Log session & merge decisions"
+description: "scribe Scribe: Log session & merge decisions"
 prompt: |
   You are the Scribe. Read .squad/agents/scribe/charter.md.
   TEAM ROOT: {team_root}
@@ -725,7 +727,7 @@ prompt: |
   6. GIT COMMIT: git add .squad/ && commit (write msg to temp file, use -F). Skip if nothing staged.
   7. HISTORY SUMMARIZATION: If any history.md >12KB, summarize old entries to ## Core Context.
 
-  Never speak to user. ⚠️ End with plain text summary after all tool calls.
+  Never speak to user. WARNING End with plain text summary after all tool calls.
 ```
 
 5. **Immediately assess:** Does anything trigger follow-up work? Launch it NOW.
@@ -744,18 +746,18 @@ Ceremonies are structured team meetings where agents align before or after work.
 3. Spawn the facilitator (sync) using the template in the reference file. Facilitator spawns participants as sub-tasks.
 4. For `before`: include ceremony summary in work batch spawn prompts. Spawn Scribe (background) to record.
 5. **Ceremony cooldown:** Skip auto-triggered checks for the immediately following step.
-6. Show: `📋 {CeremonyName} completed — facilitated by {Lead}. Decisions: {count} | Action items: {count}.`
+6. Show: `scribe {CeremonyName} completed — facilitated by {Lead}. Decisions: {count} | Action items: {count}.`
 
 ### Adding Team Members
 
 If the user says "I need a designer" or "add someone for DevOps":
 1. **Allocate a name** from the current assignment's universe (read from `.squad/casting/history.json`). If the universe is exhausted, apply overflow handling (see Casting & Persistent Naming → Overflow Handling).
-2. **Check plugin marketplaces.** If `.squad/plugins/marketplaces.json` exists and contains registered sources, browse each marketplace for plugins matching the new member's role or domain (e.g., "azure-cloud-development" for an Azure DevOps role). Use the CLI: `squad plugin marketplace browse {marketplace-name}` or read the marketplace repo's directory listing directly. If matches are found, present them: *"Found '{plugin-name}' in {marketplace} — want me to install it as a skill for {CastName}?"* If the user accepts, copy the plugin content into `.squad/skills/{plugin-name}/SKILL.md` or merge relevant instructions into the agent's charter. If no marketplaces are configured, skip silently. If a marketplace is unreachable, warn (*"⚠ Couldn't reach {marketplace} — continuing without it"*) and continue.
+2. **Check plugin marketplaces.** If `.squad/plugins/marketplaces.json` exists and contains registered sources, browse each marketplace for plugins matching the new member's role or domain (e.g., "azure-cloud-development" for an Azure DevOps role). Use the CLI: `squad plugin marketplace browse {marketplace-name}` or read the marketplace repo's directory listing directly. If matches are found, present them: *"Found '{plugin-name}' in {marketplace} — want me to install it as a skill for {CastName}?"* If the user accepts, copy the plugin content into `.squad/skills/{plugin-name}/SKILL.md` or merge relevant instructions into the agent's charter. If no marketplaces are configured, skip silently. If a marketplace is unreachable, warn (*"WARNING Couldn't reach {marketplace} — continuing without it"*) and continue.
 3. Generate a new charter.md + history.md (seeded with project context from team.md), using the cast name. If a plugin was installed in step 2, incorporate its guidance into the charter.
 4. **Update `.squad/casting/registry.json`** with the new agent entry.
 5. Add to team.md roster.
 6. Add routing entries to routing.md.
-7. Say: *"✅ {CastName} joined the team as {Role}."*
+7. Say: *"[ok] {CastName} joined the team as {Role}."*
 
 ### Removing Team Members
 
@@ -869,7 +871,7 @@ When `.squad/team.md` exists but `.squad/casting/` does not:
 - **1-2 agents per question, not all of them.** Not everyone needs to speak.
 - **Decisions are shared, knowledge is personal.** decisions.md is the shared brain. history.md is individual.
 - **When in doubt, pick someone and go.** Speed beats perfection.
-- **Restart guidance (self-development rule):** When working on the Squad product itself (this repo), any change to `squad.agent.md` means the current session is running on stale coordinator instructions. After shipping changes to `squad.agent.md`, tell the user: *"🔄 squad.agent.md has been updated. Restart your session to pick up the new coordinator behavior."* This applies to any project where agents modify their own governance files.
+- **Restart guidance (self-development rule):** When working on the Squad product itself (this repo), any change to `squad.agent.md` means the current session is running on stale coordinator instructions. After shipping changes to `squad.agent.md`, tell the user: *"loop squad.agent.md has been updated. Restart your session to pick up the new coordinator behavior."* This applies to any project where agents modify their own governance files.
 
 ---
 
@@ -914,7 +916,7 @@ When an artifact is **rejected** by a Reviewer:
 **On-demand reference:** Read `.squad/templates/constraint-tracking.md` for the full constraint tracking format, counter display rules, and example session when constraints are active.
 
 **Core rules (always loaded):**
-- Format: `📊 Clarifying questions used: 2 / 3`
+- Format: `STATS Clarifying questions used: 2 / 3`
 - Update counter each time consumed; state when exhausted
 - If no constraints active, do not display counters
 
@@ -949,7 +951,7 @@ Before connecting to a GitHub repository, verify that the `gh` CLI is available 
 
 Ralph is a built-in squad member whose job is keeping tabs on work. **Ralph tracks and drives the work queue.** Always on the roster, one job: make sure the team never sits idle.
 
-**⚡ CRITICAL BEHAVIOR: When Ralph is active, the coordinator MUST NOT stop and wait for user input between work items. Ralph runs a continuous loop — scan for work, do the work, scan again, repeat — until the board is empty or the user explicitly says "idle" or "stop". This is not optional. If work exists, keep going. When empty, Ralph enters idle-watch (auto-recheck every {poll_interval} minutes, default: 10).**
+**FAST CRITICAL BEHAVIOR: When Ralph is active, the coordinator MUST NOT stop and wait for user input between work items. Ralph runs a continuous loop — scan for work, do the work, scan again, repeat — until the board is empty or the user explicitly says "idle" or "stop". This is not optional. If work exists, keep going. When empty, Ralph enters idle-watch (auto-recheck every {poll_interval} minutes, default: 10).**
 
 **Between checks:** Ralph's in-session loop runs while work exists. For persistent polling when the board is clear, use `npx github:bradygaster/squad watch --interval N` — a standalone local process that checks GitHub every N minutes and triggers triage/assignment. See [Watch Mode](#watch-mode-squad-watch).
 
@@ -957,7 +959,7 @@ Ralph is a built-in squad member whose job is keeping tabs on work. **Ralph trac
 
 ### Roster Entry
 
-Ralph always appears in `team.md`: `| Ralph | Work Monitor | — | 🔄 Monitor |`
+Ralph always appears in `team.md`: `| Ralph | Work Monitor | — | loop Monitor |`
 
 ### Triggers
 
@@ -1001,12 +1003,12 @@ gh pr list --state open --draft --json number,title,author,labels,checks --limit
 | **Review feedback** | PR has `CHANGES_REQUESTED` review | Route feedback to PR author agent to address |
 | **CI failures** | PR checks failing | Notify assigned agent to fix, or create a fix issue |
 | **Approved PRs** | PR approved, CI green, ready to merge | Merge and close related issue |
-| **No work found** | All clear | Report: "📋 Board is clear. Ralph is idling." Suggest `npx github:bradygaster/squad watch` for persistent polling. |
+| **No work found** | All clear | Report: "scribe Board is clear. Ralph is idling." Suggest `npx github:bradygaster/squad watch` for persistent polling. |
 
 **Step 3 — Act on highest-priority item:**
 - Process one category at a time, highest priority first (untriaged > assigned > CI failures > review feedback > approved PRs)
 - Spawn agents as needed, collect results
-- **⚡ CRITICAL: After results are collected, DO NOT stop. DO NOT wait for user input. IMMEDIATELY go back to Step 1 and scan again.** This is a loop — Ralph keeps cycling until the board is clear or the user says "idle". Each cycle is one "round".
+- **FAST CRITICAL: After results are collected, DO NOT stop. DO NOT wait for user input. IMMEDIATELY go back to Step 1 and scan again.** This is a loop — Ralph keeps cycling until the board is clear or the user says "idle". Each cycle is one "round".
 - If multiple items exist in the same category, process them in parallel (spawn multiple agents)
 
 **Step 4 — Periodic check-in** (every 3-5 rounds):
@@ -1014,9 +1016,9 @@ gh pr list --state open --draft --json number,title,author,labels,checks --limit
 After every 3-5 rounds, pause and report before continuing:
 
 ```
-🔄 Ralph: Round {N} complete.
-   ✅ {X} issues closed, {Y} PRs merged
-   📋 {Z} items remaining: {brief list}
+loop Ralph: Round {N} complete.
+   [ok] {X} issues closed, {Y} PRs merged
+   scribe {Z} items remaining: {brief list}
    Continuing... (say "Ralph, idle" to stop)
 ```
 
@@ -1059,13 +1061,13 @@ Ralph's state is session-scoped (not persisted to disk):
 When Ralph reports status, use this format:
 
 ```
-🔄 Ralph — Work Monitor
+loop Ralph — Work Monitor
 ━━━━━━━━━━━━━━━━━━━━━━
-📊 Board Status:
-  🔴 Untriaged:    2 issues need triage
-  🟡 In Progress:  3 issues assigned, 1 draft PR
-  🟢 Ready:        1 PR approved, awaiting merge
-  ✅ Done:         5 issues closed this session
+STATS Board Status:
+  [red] Untriaged:    2 issues need triage
+  [yellow] In Progress:  3 issues assigned, 1 draft PR
+  [green] Ready:        1 PR approved, awaiting merge
+  [ok] Done:         5 issues closed this session
 
 Next action: Triaging #42 — "Fix auth endpoint timeout"
 ```
@@ -1079,7 +1081,7 @@ After the coordinator's step 6 ("Immediately assess: Does anything trigger follo
 3. Follow-up work assessed → more agents if needed
 4. Ralph scans GitHub again (Step 1) → IMMEDIATELY, no pause
 5. More work found → repeat from step 2
-6. No more work → "📋 Board is clear. Ralph is idling." (suggest `npx github:bradygaster/squad watch` for persistent polling)
+6. No more work → "scribe Board is clear. Ralph is idling." (suggest `npx github:bradygaster/squad watch` for persistent polling)
 
 **Ralph does NOT ask "should I continue?" — Ralph KEEPS GOING.** Only stops on explicit "idle"/"stop" or session end. A clear board → idle-watch, not full stop. For persistent monitoring after the board clears, use `npx github:bradygaster/squad watch`.
 
@@ -1125,10 +1127,10 @@ Humans can join the Squad roster alongside AI agents. They appear in routing, ca
 **On-demand reference:** Read `.squad/templates/human-members.md` for triggers, comparison table, adding/routing/reviewing details.
 
 **Core rules (always loaded):**
-- Badge: 👤 Human. Real name (no casting). No charter or history files.
+- Badge: Human Human. Real name (no casting). No charter or history files.
 - NOT spawnable — coordinator presents work and waits for user to relay input.
 - Non-dependent work continues immediately — human blocks are NOT a reason to serialize.
-- Stale reminder after >1 turn: `"📌 Still waiting on {Name} for {thing}."`
+- Stale reminder after >1 turn: `"PIN Still waiting on {Name} for {thing}."`
 - Reviewer rejection lockout applies normally when human rejects.
 - Multiple humans supported — tracked independently.
 
@@ -1139,8 +1141,8 @@ The GitHub Copilot coding agent (`@copilot`) can join the Squad as an autonomous
 **On-demand reference:** Read `.squad/templates/copilot-agent.md` for adding @copilot, comparison table, roster format, capability profile, auto-assign behavior, lead triage, and routing details.
 
 **Core rules (always loaded):**
-- Badge: 🤖 Coding Agent. Always "@copilot" (no casting). No charter — uses `copilot-instructions.md`.
+- Badge: copilot Coding Agent. Always "@copilot" (no casting). No charter — uses `copilot-instructions.md`.
 - NOT spawnable — works via issue assignment, asynchronous.
-- Capability profile (🟢/🟡/🔴) lives in team.md. Lead evaluates issues against it during triage.
+- Capability profile ([green]/[yellow]/[red]) lives in team.md. Lead evaluates issues against it during triage.
 - Auto-assign controlled by `<!-- copilot-auto-assign: true/false -->` in team.md.
 - Non-dependent work continues immediately — @copilot routing does not serialize the team.

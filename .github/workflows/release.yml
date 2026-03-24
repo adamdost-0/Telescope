@@ -61,7 +61,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ -n "${APPLE_CERTIFICATE}" ] && [ -n "${APPLE_CERTIFICATE_PASSWORD}" ] && [ -n "${APPLE_SIGNING_IDENTITY}" ]; then
-            echo "✅ Developer ID signing secrets detected."
+            echo "[ok] Developer ID signing secrets detected."
             {
               echo "APPLE_CERTIFICATE<<EOF"
               echo "${APPLE_CERTIFICATE}"
@@ -72,7 +72,7 @@ jobs:
             } >> "$GITHUB_ENV"
 
             if [ -n "${APPLE_ID}" ] && [ -n "${APPLE_PASSWORD}" ] && [ -n "${APPLE_TEAM_ID}" ]; then
-              echo "✅ Apple notarization credentials detected."
+              echo "[ok] Apple notarization credentials detected."
               {
                 echo "APPLE_ID=${APPLE_ID}"
                 echo "APPLE_PASSWORD=${APPLE_PASSWORD}"
@@ -80,11 +80,11 @@ jobs:
                 echo "MACOS_NOTARIZATION_ENABLED=true"
               } >> "$GITHUB_ENV"
             else
-              echo "⚠️ Apple notarization credentials missing; build will be signed but not notarized."
+              echo "WARNING Apple notarization credentials missing; build will be signed but not notarized."
               echo "MACOS_NOTARIZATION_ENABLED=false" >> "$GITHUB_ENV"
             fi
           else
-            echo "⚠️ Developer ID signing secrets not configured; using ad-hoc signing to avoid invalid app signatures."
+            echo "WARNING Developer ID signing secrets not configured; using ad-hoc signing to avoid invalid app signatures."
             {
               echo "APPLE_SIGNING_IDENTITY=-"
               echo "MACOS_SIGNING_MODE=adhoc"
@@ -186,13 +186,13 @@ jobs:
         run: |
           APP_PATH=$(find target/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
           if [ -z "$APP_PATH" ]; then
-            echo "ℹ️ No .app retained under target/release/bundle/macos (expected when cleaned after DMG build)."
+            echo "INFO No .app retained under target/release/bundle/macos (expected when cleaned after DMG build)."
             exit 0
           fi
 
           echo "Checking app bundle: $APP_PATH"
           if [ ! -f "$APP_PATH/Contents/_CodeSignature/CodeResources" ]; then
-            echo "❌ Missing CodeResources. App bundle is not properly signed."
+            echo "[fail] Missing CodeResources. App bundle is not properly signed."
             exit 1
           fi
 
@@ -218,10 +218,10 @@ jobs:
           while IFS= read -r pattern; do
             [ -z "$pattern" ] && continue
             if ! ls $pattern 2>/dev/null | grep -q .; then
-              echo "❌ Missing required artifacts: $pattern"
+              echo "[fail] Missing required artifacts: $pattern"
               MISSING="${MISSING}${pattern}\n"
             else
-              echo "✅ Found: $pattern"
+              echo "[ok] Found: $pattern"
               ls -lh $pattern
             fi
           done <<< "$BUNDLE_PATTERNS"
@@ -256,7 +256,7 @@ jobs:
               MSI_DEST="telescope-windows-x64-${RELEASE_TAG}.msi"
               cp "$MSI_SRC" "$MSI_DEST"
               echo "MSI_ARTIFACT=$MSI_DEST" >> "$GITHUB_ENV"
-              echo "✅ Renamed MSI: $MSI_DEST"
+              echo "[ok] Renamed MSI: $MSI_DEST"
             fi
 
             # Rename NSIS installer
@@ -265,7 +265,7 @@ jobs:
               NSIS_DEST="telescope-windows-x64-setup-${RELEASE_TAG}.exe"
               cp "$NSIS_SRC" "$NSIS_DEST"
               echo "NSIS_ARTIFACT=$NSIS_DEST" >> "$GITHUB_ENV"
-              echo "✅ Renamed NSIS: $NSIS_DEST"
+              echo "[ok] Renamed NSIS: $NSIS_DEST"
             fi
           elif [ "${{ matrix.platform }}" == "macos" ]; then
             # Rename DMG installer
@@ -274,7 +274,7 @@ jobs:
               DMG_DEST="telescope-macos-arm64-${RELEASE_TAG}.dmg"
               cp "$DMG_SRC" "$DMG_DEST"
               echo "DMG_ARTIFACT=$DMG_DEST" >> "$GITHUB_ENV"
-              echo "✅ Renamed DMG: $DMG_DEST"
+              echo "[ok] Renamed DMG: $DMG_DEST"
             fi
           fi
 
@@ -284,14 +284,14 @@ jobs:
         run: |
           DMG_PATH="target/release/${{ env.DMG_ARTIFACT }}"
           if [ ! -f "$DMG_PATH" ]; then
-            echo "❌ DMG artifact not found: $DMG_PATH"
+            echo "[fail] DMG artifact not found: $DMG_PATH"
             exit 1
           fi
 
           MOUNT_DIR=$(hdiutil attach "$DMG_PATH" -nobrowse -readonly | tail -n1 | awk '{print $3}')
           APP_PATH=$(find "$MOUNT_DIR" -maxdepth 2 -name "*.app" | head -1)
           if [ -z "$APP_PATH" ]; then
-            echo "❌ No .app found inside mounted DMG"
+            echo "[fail] No .app found inside mounted DMG"
             hdiutil detach "$MOUNT_DIR" || true
             exit 1
           fi

@@ -49,7 +49,7 @@ After every substantial work session:
 4. **Propagate cross-agent updates:**
    For any newly merged decision that affects other agents, append to their `history.md`:
    ```
-   📌 Team update ({timestamp}): {summary} — decided by {Name}
+   PIN Team update ({timestamp}): {summary} — decided by {Name}
    ```
 
 5. **Commit `.squad/` changes:**

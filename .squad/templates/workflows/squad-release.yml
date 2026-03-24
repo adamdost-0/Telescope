@@ -29,7 +29,7 @@ jobs:
             echo "::error::Version $VERSION not found in CHANGELOG.md — update CHANGELOG.md before release"
             exit 1
           fi
-          echo "✅ Version $VERSION validated in CHANGELOG.md"
+          echo "[ok] Version $VERSION validated in CHANGELOG.md"
 
       - name: Read version from package.json
         id: version
@@ -37,17 +37,17 @@ jobs:
           VERSION=$(node -e "console.log(require('./package.json').version)")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "📦 Version: $VERSION (tag: v$VERSION)"
+          echo "Package Version: $VERSION (tag: v$VERSION)"
 
       - name: Check if tag already exists
         id: check_tag
         run: |
           if git rev-parse "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "⏭️ Tag ${{ steps.version.outputs.tag }} already exists — skipping release."
+            echo "Skip Tag ${{ steps.version.outputs.tag }} already exists — skipping release."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "🆕 Tag ${{ steps.version.outputs.tag }} does not exist — creating release."
+            echo "NEW Tag ${{ steps.version.outputs.tag }} does not exist — creating release."
           fi
 
       - name: Create git tag
@@ -74,4 +74,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release view "${{ steps.version.outputs.tag }}"
-          echo "✅ Release ${{ steps.version.outputs.tag }} created and verified."
+          echo "[ok] Release ${{ steps.version.outputs.tag }} created and verified."

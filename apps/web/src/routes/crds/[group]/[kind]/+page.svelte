@@ -11,6 +11,7 @@
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import YamlEditor from '$lib/components/YamlEditor.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import Icon from '$lib/icons/Icon.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   const group = $derived(decodeURIComponent(page.params.group));
@@ -203,8 +204,12 @@
         <button type="button" class="secondary" onclick={() => (showCreateEditor = false)}>Close</button>
       </div>
       <div class="yaml-actions">
-        <button type="button" onclick={() => handleCreateApply(true)} disabled={applying}>🧪 Dry Run</button>
-        <button type="button" class="primary" onclick={() => handleCreateApply(false)} disabled={applying}>✅ Apply</button>
+        <button type="button" onclick={() => handleCreateApply(true)} disabled={applying} data-testid="crd-dry-run">
+          <Icon name="dry-run" size={16} aria-hidden="true" /> Dry Run
+        </button>
+        <button type="button" class="primary" onclick={() => handleCreateApply(false)} disabled={applying} data-testid="crd-apply">
+          <Icon name="apply" size={16} aria-hidden="true" /> Apply
+        </button>
       </div>
       <YamlEditor content={createManifest} onchange={(value) => (createManifest = value)} />
     </section>
@@ -212,7 +217,7 @@
 
   {#if !$isConnected && !loading}
     <div class="not-connected">
-      <p>🔌 Not connected to a cluster</p>
+      <p>Not connected to a cluster</p>
       <p class="hint">Select a context from the header to connect.</p>
     </div>
   {:else if loading}

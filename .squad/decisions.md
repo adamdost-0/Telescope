@@ -54,11 +54,11 @@ Only use latest SOTA models for all agent spawns: **Opus 4.6** and **GPT-5.3-Cod
 |---|---|---|---|---|
 | P1-1 | Helm install | P1 | Ripley + Lambert | — |
 | P1-2 | Helm upgrade | P1 | Ripley + Lambert | P1-1 |
-| P1-3 | Helm uninstall | P1 ✅ | Ripley | — |
+| P1-3 | Helm uninstall | P1 [ok] | Ripley | — |
 | P1-4 | Helm template/dry-run | P1 (lower) | Ripley + Lambert | P1-1, P1-2 |
-| P2-1 | ReplicaSets list route | P2 ✅ | Lambert | — |
-| P2-2 | ClusterRoles list route | P2 ✅ | Lambert | — |
-| P2-3 | ClusterRoleBindings list route | P2 ✅ | Lambert | — |
+| P2-1 | ReplicaSets list route | P2 [ok] | Lambert | — |
+| P2-2 | ClusterRoles list route | P2 [ok] | Lambert | — |
+| P2-3 | ClusterRoleBindings list route | P2 [ok] | Lambert | — |
 
 **Decision:** Helm writes are P1, not P0. Recommended sequence: uninstall first (quick win), then install+upgrade together, then template/dry-run. Missing list routes are P2 — batch when convenient.
 
@@ -133,7 +133,7 @@ Only use latest SOTA models for all agent spawns: **Opus 4.6** and **GPT-5.3-Cod
 **Changes:**
 - Frontend: Wired `helmUninstall` into `apps/web/src/routes/helm/+page.svelte` with per-row Uninstall action button, `$state`-driven ConfirmDialog, success/error notification banners, and post-action list refresh
 - UX: ConfirmDialog role set to `dialog` for Playwright E2E compatibility
-- Validation: `pnpm build` ✅, `pnpm test` ✅ (36/36), helm uninstall E2E tests pass
+- Validation: `pnpm build` [ok], `pnpm test` [ok] (36/36), helm uninstall E2E tests pass
 
 **Decision:** Follows the established Helm rollback action pattern. P1-3 (Helm uninstall) is now fully delivered end-to-end: engine → IPC → UI → tests.
 
@@ -204,8 +204,8 @@ Set `POLL_INTERVAL_MS` from `10_000` to `5_000` in `apps/web/src/lib/realMetrics
 
 ## Validation
 
-- `pnpm -C apps/web test -- --run src/lib/realMetrics.test.ts` ✅
-- `pnpm -C apps/web build` ✅
+- `pnpm -C apps/web test -- --run src/lib/realMetrics.test.ts` [ok]
+- `pnpm -C apps/web build` [ok]
 
 ---
 
@@ -254,8 +254,8 @@ Percent Formatting:
 
 **Validation:**
 
-- `pnpm -C apps/web test -- --run src/lib/metrics-format.test.ts` ✅
-- `pnpm -C apps/web build` ✅
+- `pnpm -C apps/web test -- --run src/lib/metrics-format.test.ts` [ok]
+- `pnpm -C apps/web build` [ok]
 
 ## Governance
 

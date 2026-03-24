@@ -1,8 +1,14 @@
 import { test, expect } from '@playwright/test';
+import { installMockTauri } from './helpers/mock-tauri';
+
+test.beforeEach(async ({ page }) => {
+  await installMockTauri(page);
+});
 
 test('smoke: loads home page', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Telescope' })).toBeVisible();
+  await expect(page.locator('.app-shell')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('app-brand')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Clusters' })).toBeVisible();
 });
 

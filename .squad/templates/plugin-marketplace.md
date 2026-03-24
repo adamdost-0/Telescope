@@ -40,10 +40,10 @@ During the **Adding Team Members** flow, AFTER allocating a name but BEFORE gene
 1. Read the plugin content from the marketplace repository (the plugin's `SKILL.md` or equivalent).
 2. Copy it into the agent's skills directory: `.squad/skills/{plugin-name}/SKILL.md`
 3. If the plugin includes charter-level instructions (role boundaries, tool preferences), merge those into the agent's `charter.md`.
-4. Log the installation in the agent's `history.md`: *"📦 Plugin '{plugin-name}' installed from {marketplace}."*
+4. Log the installation in the agent's `history.md`: *"Package Plugin '{plugin-name}' installed from {marketplace}."*
 
 ## Graceful Degradation
 
 - **No marketplaces configured:** Skip the marketplace check entirely. No warning, no prompt.
-- **Marketplace unreachable:** Warn the user (*"⚠ Couldn't reach {marketplace} — continuing without it"*) and proceed with team member creation normally.
+- **Marketplace unreachable:** Warn the user (*"WARNING Couldn't reach {marketplace} — continuing without it"*) and proceed with team member creation normally.
 - **No matching plugins:** Inform the user (*"No matching plugins found in configured marketplaces"*) and proceed.

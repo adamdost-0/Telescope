@@ -218,11 +218,18 @@
           <div class="values-toolbar">
             {#if valuesRevealed}
               <div class="reveal-warning">
-                <span>⚠️ Sensitive values are now visible</span>
-                <button class="hide-btn" onclick={hideValues}>🔒 Hide Sensitive Values</button>
+                <span>
+                  <Icon name="prod-warning" size={16} aria-hidden="true" />
+                  Sensitive values are now visible
+                </span>
+                <button class="hide-btn" onclick={hideValues} data-testid="hide-sensitive-values">
+                  <Icon name="hide-values" size={14} aria-hidden="true" /> Hide Sensitive Values
+                </button>
               </div>
             {:else}
-              <button class="reveal-btn" onclick={requestReveal}>🔓 Reveal Sensitive Values</button>
+              <button class="reveal-btn" onclick={requestReveal} data-testid="reveal-sensitive-values">
+                <Icon name="show-values" size={14} aria-hidden="true" /> Reveal Sensitive Values
+              </button>
             {/if}
           </div>
 
@@ -230,13 +237,19 @@
 
           <div class="upgrade-section">
             <div class="upgrade-notice">
-              <span class="notice-icon">ℹ️</span>
+              <span class="notice-icon" aria-hidden="true">
+                <Icon name="diagnostic-info" size={16} />
+              </span>
               <p>Direct upgrade from UI coming in a future release. Save your edited values to a file and use the command below:</p>
             </div>
             <div class="command-row">
               <code class="upgrade-cmd">{generateUpgradeCommand()}</code>
-              <button class="copy-btn" onclick={copyUpgradeCommand}>
-                {copied ? '✓ Copied' : '📋 Copy Command'}
+              <button class="copy-btn" onclick={copyUpgradeCommand} data-testid="copy-upgrade-command">
+                {#if copied}
+                  <Icon name="apply" size={14} aria-hidden="true" /> Copied
+                {:else}
+                  <Icon name="copy" size={14} aria-hidden="true" /> Copy Command
+                {/if}
               </button>
             </div>
           </div>
@@ -247,7 +260,14 @@
       <div class="tab-content">
         {#if rollbackResult}
           <div class="result-banner" class:success={rollbackResult.ok} class:fail={!rollbackResult.ok}>
-            {rollbackResult.ok ? '✅' : '❌'} {rollbackResult.message}
+            <span class="result-icon" aria-hidden="true">
+              {#if rollbackResult.ok}
+                <Icon name="apply" size={16} />
+              {:else}
+                <Icon name="error" size={16} />
+              {/if}
+            </span>
+            <span>{rollbackResult.message}</span>
           </div>
         {/if}
         {#if history.length === 0}
@@ -282,8 +302,9 @@
                         class="rollback-btn"
                         onclick={() => requestRollback(rev)}
                         disabled={rollbackLoading}
+                        data-testid={`rollback-${rev.revision}`}
                       >
-                        ↩ Rollback
+                        <Icon name="rollback" size={14} aria-hidden="true" /> Rollback
                       </button>
                     {:else}
                       <span class="current-badge">current</span>

@@ -41,8 +41,8 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="overlay" role="presentation" onclick={handleOverlayClick} onkeydown={handleKeydown}>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="shortcut-help-title" tabindex="-1">
-      <div class="modal-header">
-        <h2 id="shortcut-help-title">⌨️ Keyboard Shortcuts</h2>
+      <div class="modal-header" data-testid="shortcut-help">
+        <h2 id="shortcut-help-title">Keyboard Shortcuts</h2>
         <button
           bind:this={closeButton}
           class="close-btn"

@@ -3,19 +3,26 @@
   import ConnectionStatus from './ConnectionStatus.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
   import ClusterVitals from './ClusterVitals.svelte';
+  import Icon from '$lib/icons/Icon.svelte';
+  import { IconTelescope } from '@tabler/icons-svelte';
   import { isProduction, isConnected } from '$lib/stores';
 
   let { onhelp }: { onhelp?: () => void } = $props();
 </script>
 
 {#if $isProduction}
-  <div class="prod-banner" role="status">⚠️ PRODUCTION</div>
+  <div class="prod-banner" role="status" data-testid="prod-banner">
+    <Icon name="prod-warning" size={16} aria-hidden="true" />
+    <span class="prod-banner-text">PRODUCTION</span>
+  </div>
 {/if}
 
 <header class="app-header">
-  <div class="brand">
-    <span class="brand-icon">🔭</span>
-    <span class="brand-text">Telescope</span>
+  <div class="brand" aria-label="Telescope">
+    <span class="brand-icon" aria-hidden="true">
+      <IconTelescope />
+    </span>
+    <h1 class="brand-text" role="heading" aria-level="1" data-testid="app-brand">Telescope</h1>
   </div>
   <div class="spacer"></div>
   <ClusterVitals visible={$isConnected} />
@@ -49,6 +56,7 @@
     font-weight: 700;
     font-size: 1rem;
     color: var(--accent);
+    margin: 0;
   }
   .spacer { flex: 1; }
   .context-area {

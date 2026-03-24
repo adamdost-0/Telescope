@@ -88,15 +88,15 @@ Steps:
 
 | Check | Enforced | Notes |
 |-------|----------|-------|
-| Rust formatting | ✅ | `cargo fmt --check` |
-| Rust linting | ✅ | `cargo clippy -D warnings` |
-| Rust tests | ✅ | `cargo test --all-features` |
-| Web unit tests | ✅ | Vitest via `pnpm -C apps/web test` |
-| Web build | ✅ | `pnpm -C apps/web build` |
-| Web E2E tests | ✅ | Playwright against stub server |
-| Desktop builds | ✅ | Windows + macOS matrix |
-| Tagged releases | ✅ | `release.yml` on `v*` tags |
-| Security scanning | ❌ | No Dependabot, CodeQL, or audit checks |
+| Rust formatting | [ok] | `cargo fmt --check` |
+| Rust linting | [ok] | `cargo clippy -D warnings` |
+| Rust tests | [ok] | `cargo test --all-features` |
+| Web unit tests | [ok] | Vitest via `pnpm -C apps/web test` |
+| Web build | [ok] | `pnpm -C apps/web build` |
+| Web E2E tests | [ok] | Playwright against stub server |
+| Desktop builds | [ok] | Windows + macOS matrix |
+| Tagged releases | [ok] | `release.yml` on `v*` tags |
+| Security scanning | [fail] | No Dependabot, CodeQL, or audit checks |
 
 ## Concurrency
 

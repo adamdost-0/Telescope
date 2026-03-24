@@ -12,12 +12,12 @@
 
 | Name | Role | Charter | Status |
 |------|------|---------|--------|
-| Dallas | Lead | `.squad/agents/dallas/charter.md` | 🏗️ Active |
-| Ripley | Backend Dev | `.squad/agents/ripley/charter.md` | 🔧 Active |
-| Lambert | Frontend Dev | `.squad/agents/lambert/charter.md` | ⚛️ Active |
-| Kane | Tester | `.squad/agents/kane/charter.md` | 🧪 Active |
-| Scribe | Scribe | `.squad/agents/scribe/charter.md` | 📋 Active |
-| Ralph | Work Monitor | — | 🔄 Monitor |
+| Dallas | Lead | `.squad/agents/dallas/charter.md` | Lead Active |
+| Ripley | Backend Dev | `.squad/agents/ripley/charter.md` | Backend Active |
+| Lambert | Frontend Dev | `.squad/agents/lambert/charter.md` | Frontend Active |
+| Kane | Tester | `.squad/agents/kane/charter.md` | Test Active |
+| Scribe | Scribe | `.squad/agents/scribe/charter.md` | SCRIBE Active |
+| Ralph | Work Monitor | — | loop Monitor |
 
 ## Project Context
 

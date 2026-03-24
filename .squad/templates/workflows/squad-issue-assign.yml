@@ -72,7 +72,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                body: `⚠️ No squad member found matching label \`${label}\`. Check \`.squad/team.md\` (or \`.ai-team/team.md\`) for valid member names.`
+                body: `WARNING No squad member found matching label \`${label}\`. Check \`.squad/team.md\` (or \`.ai-team/team.md\`) for valid member names.`
               });
               return;
             }
@@ -81,7 +81,7 @@ jobs:
             let comment;
             if (isCopilotAssignment) {
               comment = [
-                `### 🤖 Routed to @copilot (Coding Agent)`,
+                `### copilot Routed to @copilot (Coding Agent)`,
                 '',
                 `**Issue:** #${issue.number} — ${issue.title}`,
                 '',
@@ -92,7 +92,7 @@ jobs:
               ].join('\n');
             } else {
               comment = [
-                `### 📋 Assigned to ${assignedMember.name} (${assignedMember.role})`,
+                `### SCRIBE Assigned to ${assignedMember.name} (${assignedMember.role})`,
                 '',
                 `**Issue:** #${issue.number} — ${issue.title}`,
                 '',

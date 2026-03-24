@@ -125,7 +125,7 @@
 
   {#if !$isConnected && !loading}
     <div class="not-connected">
-      <p>🔌 Not connected to a cluster</p>
+      <p>Not connected to a cluster</p>
       <p class="hint">Select a context from the header to connect.</p>
     </div>
   {:else if loading}

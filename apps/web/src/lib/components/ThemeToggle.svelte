@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getPreference, setPreference } from '$lib/api';
+  import { IconSun, IconMoon } from '@tabler/icons-svelte';
 
   let theme = $state<'dark' | 'light'>('dark');
 
@@ -58,8 +59,18 @@
   }
 </script>
 
-<button onclick={toggle} class="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
-  {theme === 'dark' ? '☀️' : '🌙'}
+<button
+  onclick={toggle}
+  class="theme-toggle"
+  title="Toggle theme"
+  aria-label="Toggle theme"
+  data-testid="theme-toggle"
+>
+  {#if theme === 'dark'}
+    <IconSun aria-hidden="true" />
+  {:else}
+    <IconMoon aria-hidden="true" />
+  {/if}
 </button>
 
 <style>

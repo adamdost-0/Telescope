@@ -10,7 +10,8 @@ test('home page renders without errors when connected', async ({ page }) => {
   page.on('pageerror', (err) => errors.push(err.message));
 
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Telescope' })).toBeVisible();
+  await expect(page.locator('.app-shell')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('app-brand')).toBeVisible();
   expect(errors).toEqual([]);
 });
 

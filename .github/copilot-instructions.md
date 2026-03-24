@@ -27,6 +27,12 @@ AKS-first Kubernetes IDE with a Tauri v2 desktop app, a packaged SvelteKit front
 - Desktop is the only supported client surface.
 - `packages/ui` is still lightweight compared with the app-local UI in `apps/web`.
 
+## Iconography and Tone Guidance (No Emoji)
+
+- Generated content (docs, prompts, orchestration logs, UI strings) should avoid emojis.
+- Prefer plain text labels or the standardized icon registry (monochrome/SVG) when a visual indicator is needed.
+- When converting existing materials, replace emoji checkmarks/warnings with markdown checkboxes (`- [x]`) or neutral headings.
+
 ## Verified Commands
 
 ```bash

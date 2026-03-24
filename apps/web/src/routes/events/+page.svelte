@@ -111,7 +111,7 @@
         aria-label="Filter by event type"
       >
         <option value="all">All Types</option>
-        <option value="Warning">⚠ Warnings</option>
+        <option value="Warning">Warnings</option>
         <option value="Normal">✓ Normal</option>
       </select>
       {#if lastUpdated}
@@ -124,7 +124,7 @@
   </header>
 
   {#if !$isConnected}
-    <p class="not-connected">🔌 Connect to a cluster to view events.</p>
+    <p class="not-connected">Connect to a cluster to view events.</p>
   {:else if loading}
     <LoadingSkeleton rows={10} columns={5} />
   {:else if error}

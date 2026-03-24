@@ -55,6 +55,7 @@ What is real today:
 - `crates/engine` contains real watch-driven Kubernetes functionality with broad resource coverage.
 - `crates/azure` contains real Azure ARM logic for AKS cluster operations.
 - CI validates Rust workspace quality plus frontend tests/builds and desktop builds on macOS/Windows.
+- **Iconography:** Follow the no-emoji policy for UI, docs, and orchestration. Use plain text labels or the standard icon registry (when available) instead of inline emojis.
 
 What is not true anymore:
 - There is no supported non-desktop runtime.

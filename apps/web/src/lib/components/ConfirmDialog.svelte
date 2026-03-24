@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Icon from '$lib/icons/Icon.svelte';
+
   let {
     open = false,
     title = 'Confirm',
@@ -69,7 +71,10 @@
     >
       <h3 id="confirm-dialog-title">{title}</h3>
       {#if productionContext}
-        <p class="prod-warning">⚠️ You are operating in a PRODUCTION context</p>
+        <p class="prod-warning" data-testid="confirm-prod-warning">
+          <Icon name="prod-warning" size={18} aria-hidden="true" />
+          <span>You are operating in a PRODUCTION context</span>
+        </p>
       {/if}
       <p class="message" id="confirm-dialog-message">{message}</p>
       {#if effectiveRequireType}

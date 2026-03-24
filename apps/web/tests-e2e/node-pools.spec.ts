@@ -4,7 +4,8 @@ import { installMockTauri } from './helpers/mock-tauri';
 
 async function gotoNodePools(page: Page) {
   await page.goto('/azure/node-pools');
-  await expect(page.getByRole('heading', { name: 'Node Pools' })).toBeVisible();
+  await expect(page.getByTestId('node-pools-heading')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole('heading', { name: /Node Pools/i })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('2 node pools')).toBeVisible();
 }
 

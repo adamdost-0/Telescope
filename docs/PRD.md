@@ -40,79 +40,79 @@ Telescope is an open-source **desktop Kubernetes IDE** built with **Tauri + Svel
 
 ## 5) Lens Parity Checklist
 
-> Status: ✅ = shipped in v1.0.0, 🚧 = intentionally partial in v1.0.0, 🔲 = future milestone
+> Status legend: [x] shipped in v1.0.0, [~] intentionally partial in v1.0.0, [ ] future milestone
 
 ### Cluster Management
-- ✅ Kubeconfig import/merge and context discovery
-- ✅ Context list + switching with explicit connection-state handling
-- ✅ Namespace switching
-- ✅ Production-context detection and stronger confirmations in the UI
-- 🔲 Context favorites / pinning
+- [x] Kubeconfig import/merge and context discovery
+- [x] Context list + switching with explicit connection-state handling
+- [x] Namespace switching
+- [x] Production-context detection and stronger confirmations in the UI
+- [ ] Context favorites / pinning
 
 ### Resource Explorer
-- ✅ Desktop cache/watch coverage for **28+ built-in resource types**, including Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs, Services, Ingresses, NetworkPolicies, EndpointSlices, ConfigMaps, Secrets, PVCs, ResourceQuotas, LimitRanges, Events, ServiceAccounts, Roles, ClusterRoles, RoleBindings, ClusterRoleBindings, HPAs, PDBs, PriorityClasses, StorageClasses, PVs, Nodes, and admission webhooks
-- ✅ 16 primary desktop resource blades plus generic resource detail routing
-- ✅ Collapsible sidebar with grouped navigation
-- ✅ Cluster overview dashboard
-- ✅ Node list/detail with capacity, usage, conditions, and YAML
-- ✅ CRD discovery and instance browsing
-- ✅ Per-list text filtering and global search palette over cached resources
-- 🚧 Rich label filtering and broader table sorting across every list
+- [x] Desktop cache/watch coverage for **28+ built-in resource types**, including Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs, Services, Ingresses, NetworkPolicies, EndpointSlices, ConfigMaps, Secrets, PVCs, ResourceQuotas, LimitRanges, Events, ServiceAccounts, Roles, ClusterRoles, RoleBindings, ClusterRoleBindings, HPAs, PDBs, PriorityClasses, StorageClasses, PVs, Nodes, and admission webhooks
+- [x] 16 primary desktop resource blades plus generic resource detail routing
+- [x] Collapsible sidebar with grouped navigation
+- [x] Cluster overview dashboard
+- [x] Node list/detail with capacity, usage, conditions, and YAML
+- [x] CRD discovery and instance browsing
+- [x] Per-list text filtering and global search palette over cached resources
+- [~] Rich label filtering and broader table sorting across every list
 
 ### Debug Loop
-- ✅ Pod detail page (Summary / Logs / Exec / Events / YAML tabs)
-- ✅ Log viewer: streaming/snapshot, container selector, search, previous logs, auto-scroll
-- ✅ Events viewer with filtering
-- 🚧 Exec terminal: reliable non-interactive exec is shipped; full interactive TTY/xterm.js remains future work
-- 🚧 Port-forward: basic pod-focused desktop flow is shipped; richer active-session management remains future work
+- [x] Pod detail page (Summary / Logs / Exec / Events / YAML tabs)
+- [x] Log viewer: streaming/snapshot, container selector, search, previous logs, auto-scroll
+- [x] Events viewer with filtering
+- [~] Exec terminal: reliable non-interactive exec is shipped; full interactive TTY/xterm.js remains future work
+- [~] Port-forward: basic pod-focused desktop flow is shipped; richer active-session management remains future work
 
 ### Resource Actions
-- ✅ Resource YAML viewing across built-in and dynamic resource detail flows
-- ✅ Server-side apply / create-update workflows for supported built-in resources and CRD instances
-- ✅ Delete flows for shipped resource detail pages and supported generic resources
-- ✅ Scale actions for Deployments and StatefulSets
-- ✅ Rollout restart/status actions for supported workloads
-- ✅ Create resource from YAML/templates
+- [x] Resource YAML viewing across built-in and dynamic resource detail flows
+- [x] Server-side apply / create-update workflows for supported built-in resources and CRD instances
+- [x] Delete flows for shipped resource detail pages and supported generic resources
+- [x] Scale actions for Deployments and StatefulSets
+- [x] Rollout restart/status actions for supported workloads
+- [x] Create resource from YAML/templates
 
 ### Helm
-- ✅ Release list/detail
-- ✅ Values viewer with redaction of known sensitive keys
-- ✅ Revision history
-- ✅ Rollback
-- 🔲 Upgrade with diff preview
+- [x] Release list/detail
+- [x] Values viewer with redaction of known sensitive keys
+- [x] Revision history
+- [x] Rollback
+- [ ] Upgrade with diff preview
 
 ### Metrics
-- ✅ metrics-server discovery
-- ✅ Pod CPU + memory usage
-- ✅ Node CPU + memory usage
-- ✅ Basic trend charts / sparklines
-- 🚧 Namespace-level rollups can still get deeper
+- [x] metrics-server discovery
+- [x] Pod CPU + memory usage
+- [x] Node CPU + memory usage
+- [x] Basic trend charts / sparklines
+- [~] Namespace-level rollups can still get deeper
 
 ### UX & Polish
-- ✅ Dark theme
-- ✅ Light theme + theme toggle
-- ✅ Keyboard shortcuts + help overlay
-- ✅ Breadcrumb navigation
-- ✅ Search palette
-- ✅ Settings / preferences surface
-- ✅ Local audit logging for desktop operations
-- 🔲 Tabbed workspace / hotbar
+- [x] Dark theme
+- [x] Light theme + theme toggle
+- [x] Keyboard shortcuts + help overlay
+- [x] Breadcrumb navigation
+- [x] Search palette
+- [x] Settings / preferences surface
+- [x] Local audit logging for desktop operations
+- [ ] Tabbed workspace / hotbar
 
 ### AKS-Specific (our differentiator)
-- ✅ ARM-backed AKS identity/resource resolution from the active cluster context
-- ✅ Azure Portal deep links and ARM resource awareness
-- ✅ Cluster start/stop controls
-- ✅ Cluster upgrade profile visibility and control-plane upgrade management
-- ✅ Node-pool listing, create/delete, scale, autoscaler updates, version upgrades, and node-image upgrades
-- ✅ Maintenance configuration / diagnostics visibility from the ARM management plane
-- ✅ Node-pool visibility in Kubernetes inventory views
-- ✅ Multi-cloud baseline: Telescope works against any Kubernetes cluster, while AKS clusters unlock Azure-specific controls
-- ✅ Production guardrails
+- [x] ARM-backed AKS identity/resource resolution from the active cluster context
+- [x] Azure Portal deep links and ARM resource awareness
+- [x] Cluster start/stop controls
+- [x] Cluster upgrade profile visibility and control-plane upgrade management
+- [x] Node-pool listing, create/delete, scale, autoscaler updates, version upgrades, and node-image upgrades
+- [x] Maintenance configuration / diagnostics visibility from the ARM management plane
+- [x] Node-pool visibility in Kubernetes inventory views
+- [x] Multi-cloud baseline: Telescope works against any Kubernetes cluster, while AKS clusters unlock Azure-specific controls
+- [x] Production guardrails
 
 ### Extensions
-- 🔲 Plugin / extension host
-- 🔲 Plugin permissions model
-- 🔲 First-party plugin extraction
+- [ ] Plugin / extension host
+- [ ] Plugin permissions model
+- [ ] First-party plugin extraction
 
 ## 6) Differentiators
 - **Desktop-first operator focus:** Telescope is intentionally optimized for a native desktop workflow, not discontinued browser/Hub deployment modes.
@@ -135,14 +135,14 @@ Telescope is an open-source **desktop Kubernetes IDE** built with **Tauri + Svel
 
 | Milestone | Title | Status | Summary |
 |-----------|-------|--------|---------|
-| **M0** | Foundations | ✅ Complete | Monorepo architecture, Rust workspace, desktop shell, shared frontend packaging, CI, and deterministic fixtures |
-| **M1** | Connect + Browse | ✅ Complete | Real cluster connectivity, context/namespace switching, watch-backed cache, overview dashboard, and broad built-in resource browsing |
-| **M2** | Debug Loop + UX Foundation | ✅ Complete | Pod detail, logs, events, YAML, search palette, shortcuts, themes, breadcrumbs, and settings surface |
-| **M3** | Resource Actions + Safe Ops | ✅ Complete | Create/apply/delete flows, scale/restart/status actions, pod-focused exec/port-forward, and operator guardrails |
-| **M4** | AKS Visibility + Guardrails | ✅ Complete | AKS detection, node-pool visibility, Azure resource awareness, Portal links, and production-context safeguards |
-| **M5** | Helm + Metrics | ✅ Complete | Helm list/detail/history/values/rollback plus pod/node metrics and trend views |
-| **M6** | Search, CRDs + Advanced UX | ✅ Complete | Search palette, CRD discovery/instance browsing, generic detail routes, themes, filtering, shortcuts, and breadcrumbs |
-| **M7** | Desktop Hardening + Auditability | ✅ Complete | Desktop packaging maturity, local audit logging, safer destructive operations, and operator-facing polish |
-| **M8** | Resource Breadth + Operator Workflows | ✅ Complete | Expanded built-in resource coverage, generic actions, cluster-wide inventory depth, and desktop workflow consolidation |
-| **M9** | Desktop Resource Expansion | ✅ Complete | 16 primary Kubernetes resource blades and 28+ watched resource types shipped in the desktop cache |
-| **M10** | Azure ARM Management Plane | ✅ Complete | `telescope-azure` ARM client, AKS node-pool CRUD, cluster start/stop, upgrade management, and ARM-backed diagnostics |
+| **M0** | Foundations | [x] Complete | Monorepo architecture, Rust workspace, desktop shell, shared frontend packaging, CI, and deterministic fixtures |
+| **M1** | Connect + Browse | [x] Complete | Real cluster connectivity, context/namespace switching, watch-backed cache, overview dashboard, and broad built-in resource browsing |
+| **M2** | Debug Loop + UX Foundation | [x] Complete | Pod detail, logs, events, YAML, search palette, shortcuts, themes, breadcrumbs, and settings surface |
+| **M3** | Resource Actions + Safe Ops | [x] Complete | Create/apply/delete flows, scale/restart/status actions, pod-focused exec/port-forward, and operator guardrails |
+| **M4** | AKS Visibility + Guardrails | [x] Complete | AKS detection, node-pool visibility, Azure resource awareness, Portal links, and production-context safeguards |
+| **M5** | Helm + Metrics | [x] Complete | Helm list/detail/history/values/rollback plus pod/node metrics and trend views |
+| **M6** | Search, CRDs + Advanced UX | [x] Complete | Search palette, CRD discovery/instance browsing, generic detail routes, themes, filtering, shortcuts, and breadcrumbs |
+| **M7** | Desktop Hardening + Auditability | [x] Complete | Desktop packaging maturity, local audit logging, safer destructive operations, and operator-facing polish |
+| **M8** | Resource Breadth + Operator Workflows | [x] Complete | Expanded built-in resource coverage, generic actions, cluster-wide inventory depth, and desktop workflow consolidation |
+| **M9** | Desktop Resource Expansion | [x] Complete | 16 primary Kubernetes resource blades and 28+ watched resource types shipped in the desktop cache |
+| **M10** | Azure ARM Management Plane | [x] Complete | `telescope-azure` ARM client, AKS node-pool CRUD, cluster start/stop, upgrade management, and ARM-backed diagnostics |

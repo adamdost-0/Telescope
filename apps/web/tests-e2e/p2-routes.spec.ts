@@ -45,7 +45,7 @@ const routeCases: RouteCase[] = [
 ];
 
 async function openPalette(page: Page) {
-  await expect(page.locator('.app-shell')).toBeAttached();
+  await expect(page.locator('.app-shell')).toBeVisible({ timeout: 15000 });
   await page.evaluate(() => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
   });
@@ -56,6 +56,7 @@ for (const routeCase of routeCases) {
   test(`${routeCase.title}: route loads table, columns render, and detail click-through works`, async ({ page }) => {
     await installMockTauri(page);
     await page.goto(routeCase.path);
+    await expect(page.locator('.app-shell')).toBeVisible({ timeout: 15000 });
 
     await expect(page.getByRole('heading', { name: routeCase.title })).toBeVisible();
     const table = page.getByRole('table', { name: 'Resource list' });

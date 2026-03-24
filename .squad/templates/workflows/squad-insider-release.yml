@@ -33,9 +33,9 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "insider_version=$INSIDER_VERSION" >> "$GITHUB_OUTPUT"
           echo "insider_tag=$INSIDER_TAG" >> "$GITHUB_OUTPUT"
-          echo "📦 Base Version: $VERSION (Short SHA: $SHORT_SHA)"
-          echo "🏷️ Insider Version: $INSIDER_VERSION"
-          echo "🔖 Insider Tag: $INSIDER_TAG"
+          echo "Package Base Version: $VERSION (Short SHA: $SHORT_SHA)"
+          echo "Tag Insider Version: $INSIDER_VERSION"
+          echo "Insider Tag: $INSIDER_TAG"
 
       - name: Create git tag
         run: |
@@ -58,4 +58,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release view "${{ steps.version.outputs.insider_tag }}"
-          echo "✅ Insider Release ${{ steps.version.outputs.insider_tag }} created and verified."
+          echo "[ok] Insider Release ${{ steps.version.outputs.insider_tag }} created and verified."

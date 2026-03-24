@@ -19,6 +19,7 @@
   } from '$lib/prod-detection';
   import { getPreferredNamespace } from '$lib/preferences';
   import type { ClusterContext } from '$lib/tauri-commands';
+  import Icon from '$lib/icons/Icon.svelte';
 
   let contexts: ClusterContext[] = $state([]);
   let loading = $state(true);
@@ -150,7 +151,7 @@
         <option value={ctx.name}>
           {ctx.name}
           {#if ctx.namespace}({ctx.namespace}){/if}
-          {#if isProductionContext(ctx.name, $productionPatterns)} 🔴 PROD{/if}
+          {#if isProductionContext(ctx.name, $productionPatterns)} (PROD){/if}
         </option>
       {/each}
     </select>
@@ -183,18 +184,28 @@
         onclick={handleDisconnect}
         disabled={disconnecting}
       >
-        {disconnecting ? 'Disconnecting…' : '⏏ Disconnect'}
+        {#if disconnecting}
+          Disconnecting…
+        {:else}
+          <Icon name="disconnect" size={16} aria-hidden="true" /> Disconnect
+        {/if}
       </button>
     {/if}
 
     {#if $selectedContext && !connecting}
       {@const ctx = contexts.find(c => c.name === $selectedContext)}
       {#if ctx?.auth_type === 'exec'}
-        <span class="auth-badge exec" title="Exec-based auth (e.g. kubelogin)">🔑 Exec</span>
+        <span class="auth-badge exec" title="Exec-based auth (e.g. kubelogin)">
+          <Icon name="auth-exec" size={14} aria-hidden="true" /> Exec
+        </span>
       {:else if ctx?.auth_type === 'token'}
-        <span class="auth-badge token" title="Token-based auth">🎫 Token</span>
+        <span class="auth-badge token" title="Token-based auth">
+          <Icon name="auth-token" size={14} aria-hidden="true" /> Token
+        </span>
       {:else if ctx?.auth_type === 'certificate'}
-        <span class="auth-badge cert" title="Certificate-based auth">📜 Cert</span>
+        <span class="auth-badge cert" title="Certificate-based auth">
+          <Icon name="auth-cert" size={14} aria-hidden="true" /> Cert
+        </span>
       {/if}
       {#if ctx?.cluster_server}
         <span class="server" title={ctx.cluster_server}>
@@ -207,7 +218,10 @@
     {/if}
 
     {#if error}
-      <span class="error" role="alert" aria-live="polite" title={error}>⚠ {error}</span>
+      <span class="error" role="alert" aria-live="polite" title={error}>
+        <Icon name="error" size={16} aria-hidden="true" />
+        <span>{error}</span>
+      </span>
     {/if}
   {/if}
 </div>

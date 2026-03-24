@@ -14,11 +14,11 @@ Before starting work on any issue:
 
 Before starting work, check your capability profile in `.squad/team.md` under the **Coding Agent → Capabilities** section.
 
-- **🟢 Good fit** — proceed autonomously.
-- **🟡 Needs review** — proceed, but note in the PR description that a squad member should review.
-- **🔴 Not suitable** — do NOT start work. Instead, comment on the issue:
+- **[green] Good fit** — proceed autonomously.
+- **[yellow] Needs review** — proceed, but note in the PR description that a squad member should review.
+- **[red] Not suitable** — do NOT start work. Instead, comment on the issue:
   ```
-  🤖 This issue doesn't match my capability profile (reason: {why}). Suggesting reassignment to a squad member.
+  copilot This issue doesn't match my capability profile (reason: {why}). Suggesting reassignment to a squad member.
   ```
 
 ## Branch Naming
@@ -34,7 +34,7 @@ Example: `squad/42-fix-login-validation`
 When opening a PR:
 - Reference the issue: `Closes #{issue-number}`
 - If the issue had a `squad:{member}` label, mention the member: `Working as {member} ({role})`
-- If this is a 🟡 needs-review task, add to the PR description: `⚠️ This task was flagged as "needs review" — please have a squad member review before merging.`
+- If this is a [yellow] needs-review task, add to the PR description: `WARNING This task was flagged as "needs review" — please have a squad member review before merging.`
 - Follow any project conventions in `.squad/decisions.md`
 
 ## Decisions

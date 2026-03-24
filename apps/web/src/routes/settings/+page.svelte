@@ -3,6 +3,7 @@
   import { getAzureCloud, getPreference, resolveAksIdentity, setAzureCloud, setPreference } from '$lib/api';
   import { updateProductionPatterns } from '$lib/prod-detection';
   import { version } from '$lib/version';
+  import Icon from '$lib/icons/Icon.svelte';
 
   let theme = $state('system');
   let productionPatterns = $state('prod\nproduction\nprd');
@@ -150,7 +151,7 @@
 </script>
 
 <div class="settings-page">
-  <h1>⚙️ Settings</h1>
+  <h1><Icon name="settings" size={20} aria-hidden="true" /> Settings</h1>
 
   <section class="settings-section">
     <h2>Appearance</h2>

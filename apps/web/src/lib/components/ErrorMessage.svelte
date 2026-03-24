@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getSuggestion } from '$lib/error-suggestions';
+  import Icon from '$lib/icons/Icon.svelte';
 
   let { message = '', suggestion = '', onretry }: {
     message: string;
@@ -10,12 +11,17 @@
   let effectiveSuggestion = $derived(suggestion || getSuggestion(message));
 </script>
 
-<div class="error-message" role="alert" aria-live="polite">
-  <div class="error-icon">⚠️</div>
+<div class="error-message" role="alert" aria-live="polite" data-testid="error-message">
+  <div class="error-icon" aria-hidden="true">
+    <Icon name="error" size={20} />
+  </div>
   <div class="error-content">
     <p class="error-text">{message}</p>
     {#if effectiveSuggestion}
-      <p class="error-suggestion">💡 {effectiveSuggestion}</p>
+      <p class="error-suggestion">
+        <Icon name="suggestion" size={16} class="suggestion-icon" aria-hidden="true" />
+        <span>{effectiveSuggestion}</span>
+      </p>
     {/if}
   </div>
   {#if onretry}

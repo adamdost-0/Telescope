@@ -45,7 +45,7 @@ jobs:
             const content = fs.readFileSync(teamFile, 'utf8');
 
             // Check if Ralph is on the roster
-            if (!content.includes('Ralph') || !content.includes('🔄')) {
+            if (!content.includes('Ralph') || !content.includes('Loop')) {
               core.info('Ralph not on roster — heartbeat disabled');
               return;
             }
@@ -146,33 +146,33 @@ jobs:
             // Build status summary
             const summary = [];
             if (untriaged.length > 0) {
-              summary.push(`🔴 **${untriaged.length} untriaged issue(s)** need triage`);
+              summary.push(`[red] **${untriaged.length} untriaged issue(s)** need triage`);
             }
             if (unstarted.length > 0) {
-              summary.push(`🟡 **${unstarted.length} assigned issue(s)** have no assignee`);
+              summary.push(`[yellow] **${unstarted.length} assigned issue(s)** have no assignee`);
             }
             if (missingVerdict.length > 0) {
-              summary.push(`⚪ **${missingVerdict.length} issue(s)** missing triage verdict (no \`go:\` label)`);
+              summary.push(`[pending] **${missingVerdict.length} issue(s)** missing triage verdict (no \`go:\` label)`);
             }
             if (goYesIssues.length > 0) {
-              summary.push(`⚪ **${goYesIssues.length} approved issue(s)** missing release target (no \`release:\` label)`);
+              summary.push(`[pending] **${goYesIssues.length} approved issue(s)** missing release target (no \`release:\` label)`);
             }
             if (missingType.length > 0) {
-              summary.push(`⚪ **${missingType.length} issue(s)** missing \`type:\` label`);
+              summary.push(`[pending] **${missingType.length} issue(s)** missing \`type:\` label`);
             }
             if (squadPRs.length > 0) {
               const drafts = squadPRs.filter(pr => pr.draft).length;
               const ready = squadPRs.length - drafts;
-              if (drafts > 0) summary.push(`🟡 **${drafts} draft PR(s)** in progress`);
-              if (ready > 0) summary.push(`🟢 **${ready} PR(s)** open for review/merge`);
+              if (drafts > 0) summary.push(`[yellow] **${drafts} draft PR(s)** in progress`);
+              if (ready > 0) summary.push(`[green] **${ready} PR(s)** open for review/merge`);
             }
 
             if (summary.length === 0) {
-              core.info('📋 Board is clear — Ralph found no pending work');
+              core.info('Scribe Board is clear — Ralph found no pending work');
               return;
             }
 
-            core.info(`🔄 Ralph found work:\n${summary.join('\n')}`);
+            core.info(`Loop Ralph found work:\n${summary.join('\n')}`);
 
             // Auto-triage untriaged issues
             for (const issue of untriaged) {
@@ -233,7 +233,7 @@ jobs:
                   repo: context.repo.repo,
                   issue_number: issue.number,
                   body: [
-                    `### 🔄 Ralph — Auto-Triage`,
+                    `### Loop Ralph — Auto-Triage`,
                     '',
                     `**Assigned to:** ${assignedMember.name} (${assignedMember.role})`,
                     `**Reason:** ${reason}`,
@@ -264,7 +264,7 @@ jobs:
             const content = fs.readFileSync(teamFile, 'utf8');
 
             // Check if @copilot is on the team with auto-assign
-            const hasCopilot = content.includes('🤖 Coding Agent') || content.includes('@copilot');
+            const hasCopilot = content.includes('copilot Coding Agent') || content.includes('@copilot');
             const autoAssign = content.includes('<!-- copilot-auto-assign: true -->');
             if (!hasCopilot || !autoAssign) return;
 

@@ -6,7 +6,9 @@ const releaseNamespace = 'default';
 
 async function openUninstallDialog(page: import('@playwright/test').Page) {
   await page.goto('/helm');
-  await expect(page.getByRole('heading', { name: '⎈ Helm Releases' })).toBeVisible();
+  await expect(page.locator('.app-shell')).toBeVisible({ timeout: 15000 });
+  // Use data-testid to avoid coupling to iconography/emoji in headings
+  await expect(page.getByTestId('helm-releases-heading')).toBeVisible();
 
   const row = page.locator('tbody tr').filter({ hasText: releaseName }).first();
   await expect(row).toBeVisible();

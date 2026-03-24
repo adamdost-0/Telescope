@@ -36,7 +36,7 @@ jobs:
             const lines = content.split('\n');
 
             // Check if @copilot is on the team
-            const hasCopilot = content.includes('🤖 Coding Agent');
+            const hasCopilot = content.includes('copilot Coding Agent');
             const copilotAutoAssign = content.includes('<!-- copilot-auto-assign: true -->');
 
             // Parse @copilot capability profile
@@ -46,9 +46,9 @@ jobs:
 
             if (hasCopilot) {
               // Extract capability tiers from team.md
-              const goodFitMatch = content.match(/🟢\s*Good fit[^:]*:\s*(.+)/i);
-              const needsReviewMatch = content.match(/🟡\s*Needs review[^:]*:\s*(.+)/i);
-              const notSuitableMatch = content.match(/🔴\s*Not suitable[^:]*:\s*(.+)/i);
+              const goodFitMatch = content.match(/[green]\s*Good fit[^:]*:\s*(.+)/i);
+              const needsReviewMatch = content.match(/[yellow]\s*Needs review[^:]*:\s*(.+)/i);
+              const notSuitableMatch = content.match(/[red]\s*Not suitable[^:]*:\s*(.+)/i);
 
               if (goodFitMatch) {
                 goodFitKeywords = goodFitMatch[1].toLowerCase().split(',').map(s => s.trim());
@@ -131,11 +131,11 @@ jobs:
               if (isGoodFit) {
                 copilotTier = 'good-fit';
                 assignedMember = { name: '@copilot', role: 'Coding Agent' };
-                triageReason = '🟢 Good fit for @copilot — matches capability profile';
+                triageReason = '[green] Good fit for @copilot — matches capability profile';
               } else if (isNeedsReview) {
                 copilotTier = 'needs-review';
                 assignedMember = { name: '@copilot', role: 'Coding Agent' };
-                triageReason = '🟡 Routing to @copilot (needs review) — a squad member should review the PR';
+                triageReason = '[yellow] Routing to @copilot (needs review) — a squad member should review the PR';
               } else if (isNotSuitable) {
                 copilotTier = 'not-suitable';
                 // Fall through to normal routing
@@ -225,7 +225,7 @@ jobs:
             let copilotNote = '';
             if (hasCopilot && !isCopilot) {
               if (copilotTier === 'not-suitable') {
-                copilotNote = `\n\n**@copilot evaluation:** 🔴 Not suitable — issue involves work outside the coding agent's capability profile.`;
+                copilotNote = `\n\n**@copilot evaluation:** [red] Not suitable — issue involves work outside the coding agent's capability profile.`;
               } else {
                 copilotNote = `\n\n**@copilot evaluation:** No strong capability match — routed to squad member.`;
               }
@@ -233,12 +233,12 @@ jobs:
 
             // Post triage comment
             const comment = [
-              `### 🏗️ Squad Triage — ${lead.name} (${lead.role})`,
+              `### Lead Squad Triage — ${lead.name} (${lead.role})`,
               '',
               `**Issue:** #${issue.number} — ${issue.title}`,
               `**Assigned to:** ${assignedMember.name} (${assignedMember.role})`,
               `**Reason:** ${triageReason}`,
-              copilotTier === 'needs-review' ? `\n⚠️ **PR review recommended** — a squad member should review @copilot's work on this one.` : '',
+              copilotTier === 'needs-review' ? `\nWARNING **PR review recommended** — a squad member should review @copilot's work on this one.` : '',
               copilotNote,
               '',
               `---`,

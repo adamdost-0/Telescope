@@ -3,6 +3,8 @@
   import { searchResources, setPreference } from '$lib/api';
   import { kindFromGvk, routeForSearchEntry } from '$lib/resource-routing';
   import type { ResourceEntry } from '$lib/tauri-commands';
+  import Icon from '$lib/icons/Icon.svelte';
+  import type { ActionIconName, IconName, ResourceIconName } from '$lib/icons';
 
   let { open = $bindable(false) }: { open: boolean } = $props();
 
@@ -17,16 +19,16 @@
   let scopeMode = $state<ScopeMode>('all');
 
   // Command actions available globally
-  const COMMANDS: Record<string, { icon: string; label: string; action: () => void }> = {
+  const COMMANDS: Record<string, { icon: ActionIconName; label: string; action: () => void }> = {
     reload: {
-      icon: '🔄',
+      icon: 'reload',
       label: 'Reload Resources',
       action: () => {
         // Placeholder: would trigger a refresh from backend
       },
     },
     theme: {
-      icon: '🎨',
+      icon: 'theme',
       label: 'Toggle Theme',
       action: () => {
         const current = document.documentElement.getAttribute('data-theme') ?? 'dark';
@@ -36,7 +38,7 @@
       },
     },
     settings: {
-      icon: '⚙️',
+      icon: 'settings',
       label: 'Settings',
       action: () => {
         goto('/settings');
@@ -47,43 +49,54 @@
   // Navigation pages available
   const PAGES: Record<
     string,
-    { icon: string; label: string; route: string; description?: string }
+    { icon: ResourceIconName; label: string; route: string; description?: string }
   > = {
-    overview: { icon: '📊', label: 'Overview', route: '/overview' },
-    pods: { icon: '📦', label: 'Pods', route: '/pods' },
-    nodes: { icon: '🖥️', label: 'Nodes', route: '/nodes' },
-    nodepools: { icon: '☁️', label: 'Node Pools', route: '/azure/node-pools' },
-    deployments: { icon: '🚀', label: 'Deployments', route: '/resources/deployments' },
-    replicasets: { icon: '🧬', label: 'ReplicaSets', route: '/resources/replicasets' },
-    services: { icon: '🌐', label: 'Services', route: '/resources/services' },
-    configmaps: { icon: '📋', label: 'ConfigMaps', route: '/resources/configmaps' },
-    clusterroles: { icon: '🧾', label: 'ClusterRoles', route: '/resources/clusterroles' },
-    clusterrolebindings: { icon: '🔗', label: 'ClusterRoleBindings', route: '/resources/clusterrolebindings' },
-    helm: { icon: '⛵', label: 'Helm Releases', route: '/helm' },
-    events: { icon: '⚡', label: 'Events', route: '/events' },
-    namespaces: { icon: '📁', label: 'Namespaces', route: '/namespaces' },
-    crds: { icon: '🔷', label: 'CRDs', route: '/crds' },
-    create: { icon: '✨', label: 'Create Resource', route: '/create' },
-    settings: { icon: '⚙️', label: 'Settings', route: '/settings' },
+    overview: { icon: 'overview', label: 'Overview', route: '/overview' },
+    pods: { icon: 'pods', label: 'Pods', route: '/pods' },
+    nodes: { icon: 'nodes', label: 'Nodes', route: '/nodes' },
+    nodepools: { icon: 'node-pools', label: 'Node Pools', route: '/azure/node-pools' },
+    deployments: { icon: 'deployments', label: 'Deployments', route: '/resources/deployments' },
+    replicasets: { icon: 'replicasets', label: 'ReplicaSets', route: '/resources/replicasets' },
+    services: { icon: 'services', label: 'Services', route: '/resources/services' },
+    configmaps: { icon: 'configmaps', label: 'ConfigMaps', route: '/resources/configmaps' },
+    clusterroles: { icon: 'clusterroles', label: 'ClusterRoles', route: '/resources/clusterroles' },
+    clusterrolebindings: { icon: 'clusterrolebindings', label: 'ClusterRoleBindings', route: '/resources/clusterrolebindings' },
+    helm: { icon: 'helm', label: 'Helm Releases', route: '/helm' },
+    events: { icon: 'events', label: 'Events', route: '/events' },
+    namespaces: { icon: 'namespaces', label: 'Namespaces', route: '/namespaces' },
+    crds: { icon: 'crds', label: 'CRDs', route: '/crds' },
+    create: { icon: 'create', label: 'Create Resource', route: '/create' },
+    settings: { icon: 'settings', label: 'Settings', route: '/settings' },
   };
 
-  const KIND_ICONS: Record<string, string> = {
-    Pod: '📦',
-    Deployment: '🚀',
-    StatefulSet: '🗄️',
-    DaemonSet: '🔄',
-    Service: '🌐',
-    Ingress: '🚪',
-    ConfigMap: '📋',
-    PersistentVolumeClaim: '💾',
-    Job: '⚙️',
-    CronJob: '🕐',
-    Node: '🖥️',
-    Event: '⚡',
+  const KIND_ICONS: Record<string, ResourceIconName> = {
+    Pod: 'pods',
+    Deployment: 'deployments',
+    StatefulSet: 'statefulsets',
+    DaemonSet: 'daemonsets',
+    ReplicaSet: 'replicasets',
+    Service: 'services',
+    Ingress: 'ingresses',
+    ConfigMap: 'configmaps',
+    Secret: 'secrets',
+    ResourceQuota: 'resourcequotas',
+    LimitRange: 'limitranges',
+    PersistentVolume: 'persistentvolumes',
+    PersistentVolumeClaim: 'pvcs',
+    StorageClass: 'storageclasses',
+    Job: 'jobs',
+    CronJob: 'cronjobs',
+    Node: 'nodes',
+    Event: 'events',
+    Namespace: 'namespaces',
+    ClusterRole: 'clusterroles',
+    ClusterRoleBinding: 'clusterrolebindings',
+    HorizontalPodAutoscaler: 'hpas',
+    PodDisruptionBudget: 'poddisruptionbudgets',
   };
 
-  function iconForGvk(gvk: string): string {
-    return KIND_ICONS[kindFromGvk(gvk)] ?? '📄';
+  function iconForGvk(gvk: string): ResourceIconName {
+    return KIND_ICONS[kindFromGvk(gvk)] ?? 'default';
   }
 
   /** Extract scope prefix from query (>, @, /) and return [mode, cleanQuery]. */
@@ -356,7 +369,9 @@
   <div class="overlay" role="presentation" onkeydown={handleKeydown} onclick={handleOverlayClick}>
     <div class="palette" role="dialog" aria-modal="true" aria-label="Search resources" tabindex="-1">
       <div class="search-bar">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon" aria-hidden="true">
+          <Icon name="search" size={18} />
+        </span>
         <input
           bind:this={inputEl}
           bind:value={query}
@@ -392,8 +407,11 @@
                 aria-selected={idx === selectedIndex}
                 onclick={() => selectCommand(item.id)}
                 onmouseenter={() => (selectedIndex = idx)}
+                data-testid={`palette-command-${item.id}`}
               >
-                <span class="item-icon">{item.icon}</span>
+                <span class="item-icon" aria-hidden="true">
+                  <Icon name={item.icon} size={18} />
+                </span>
                 <span class="item-name">{item.label}</span>
               </button>
             {:else if item.type === 'page'}
@@ -404,8 +422,11 @@
                 aria-selected={idx === selectedIndex}
                 onclick={() => selectPage(item.id)}
                 onmouseenter={() => (selectedIndex = idx)}
+                data-testid={`palette-page-${item.id}`}
               >
-                <span class="item-icon">{item.icon}</span>
+                <span class="item-icon" aria-hidden="true">
+                  <Icon name={item.icon} size={18} />
+                </span>
                 <span class="item-name">{item.label}</span>
               </button>
             {:else if item.type === 'resource'}
@@ -416,8 +437,11 @@
                 aria-selected={idx === selectedIndex}
                 onclick={() => selectEntry(item.entry)}
                 onmouseenter={() => (selectedIndex = idx)}
+                data-testid={`palette-resource-${item.id}`}
               >
-                <span class="item-icon">{item.icon}</span>
+                <span class="item-icon" aria-hidden="true">
+                  <Icon name={item.icon} size={18} />
+                </span>
                 <span class="entry-name">{item.label}</span>
                 {#if item.namespace}
                   <span class="entry-ns">{item.namespace}</span>

@@ -15,6 +15,7 @@
   import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
   import { getAutoRefreshIntervalMs } from '$lib/preferences';
+  import Icon from '$lib/icons/Icon.svelte';
   import { isAks, isConnected } from '$lib/stores';
   import type { AksNodePool, AvailableUpgrade, PoolUpgradeProfile } from '$lib/tauri-commands';
 
@@ -583,7 +584,7 @@
 
   <header>
     <div>
-      <h1>{PAGE_TITLE}</h1>
+      <h1 data-testid="node-pools-heading">{PAGE_TITLE}</h1>
       <p class="subtitle">Authoritative AKS node pool data from the Azure ARM API.</p>
     </div>
     <div class="controls">
@@ -602,7 +603,7 @@
 
   {#if !$isConnected && !loading}
     <div class="state-card">
-      <p>🔌 Not connected to a cluster</p>
+      <p>Not connected to a cluster</p>
       <p class="hint">Select a context from the header to connect.</p>
     </div>
   {:else if !$isAks && !loading}
@@ -920,7 +921,10 @@
     <div class="dialog" role="dialog" aria-modal="true" tabindex="-1" aria-label="Delete Node Pool">
       <h2>Delete Node Pool</h2>
       <div class="delete-warning">
-        <p>⚠️ This will permanently remove pool <strong>{deletePoolName}</strong>.</p>
+        <p>
+          <Icon name="prod-warning" size={16} aria-hidden="true" />
+          Warning: This will permanently remove pool <strong>{deletePoolName}</strong>.
+        </p>
         <p>Mode: <strong>{deletePoolMode}</strong> · Nodes: <strong>{deletePoolCount}</strong></p>
         <p class="hint">All nodes and workloads on this pool will be removed.</p>
       </div>

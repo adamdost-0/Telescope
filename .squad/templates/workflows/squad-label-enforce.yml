@@ -55,7 +55,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issue.number,
-                  body: `🏷️ Triage verdict updated → \`${appliedLabel}\``
+                  body: `Tag Triage verdict updated → \`${appliedLabel}\``
                 });
               }
 
@@ -74,7 +74,7 @@ jobs:
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     issue_number: issue.number,
-                    body: `📋 Marked as \`release:backlog\` — assign a release target when ready.`
+                    body: `SCRIBE Marked as \`release:backlog\` — assign a release target when ready.`
                   });
 
                   core.info('Applied release:backlog for go:yes issue');
@@ -121,7 +121,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issue.number,
-                  body: `🏷️ Release target updated → \`${appliedLabel}\``
+                  body: `Tag Release target updated → \`${appliedLabel}\``
                 });
               }
             }
@@ -147,7 +147,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issue.number,
-                  body: `🏷️ Issue type updated → \`${appliedLabel}\``
+                  body: `Tag Issue type updated → \`${appliedLabel}\``
                 });
               }
             }
@@ -173,7 +173,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issue.number,
-                  body: `🏷️ Priority updated → \`${appliedLabel}\``
+                  body: `Tag Priority updated → \`${appliedLabel}\``
                 });
               }
             }

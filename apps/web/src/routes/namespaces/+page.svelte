@@ -4,6 +4,7 @@
   import { createNamespace, deleteNamespace, listNamespaces, setNamespace } from '$lib/api';
   import { getPreferredNamespace, getAutoRefreshIntervalMs } from '$lib/preferences';
   import { isConnected, isProduction, namespaces as namespaceStore, selectedNamespace } from '$lib/stores';
+  import Icon from '$lib/icons/Icon.svelte';
 
   const PROTECTED_NAMESPACES = new Set(['default', 'kube-public', 'kube-system']);
   const NAMESPACE_NAME_PATTERN = /^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/;
@@ -200,10 +201,14 @@
         <span class="last-updated">{lastUpdatedText}</span>
       {/if}
       <button type="button" class="btn btn-secondary" onclick={loadNamespaces} disabled={refreshing}>
-        {refreshing ? 'Refreshing…' : '↻ Refresh'}
+        {#if refreshing}
+          Refreshing…
+        {:else}
+          <Icon name="reload" size={14} aria-hidden="true" /> Refresh
+        {/if}
       </button>
       <button type="button" class="btn btn-primary" onclick={openCreateDialog} disabled={!$isConnected}>
-        ➕ Create Namespace
+        <Icon name="create" size={16} aria-hidden="true" /> Create Namespace
       </button>
     </div>
   </header>
@@ -218,7 +223,7 @@
 
   {#if !$isConnected && !loading}
     <div class="empty-state">
-      <p>🔌 Not connected to a cluster</p>
+      <p>Not connected to a cluster</p>
       <p class="hint">Select a context from the header to manage namespaces.</p>
     </div>
   {:else if loading}

@@ -25,6 +25,12 @@ pnpm -C apps/web e2e       # Playwright E2E tests
 pnpm -C apps/web lint      # Lint (runs build)
 ```
 
+## Iconography Guidance (No Emoji)
+
+- Do not use emojis in UI text, docs, or orchestration logs.
+- Prefer plain text labels or the shared icon registry (SVG/monochrome) for visual indicators.
+- When updating legacy content, replace emoji checkmarks/warnings with markdown checkboxes or neutral headings.
+
 ## Svelte 5 Patterns
 
 **Mandatory:** Use Svelte 5 runes and modern event syntax exclusively.

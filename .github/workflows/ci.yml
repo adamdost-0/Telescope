@@ -98,14 +98,14 @@ jobs:
 
           DMG_PATH=$(find target/release/bundle/dmg -name "*.dmg" | head -1)
           if [ -z "$DMG_PATH" ]; then
-            echo "❌ No .app or .dmg artifact available for signature verification"
+            echo "[fail] No .app or .dmg artifact available for signature verification"
             exit 1
           fi
 
           MOUNT_DIR=$(hdiutil attach "$DMG_PATH" -nobrowse -readonly | tail -n1 | awk '{print $3}')
           APP_IN_DMG=$(find "$MOUNT_DIR" -maxdepth 2 -name "*.app" | head -1)
           if [ -z "$APP_IN_DMG" ]; then
-            echo "❌ No .app found inside DMG: $DMG_PATH"
+            echo "[fail] No .app found inside DMG: $DMG_PATH"
             hdiutil detach "$MOUNT_DIR" || true
             exit 1
           fi

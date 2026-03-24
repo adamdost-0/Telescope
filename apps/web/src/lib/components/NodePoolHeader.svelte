@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { IconChevronRight } from '@tabler/icons-svelte';
+
   interface Props {
     poolName: string;
     nodeCount: number;
@@ -18,7 +20,9 @@
 </script>
 
 <button type="button" class="pool-header" onclick={onToggle} aria-expanded={!collapsed}>
-  <span class="chevron" class:collapsed>▶</span>
+  <span class="chevron" class:collapsed aria-hidden="true">
+    <IconChevronRight size={14} />
+  </span>
   <span class="pool-name">{poolName}</span>
   <span class="pool-badges">
     <span class="badge health {healthClass}">{readyCount}/{nodeCount} Ready</span>

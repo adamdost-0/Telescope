@@ -24,6 +24,7 @@
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
   import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+  import Icon from '$lib/icons/Icon.svelte';
   import { decodeNamespaceParam, labelForGvk, parseGvk, resourceCollectionHref } from '$lib/resource-routing';
   import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
@@ -574,10 +575,14 @@
     <h1>{resourceName}</h1>
     <span class="namespace-badge">{namespaceLabel}</span>
     {#if isScalable && resource}
-      <button class="action-btn" onclick={() => showScale = true}>⚖ Scale</button>
+      <button class="action-btn" onclick={() => showScale = true} data-testid="resource-scale-btn">
+        <Icon name="scale" size={14} aria-hidden="true" /> Scale
+      </button>
     {/if}
     {#if isDynamicResource && resource}
-      <button class="action-btn danger" onclick={() => (showDeleteConfirm = true)}>🗑 Delete</button>
+      <button class="action-btn danger" onclick={() => (showDeleteConfirm = true)} data-testid="resource-delete-btn">
+        <Icon name="delete" size={14} aria-hidden="true" /> Delete
+      </button>
     {/if}
   </header>
 
@@ -1668,11 +1673,19 @@
           <YamlEditor content={yamlContent} readonly={true} />
         {:else}
           <div class="yaml-actions">
-            <button onclick={() => handleApply(true)} disabled={!yamlDirty || applying} class="action-btn">🧪 Dry Run</button>
-            <button onclick={() => handleApply(false)} disabled={!yamlDirty || applying} class="action-btn primary">✅ Apply</button>
-            <button onclick={resetYaml} disabled={!yamlDirty} class="action-btn">↩ Reset</button>
+            <button onclick={() => handleApply(true)} disabled={!yamlDirty || applying} class="action-btn" data-testid="resource-yaml-dry-run">
+              <Icon name="dry-run" size={14} aria-hidden="true" /> Dry Run
+            </button>
+            <button onclick={() => handleApply(false)} disabled={!yamlDirty || applying} class="action-btn primary" data-testid="resource-yaml-apply">
+              <Icon name="apply" size={14} aria-hidden="true" /> Apply
+            </button>
+            <button onclick={resetYaml} disabled={!yamlDirty} class="action-btn" data-testid="resource-yaml-reset">
+              <Icon name="reset" size={14} aria-hidden="true" /> Reset
+            </button>
             {#if isDynamicResource}
-              <button onclick={() => (showDeleteConfirm = true)} disabled={deleting} class="action-btn danger">🗑 Delete</button>
+              <button onclick={() => (showDeleteConfirm = true)} disabled={deleting} class="action-btn danger" data-testid="resource-yaml-delete">
+                <Icon name="delete" size={14} aria-hidden="true" /> Delete
+              </button>
             {/if}
             {#if applyMessage}<span class={applyError ? 'apply-error' : 'apply-success'}>{applyMessage}</span>{/if}
           </div>

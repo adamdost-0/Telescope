@@ -3,6 +3,7 @@
   import { selectedNamespace } from '$lib/stores';
   import YamlEditor from '$lib/components/YamlEditor.svelte';
   import { applyResource } from '$lib/api';
+  import Icon from '$lib/icons/Icon.svelte';
 
   interface TemplateEntry {
     label: string;
@@ -120,7 +121,9 @@
 
 <div class="create-page">
   <header class="page-header">
-    <h1>➕ Create Resource</h1>
+    <h1>
+      <Icon name="create" size={20} aria-hidden="true" /> Create Resource
+    </h1>
     <p class="subtitle">Select a template and edit the manifest, then create or dry-run.</p>
   </header>
 
@@ -139,16 +142,30 @@
 
   <div class="actions">
     <button class="btn btn-secondary" disabled={applying} onclick={() => handleApply(true)}>
-      {applying ? 'Validating…' : '🔍 Dry Run'}
+      {#if applying}
+        Validating…
+      {:else}
+        <Icon name="dry-run" size={16} aria-hidden="true" /> Dry Run
+      {/if}
     </button>
     <button class="btn btn-primary" disabled={applying} onclick={() => handleApply(false)}>
-      {applying ? 'Creating…' : '🚀 Create'}
+      {#if applying}
+        Creating…
+      {:else}
+        <Icon name="create" size={16} aria-hidden="true" /> Create
+      {/if}
     </button>
   </div>
 
   {#if result}
     <div class="result" class:success={result.success} class:error={!result.success}>
-      <span class="result-icon">{result.success ? '✅' : '❌'}</span>
+      <span class="result-icon" aria-hidden="true">
+        {#if result.success}
+          <Icon name="apply" size={18} />
+        {:else}
+          <Icon name="error" size={18} />
+        {/if}
+      </span>
       <span>{result.message}</span>
     </div>
   {/if}

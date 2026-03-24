@@ -30,17 +30,17 @@ Telescope v1.0.0 is now the shipped baseline: a **desktop-only** Kubernetes IDE 
 
 | Milestone | Title | Status | Delivered scope |
 |-----------|-------|--------|-----------------|
-| **M0** | Foundations | ✅ Closed | Workspace architecture, Tauri shell, shared frontend packaging, CI, and deterministic fixtures |
-| **M1** | Connect + Browse | ✅ Closed | Kubeconfig import, context switching, namespace selection, overview dashboard, and watch-backed browsing |
-| **M2** | Debug Loop + UX Foundation | ✅ Closed | Pod detail, logs, events, YAML, search, shortcuts, themes, breadcrumbs, and settings |
-| **M3** | Resource Actions + Safe Ops | ✅ Closed | Create/apply/delete, scale, rollout restart/status, non-interactive exec, basic pod port-forward, and guardrails |
-| **M4** | AKS Visibility + Guardrails | ✅ Closed | AKS detection, node-pool awareness, Portal links, workload identity hints, and production-context UX |
-| **M5** | Helm + Metrics | ✅ Closed | Helm release operations, redacted values/history/rollback, and pod/node metrics with trend views |
-| **M6** | Search, CRDs + Advanced UX | ✅ Closed | Cached-resource search, CRD discovery/instance browsing, generic routes, filtering, and polished navigation |
-| **M7** | Desktop Hardening + Auditability | ✅ Closed | Desktop packaging maturity, local audit logging, safer destructive actions, and operator polish |
-| **M8** | Resource Breadth + Operator Workflows | ✅ Closed | Broader built-in resource coverage, generic detail/action flows, and desktop workflow consolidation |
-| **M9** | Desktop Resource Expansion | ✅ Complete | 16 primary resource blades and 28+ watched resource types across the desktop cache and UI |
-| **M10** | Azure ARM Management Plane | ✅ Complete | `telescope-azure` ARM client, AKS node-pool CRUD, cluster start/stop, upgrade profiles, pool/node-image upgrades, and ARM-backed diagnostics |
+| **M0** | Foundations | [x] Closed | Workspace architecture, Tauri shell, shared frontend packaging, CI, and deterministic fixtures |
+| **M1** | Connect + Browse | [x] Closed | Kubeconfig import, context switching, namespace selection, overview dashboard, and watch-backed browsing |
+| **M2** | Debug Loop + UX Foundation | [x] Closed | Pod detail, logs, events, YAML, search, shortcuts, themes, breadcrumbs, and settings |
+| **M3** | Resource Actions + Safe Ops | [x] Closed | Create/apply/delete, scale, rollout restart/status, non-interactive exec, basic pod port-forward, and guardrails |
+| **M4** | AKS Visibility + Guardrails | [x] Closed | AKS detection, node-pool awareness, Portal links, workload identity hints, and production-context UX |
+| **M5** | Helm + Metrics | [x] Closed | Helm release operations, redacted values/history/rollback, and pod/node metrics with trend views |
+| **M6** | Search, CRDs + Advanced UX | [x] Closed | Cached-resource search, CRD discovery/instance browsing, generic routes, filtering, and polished navigation |
+| **M7** | Desktop Hardening + Auditability | [x] Closed | Desktop packaging maturity, local audit logging, safer destructive actions, and operator polish |
+| **M8** | Resource Breadth + Operator Workflows | [x] Closed | Broader built-in resource coverage, generic detail/action flows, and desktop workflow consolidation |
+| **M9** | Desktop Resource Expansion | [x] Complete | 16 primary resource blades and 28+ watched resource types across the desktop cache and UI |
+| **M10** | Azure ARM Management Plane | [x] Complete | `telescope-azure` ARM client, AKS node-pool CRUD, cluster start/stop, upgrade profiles, pool/node-image upgrades, and ARM-backed diagnostics |
 
 ---
 
@@ -81,7 +81,7 @@ Telescope v1.0.0 is now the shipped baseline: a **desktop-only** Kubernetes IDE 
 
 ## Future Milestones (M11+)
 
-### 🔲 M11 — Interactive Terminal + Deeper Live Operations
+### [ ] M11 — Interactive Terminal + Deeper Live Operations
 Focus on making the desktop debug loop fully self-contained.
 
 Planned scope:
@@ -90,7 +90,7 @@ Planned scope:
 - stronger copy/paste, resize, and reconnect ergonomics for live workflows
 - deeper streaming UX around long-running operator actions
 
-### 🔲 M12 — Plugin System
+### [ ] M12 — Plugin System
 Open Telescope up for controlled extension without regressing desktop safety.
 
 Planned scope:
@@ -99,7 +99,7 @@ Planned scope:
 - packaging/discovery story for internal and community plugins
 - extraction of optional first-party integrations into plugins where it improves maintainability
 
-### 🔲 M13 — Advanced Visualizations + Operations Analytics
+### [ ] M13 — Advanced Visualizations + Operations Analytics
 Build richer operator insight surfaces on top of the shipped inventory and metrics baseline.
 
 Planned scope:

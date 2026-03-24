@@ -347,25 +347,28 @@
     return counts.get(gvk) ?? 0;
   }
 
+  import Icon from '$lib/icons/Icon.svelte';
+  import type { ResourceIconName } from '$lib/icons';
+
   interface CardDef {
     label: string;
     gvk: string;
-    icon: string;
+    icon: ResourceIconName;
     href: string;
   }
 
   const cards: CardDef[] = [
-    { label: 'Pods', gvk: 'v1/Pod', icon: '📦', href: '/pods' },
-    { label: 'Deployments', gvk: 'apps/v1/Deployment', icon: '🚀', href: '/resources/deployments' },
-    { label: 'StatefulSets', gvk: 'apps/v1/StatefulSet', icon: '🗄️', href: '/resources/statefulsets' },
-    { label: 'DaemonSets', gvk: 'apps/v1/DaemonSet', icon: '🔄', href: '/resources/daemonsets' },
-    { label: 'Jobs', gvk: 'batch/v1/Job', icon: '⚙️', href: '/resources/jobs' },
-    { label: 'CronJobs', gvk: 'batch/v1/CronJob', icon: '🕐', href: '/resources/cronjobs' },
-    { label: 'Services', gvk: 'v1/Service', icon: '🌐', href: '/resources/services' },
-    { label: 'ConfigMaps', gvk: 'v1/ConfigMap', icon: '📋', href: '/resources/configmaps' },
-    { label: 'Secrets', gvk: 'v1/Secret', icon: '🔒', href: '/resources/secrets' },
-    { label: 'Nodes', gvk: 'v1/Node', icon: '🖥️', href: '/nodes' },
-    { label: 'Events', gvk: 'v1/Event', icon: '⚡', href: '/events' },
+    { label: 'Pods', gvk: 'v1/Pod', icon: 'pods', href: '/pods' },
+    { label: 'Deployments', gvk: 'apps/v1/Deployment', icon: 'deployments', href: '/resources/deployments' },
+    { label: 'StatefulSets', gvk: 'apps/v1/StatefulSet', icon: 'statefulsets', href: '/resources/statefulsets' },
+    { label: 'DaemonSets', gvk: 'apps/v1/DaemonSet', icon: 'daemonsets', href: '/resources/daemonsets' },
+    { label: 'Jobs', gvk: 'batch/v1/Job', icon: 'jobs', href: '/resources/jobs' },
+    { label: 'CronJobs', gvk: 'batch/v1/CronJob', icon: 'cronjobs', href: '/resources/cronjobs' },
+    { label: 'Services', gvk: 'v1/Service', icon: 'services', href: '/resources/services' },
+    { label: 'ConfigMaps', gvk: 'v1/ConfigMap', icon: 'configmaps', href: '/resources/configmaps' },
+    { label: 'Secrets', gvk: 'v1/Secret', icon: 'secrets', href: '/resources/secrets' },
+    { label: 'Nodes', gvk: 'v1/Node', icon: 'nodes', href: '/nodes' },
+    { label: 'Events', gvk: 'v1/Event', icon: 'events', href: '/events' },
   ];
 
   const phaseColors: Record<string, string> = {
@@ -425,7 +428,9 @@
           <span class="info-label">Auth</span>
           <span class="info-value auth-hint">
             {#if clusterInfo.is_aks}
-              <span class="entra-icon" title="Microsoft Entra ID">🔐</span>
+              <span class="entra-icon" title="Microsoft Entra ID" aria-hidden="true">
+                <Icon name="auth-oidc" size={14} />
+              </span>
             {/if}
             {clusterInfo.auth_hint}
           </span>
@@ -596,9 +601,13 @@
                 <dt>Access</dt>
                 <dd>
                   {#if aksDetail.apiServerAccessProfile.enablePrivateCluster}
-                    <span class="access-badge private">🔒 Private</span>
+                    <span class="access-badge private">
+                      <Icon name="auth-cert" size={14} aria-hidden="true" /> Private
+                    </span>
                   {:else}
-                    <span class="access-badge public">🌐 Public</span>
+                    <span class="access-badge public">
+                      <Icon name="services" size={14} aria-hidden="true" /> Public
+                    </span>
                   {/if}
                 </dd>
                 {#if aksDetail.apiServerAccessProfile.authorizedIpRanges?.length}
@@ -682,7 +691,11 @@
                 <dd>{aksDetail.autoUpgradeProfile.upgradeChannel}</dd>
               {:else}
                 <dt>Auto-Upgrade</dt>
-                <dd><span class="info-notice">ℹ️ Disabled</span></dd>
+                <dd>
+                  <span class="info-notice">
+                    <Icon name="diagnostic-info" size={14} aria-hidden="true" /> Disabled
+                  </span>
+                </dd>
               {/if}
               {#if aksDetail.autoUpgradeProfile?.nodeOsUpgradeChannel}
                 <dt>Node OS Channel</dt>
@@ -709,7 +722,9 @@
                   {/if}
                   {#if config.notAllowedTime.length > 0}
                     <div class="maintenance-blocked">
-                      <span class="blocked-label">🚫 Blocked:</span>
+                      <span class="blocked-label">
+                        <Icon name="error" size={14} aria-hidden="true" /> Blocked:
+                      </span>
                       {#each config.notAllowedTime as span}
                         <span class="blocked-span">{span.start ?? '?'} → {span.end ?? '?'}</span>
                       {/each}
@@ -726,13 +741,22 @@
           <div class="diagnostics-warnings" data-testid="aks-diagnostics-warnings">
             <h3>Diagnostics</h3>
             {#if diagNoNetworkPolicy}
-              <div class="diag-warning">⚠️ No network policy configured — pod-to-pod traffic is unrestricted</div>
+              <div class="diag-warning">
+                <Icon name="diagnostic-warning" size={16} aria-hidden="true" />
+                No network policy configured — pod-to-pod traffic is unrestricted
+              </div>
             {/if}
             {#if diagPublicNoIpRestriction}
-              <div class="diag-warning">⚠️ Unrestricted public access — API server has no authorized IP restrictions</div>
+              <div class="diag-warning">
+                <Icon name="diagnostic-warning" size={16} aria-hidden="true" />
+                Unrestricted public access — API server has no authorized IP restrictions
+              </div>
             {/if}
             {#if diagNoAutoUpgrade}
-              <div class="diag-info">ℹ️ Auto-upgrade disabled — cluster upgrades must be applied manually</div>
+              <div class="diag-info">
+                <Icon name="diagnostic-info" size={16} aria-hidden="true" />
+                Auto-upgrade disabled — cluster upgrades must be applied manually
+              </div>
             {/if}
           </div>
         {/if}
@@ -798,7 +822,9 @@
         <div class="card-grid">
           {#each cards as card}
             <a href={card.href} class="card" data-testid="resource-card-{card.label.toLowerCase()}">
-              <span class="card-icon">{card.icon}</span>
+              <span class="card-icon" aria-hidden="true">
+                <Icon name={card.icon} size={18} />
+              </span>
               <div class="card-body">
                 <span class="card-count">{getCount(card.gvk)}</span>
                 <span class="card-label">{card.label}</span>
@@ -816,7 +842,10 @@
               {/if}
               {#if card.gvk === 'v1/Event'}
                 <div class="card-indicator">
-                  <span class="mini-badge warning">⚠ {warningEvents.length} warnings</span>
+                  <span class="mini-badge warning">
+                    <Icon name="diagnostic-warning" size={14} aria-hidden="true" />
+                    {warningEvents.length} warnings
+                  </span>
                 </div>
               {/if}
             </a>

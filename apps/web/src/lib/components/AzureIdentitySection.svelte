@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Icon from '$lib/icons/Icon.svelte';
+
   let { pod }: { pod: any } = $props();
 
   let hasWorkloadIdentity = $derived(
@@ -22,7 +24,10 @@
 
 {#if hasWorkloadIdentity || hasLegacyAadPodIdentity}
   <div class="azure-identity-section">
-    <h3>🔐 Azure Identity</h3>
+    <h3>
+      <Icon name="auth-token" size={18} aria-hidden="true" />
+      <span>Azure Identity</span>
+    </h3>
 
     {#if hasWorkloadIdentity}
       <div class="identity-card">
@@ -40,12 +45,17 @@
     {/if}
 
     {#if hasLegacyAadPodIdentity}
-      <div class="legacy-warning">
-        ⚠️ This pod uses <strong>AAD Pod Identity</strong> (legacy).
-        Consider migrating to
-        <a href="https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview" target="_blank" rel="noopener noreferrer">
-          Azure Workload Identity</a>.
-        <br />Binding: <code>{pod.metadata.labels['aadpodidbinding']}</code>
+      <div class="legacy-warning" role="note">
+        <Icon name="prod-warning" size={18} aria-hidden="true" />
+        <span>
+          This pod uses <strong>AAD Pod Identity</strong> (legacy). Consider migrating to
+          <a
+            href="https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview"
+            target="_blank"
+            rel="noopener noreferrer"
+          >Azure Workload Identity</a>.
+          <br />Binding: <code>{pod.metadata.labels['aadpodidbinding']}</code>
+        </span>
       </div>
     {/if}
   </div>

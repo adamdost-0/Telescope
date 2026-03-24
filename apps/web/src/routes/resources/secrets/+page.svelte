@@ -5,6 +5,7 @@
   import ResourceTable from '$lib/components/ResourceTable.svelte';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import LoadingSkeleton from '$lib/components/LoadingSkeleton.svelte';
+  import Icon from '$lib/icons/Icon.svelte';
   import type { ResourceEntry } from '$lib/tauri-commands';
 
   const PAGE_TITLE = 'Secrets';
@@ -109,7 +110,7 @@
 
   {#if !$isConnected && !loading}
     <div class="not-connected">
-      <p>🔌 Not connected to a cluster</p>
+      <p>Not connected to a cluster</p>
       <p class="hint">Select a context from the header to connect.</p>
     </div>
   {:else if loading}
@@ -123,7 +124,9 @@
       <button type="button" onclick={loadResources}>Retry</button>
     </div>
   {:else}
-    <p class="security-note">🔒 Secrets are fetched on-demand for security. They are not cached locally.</p>
+    <p class="security-note">
+      <Icon name="auth-cert" size={14} aria-hidden="true" /> Secrets are fetched on-demand for security. They are not cached locally.
+    </p>
     <FilterBar query={filterQuery} onfilter={(q) => filterQuery = q} />
     <p class="count">{filterQuery ? `${filtered.length} of ${resources.length}` : resources.length} {PAGE_TITLE.toLowerCase()}</p>
     <ResourceTable resources={filtered} {columns} emptyMessage="No secrets found in this namespace." hrefFn={(entry) => `/resources/secrets/${entry.namespace}/${entry.name}`} />

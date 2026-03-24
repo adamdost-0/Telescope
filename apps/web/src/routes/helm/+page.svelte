@@ -126,7 +126,7 @@
 
 <div class="resource-page">
   <header>
-    <h1>⎈ Helm Releases</h1>
+    <h1 data-testid="helm-releases-heading">Helm Releases</h1>
     <div class="controls">
       {#if lastUpdatedText}
         <span class="last-updated">{lastUpdatedText}</span>
@@ -139,7 +139,7 @@
 
   {#if !$isConnected && !loading}
     <div class="not-connected">
-      <p>🔌 Not connected to a cluster</p>
+      <p><strong>Not connected to a cluster</strong></p>
       <p class="hint">Select a context from the header to connect.</p>
     </div>
   {:else if loading}

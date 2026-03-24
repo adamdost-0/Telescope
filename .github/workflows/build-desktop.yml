@@ -56,17 +56,17 @@ jobs:
           $nsisFiles = Get-ChildItem -Path target/release/bundle/nsis -Filter "*.exe" -ErrorAction SilentlyContinue
 
           if ($msiFiles.Count -eq 0) {
-            Write-Error "❌ No MSI installer found in target/release/bundle/msi/"
+            Write-Error "[fail] No MSI installer found in target/release/bundle/msi/"
             exit 1
           } else {
-            Write-Host "✅ Found MSI installer(s)"
+            Write-Host "[ok] Found MSI installer(s)"
           }
 
           if ($nsisFiles.Count -eq 0) {
-            Write-Error "❌ No NSIS installer found in target/release/bundle/nsis/"
+            Write-Error "[fail] No NSIS installer found in target/release/bundle/nsis/"
             exit 1
           } else {
-            Write-Host "✅ Found NSIS installer(s)"
+            Write-Host "[ok] Found NSIS installer(s)"
           }
 
       - name: Upload Windows portable binary
@@ -119,10 +119,10 @@ jobs:
       - name: Validate macOS bundle artifacts
         run: |
           if ! ls target/release/bundle/dmg/*.dmg 1>/dev/null 2>&1; then
-            echo "❌ No DMG installer found in target/release/bundle/dmg/"
+            echo "[fail] No DMG installer found in target/release/bundle/dmg/"
             exit 1
           else
-            echo "✅ Found DMG installer(s)"
+            echo "[ok] Found DMG installer(s)"
             ls -lh target/release/bundle/dmg/*.dmg
           fi
 

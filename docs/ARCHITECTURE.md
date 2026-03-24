@@ -34,7 +34,7 @@ graph TB
         Actions["Actions<br/>(Delete · Scale · Rollout · Apply)"]
         Logs["Log Streamer<br/>(Snapshot + Stream)"]
         Exec["Exec Terminal<br/>(WebSocket)"]
-        PF["Port Forward<br/>(TCP ↔ WS Tunnel)"]
+        PF["Port Forward<br/>(TCP <-> WS Tunnel)"]
         NS["Namespace Listing"]
         KC["Kubeconfig Parser<br/>(ClusterContext)"]
         NodeOps["Node Operations<br/>(Cordon · Drain · Taint)"]
@@ -79,7 +79,7 @@ graph TB
 | `actions.rs` | Imperative operations: delete, scale (Deployment/StatefulSet), rollout restart/status, server-side apply |
 | `logs.rs` | Pod log snapshot and async streaming via `LogRequest` / `LogChunk` |
 | `exec.rs` | Non-interactive `kubectl exec` over WebSocket |
-| `portforward.rs` | TCP ↔ K8s WebSocket tunnel for port forwarding |
+| `portforward.rs` | TCP <-> K8s WebSocket tunnel for port forwarding |
 | `namespace.rs` | `list_namespaces()`, `create_namespace()`, `delete_namespace()` |
 | `kubeconfig.rs` | Parse `~/.kube/config`, list contexts with auth metadata |
 | `node_ops.rs` | Cordon, uncordon, drain, add/remove taints |
@@ -104,7 +104,7 @@ graph TB
 | `client.rs` | `ArmClient` — Azure ARM REST client using `DefaultAzureCredential`. Handles token acquisition, cloud-specific endpoints, and error mapping (404/409/API errors). |
 | `types.rs` | `AzureCloud` enum (Commercial, UsGovernment, UsGovSecret, UsGovTopSecret) with endpoint resolution. `AksResourceId` for ARM path construction. |
 | `aks.rs` | AKS control-plane operations: `get_cluster`, `start_cluster`, `stop_cluster`, `get_upgrade_profile`, `upgrade_cluster`, `list_node_pools`, `scale_node_pool`, `update_autoscaler`, `create_node_pool`, `delete_node_pool`, `upgrade_pool_version`, `upgrade_pool_node_image`, `list_maintenance_configs`. Long-running operations poll ARM (15 s interval, 80 max polls). |
-| `resolve.rs` | AKS identity resolution: saved preferences → Azure CLI (`az aks list`) → FQDN hints. Resolves subscription, resource group, and cluster name. |
+| `resolve.rs` | AKS identity resolution: saved preferences -> Azure CLI (`az aks list`) -> FQDN hints. Resolves subscription, resource group, and cluster name. |
 | `error.rs` | `AzureError` variants: `NotFound`, `Conflict`, `Api { status, code, message }`, `Identity`, `Http`, `Json`, `CliNotFound`, `CliFailed` |
 
 **Desktop (`apps/desktop`)** — Tauri 2 shell exposing 66 IPC commands across nine groups: context/connection (7), Azure ARM/AKS (18), resource queries (8), secrets (2), Helm (4), namespaces (3), logs (3), resource actions/node ops (15), exec/portforward/metrics (6). State is held in `AppState` (SQLite store + connection state + watch handle).
@@ -257,10 +257,10 @@ graph LR
 Workspace layout:
 
 ```
-crates/core      → telescope-core     (no internal deps)
-crates/engine    → telescope-engine   (depends on core)
-crates/azure     → telescope-azure    (depends on core)
-apps/desktop     → telescope-desktop  (depends on engine + azure + core; excluded from default-members for Linux CI)
+crates/core      -> telescope-core     (no internal deps)
+crates/engine    -> telescope-engine   (depends on core)
+crates/azure     -> telescope-azure    (depends on core)
+apps/desktop     -> telescope-desktop  (depends on engine + azure + core; excluded from default-members for Linux CI)
 ```
 
 ---
@@ -331,22 +331,22 @@ CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
 
 ### Implemented
 
-- ✅ **Kubeconfig references** — reads `~/.kube/config` directly via kube-rs; does not copy or embed credentials.
-- ✅ **Auth type detection** — identifies exec plugin, token, or certificate auth per context (`kubeconfig.rs`).
-- ✅ **Exec plugin support** — delegates to kubelogin / az CLI for Azure Entra ID auth.
-- ✅ **AKS auth hints** — surfaces human-readable auth description (e.g., "Authenticated via Azure Entra ID (kubelogin)") in `ClusterInfo`.
-- ✅ **Production guardrails** — name-pattern detection (`/prod/i`, `/production/i`, `/\bprd\b/i`, `/\blive\b/i` in `prod-detection.ts`). Production contexts force type-to-confirm on destructive operations via `ConfirmDialog`.
-- ✅ **Server-side dry-run** — `apply_resource` supports `dry_run: bool` for safe preview before mutation.
-- ✅ **Database isolation** — SQLite store at `~/.telescope/resources.db` (per-user home directory).
-- ✅ **Secrets redacted by default** — secret payload fields (`data`, `stringData`, `binaryData`, `last-applied-configuration`) are replaced with `●●●●●●●●` before serialization.
-- ✅ **Helm values redacted** — sensitive keys (`password`, `token`, `secret`, `apiKey`, `connectionString`, `private_key`, `client_secret`, `access_key`, `credentials`, `auth`, and variants) are recursively redacted in Helm release values.
-- ✅ **Audit logging** — JSONL audit entries for destructive operations (see Audit section below).
-- ✅ **File permissions** — audit log and SQLite DB created with `0600` permissions on Unix.
-- ✅ **Azure ARM auth** — `DefaultAzureCredential` for ARM API access; no hardcoded secrets (see Azure ARM Security section below).
+- [x] **Kubeconfig references** — reads `~/.kube/config` directly via kube-rs; does not copy or embed credentials.
+- [x] **Auth type detection** — identifies exec plugin, token, or certificate auth per context (`kubeconfig.rs`).
+- [x] **Exec plugin support** — delegates to kubelogin / az CLI for Azure Entra ID auth.
+- [x] **AKS auth hints** — surfaces human-readable auth description (e.g., "Authenticated via Azure Entra ID (kubelogin)") in `ClusterInfo`.
+- [x] **Production guardrails** — name-pattern detection (`/prod/i`, `/production/i`, `/\bprd\b/i`, `/\blive\b/i` in `prod-detection.ts`). Production contexts force type-to-confirm on destructive operations via `ConfirmDialog`.
+- [x] **Server-side dry-run** — `apply_resource` supports `dry_run: bool` for safe preview before mutation.
+- [x] **Database isolation** — SQLite store at `~/.telescope/resources.db` (per-user home directory).
+- [x] **Secrets redacted by default** — secret payload fields (`data`, `stringData`, `binaryData`, `last-applied-configuration`) are replaced with `●●●●●●●●` before serialization.
+- [x] **Helm values redacted** — sensitive keys (`password`, `token`, `secret`, `apiKey`, `connectionString`, `private_key`, `client_secret`, `access_key`, `credentials`, `auth`, and variants) are recursively redacted in Helm release values.
+- [x] **Audit logging** — JSONL audit entries for destructive operations (see Audit section below).
+- [x] **File permissions** — audit log and SQLite DB created with `0600` permissions on Unix.
+- [x] **Azure ARM auth** — `DefaultAzureCredential` for ARM API access; no hardcoded secrets (see Azure ARM Security section below).
 
 ### Azure ARM Security
 
-- **Authentication**: `ArmClient` uses `azure_identity::DefaultAzureCredential`, which chains: environment variables → managed identity → Azure CLI → workload identity → Visual Studio Code credential. No credentials are stored by Telescope.
+- **Authentication**: `ArmClient` uses `azure_identity::DefaultAzureCredential`, which chains: environment variables -> managed identity -> Azure CLI -> workload identity -> Visual Studio Code credential. No credentials are stored by Telescope.
 - **Token scope**: Tokens are scoped to the ARM management endpoint for the target cloud (e.g., `https://management.azure.com/.default` for Commercial, `https://management.usgovcloudapi.net/.default` for Government).
 - **Azure Government support**: `AzureCloud` enum supports Commercial, UsGovernment, UsGovSecret, and UsGovTopSecret clouds with correct ARM/auth/portal endpoints per cloud.
 - **RBAC requirements**: ARM operations require the operator's Azure identity to hold appropriate RBAC roles on the AKS resource. `Reader` on the AKS resource is sufficient for read-only views (cluster details, node pools, upgrade profiles, maintenance configs). `Azure Kubernetes Service Contributor` is the recommended minimum for management operations (start/stop cluster, scale/create/delete node pools, upgrade cluster/pool versions, update autoscaler config).
@@ -354,20 +354,20 @@ CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
 
 ### Not yet implemented
 
-- 🔲 OS keychain envelope encryption for stored tokens
-- 🔲 RBAC capability pre-checks before every mutation
-- 🔲 Diff preview for all apply operations
+- [ ] OS keychain envelope encryption for stored tokens
+- [ ] RBAC capability pre-checks before every mutation
+- [ ] Diff preview for all apply operations
 
 ---
 
 ## AKS-Specific
 
-- ✅ **Auth type detection** — `is_aks_url()` identifies AKS clusters (`*.azmk8s.io`); `exec` auth delegates to kubelogin / az CLI for Azure Entra ID flows.
-- ✅ **Node pool visibility** — label parsing (`agentpool`, `kubernetes.azure.com/agentpool`) with grouping by pool. Extracts VM size (`node.kubernetes.io/instance-type`), OS type (`kubernetes.azure.com/os-type`), and mode (`kubernetes.azure.com/mode`: System/User). Component: `NodePoolHeader`.
-- ✅ **Add-on status** — pod pattern detection for Container Insights (`ama-logs`, `omsagent`), Azure Policy, Key Vault CSI, KEDA, Flux GitOps, Ingress NGINX. Status derived from pod phase.
-- ✅ **Portal deep links** — constructs Azure Portal URLs by parsing server URL (`*.hcp.*.azmk8s.io`) to extract subscription, resource group, and cluster name.
-- ✅ **Workload Identity visibility** — detects `azure.workload.identity/use` pod label and `azure.workload.identity/client-id` service account annotation. Component: `AzureIdentitySection`.
-- ✅ **Azure ARM cluster management** — `crates/azure` provides full AKS lifecycle via ARM REST API:
+- [x] **Auth type detection** — `is_aks_url()` identifies AKS clusters (`*.azmk8s.io`); `exec` auth delegates to kubelogin / az CLI for Azure Entra ID flows.
+- [x] **Node pool visibility** — label parsing (`agentpool`, `kubernetes.azure.com/agentpool`) with grouping by pool. Extracts VM size (`node.kubernetes.io/instance-type`), OS type (`kubernetes.azure.com/os-type`), and mode (`kubernetes.azure.com/mode`: System/User). Component: `NodePoolHeader`.
+- [x] **Add-on status** — pod pattern detection for Container Insights (`ama-logs`, `omsagent`), Azure Policy, Key Vault CSI, KEDA, Flux GitOps, Ingress NGINX. Status derived from pod phase.
+- [x] **Portal deep links** — constructs Azure Portal URLs by parsing server URL (`*.hcp.*.azmk8s.io`) to extract subscription, resource group, and cluster name.
+- [x] **Workload Identity visibility** — detects `azure.workload.identity/use` pod label and `azure.workload.identity/client-id` service account annotation. Component: `AzureIdentitySection`.
+- [x] **Azure ARM cluster management** — `crates/azure` provides full AKS lifecycle via ARM REST API:
   - Cluster: start, stop, get detail, upgrade, maintenance configs
   - Node pools: list, create, delete, scale, update autoscaler, upgrade version, upgrade node image
   - Identity: auto-resolve subscription/resource-group/cluster from Azure CLI or saved preferences
@@ -514,7 +514,7 @@ Each `AuditEntry` contains: `timestamp`, `actor`, `context`, `namespace`, `actio
 
 ## Future (Not Yet Implemented)
 
-> ⚠️ The following sections describe **target architecture** that is not yet built.
+> WARNING The following sections describe **target architecture** that is not yet built.
 
 - **WASM Plugin System** — Capability-based plugins (wasmtime) with permissions manifest and strict host API.
 - **LRU/TTL Eviction** — Hard caps on caches (Events/Pods/log lines) with burst coalescing and backpressure.

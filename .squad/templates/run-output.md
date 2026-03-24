@@ -12,8 +12,8 @@
 
 | Constraint | Used | Max | Status |
 |------------|------|-----|--------|
-| Clarifying questions | 📊 {n} | {max} | {Active / Exhausted} |
-| Revision cycles | 📊 {n} | {max} | {Active / Exhausted} |
+| Clarifying questions | STATS {n} | {max} | {Active / Exhausted} |
+| Revision cycles | STATS {n} | {max} | {Active / Exhausted} |
 
 ## Result
 
@@ -33,7 +33,7 @@
 | **What's wrong** | {Specific issue — not vague} |
 | **Why it matters** | {Impact if not fixed} |
 | **Who fixes it** | {Name of agent assigned to revise — MUST NOT be the original author} |
-| **Revision budget** | 📊 {used} / {max} revision cycles remaining |
+| **Revision budget** | STATS {used} / {max} revision cycles remaining |
 
 ---
 

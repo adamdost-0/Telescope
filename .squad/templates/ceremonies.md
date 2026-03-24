@@ -12,7 +12,7 @@
 | **Facilitator** | lead |
 | **Participants** | all-relevant |
 | **Time budget** | focused |
-| **Enabled** | ✅ yes |
+| **Enabled** | [ok] yes |
 
 **Agenda:**
 1. Review the task and requirements
@@ -32,7 +32,7 @@
 | **Facilitator** | lead |
 | **Participants** | all-involved |
 | **Time budget** | focused |
-| **Enabled** | ✅ yes |
+| **Enabled** | [ok] yes |
 
 **Agenda:**
 1. What happened? (facts only)

@@ -7,6 +7,7 @@
   import Tabs from '$lib/components/Tabs.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+  import Icon from '$lib/icons/Icon.svelte';
   import type { ResourceEntry, NodeMetricsData } from '$lib/tauri-commands';
 
   let nodeName = $derived(page.params.name);
@@ -263,7 +264,10 @@
     <div class="dialog-overlay" role="dialog" aria-label="Drain node">
       <div class="dialog">
         <h3>Drain Node: {nodeName}</h3>
-        <p class="drain-warning">⚠️ Draining will cordon the node and evict all eligible pods. This is a disruptive operation.</p>
+        <p class="drain-warning">
+      <Icon name="prod-warning" size={16} aria-hidden="true" />
+      Draining will cordon the node and evict all eligible pods. This is a disruptive operation.
+    </p>
         <div class="dialog-field">
           <label for="grace-period">Grace period (seconds)</label>
           <input id="grace-period" type="number" min="0" bind:value={drainGracePeriod} />

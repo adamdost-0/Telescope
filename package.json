@@ -3,7 +3,8 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "lint": "./scripts/pnpm.sh -r --if-present lint",
+    "lint:no-emoji": "node ./scripts/check-no-emoji.mjs",
+    "lint": "node ./scripts/check-no-emoji.mjs && ./scripts/pnpm.sh -r --if-present lint",
     "test": "./scripts/pnpm.sh -r --if-present test",
     "e2e": "./scripts/pnpm.sh -C apps/web e2e",
     "desktop:build": "./scripts/pnpm.sh -C apps/desktop build",

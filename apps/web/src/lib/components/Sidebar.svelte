@@ -4,10 +4,13 @@
 
   let collapsed = $state(false);
 
+  import Icon from '$lib/icons/Icon.svelte';
+import type { ResourceIconName } from '$lib/icons';
+
   interface NavItem {
     label: string;
     href: string | null;
-    icon: string;
+    icon: ResourceIconName;
     external?: boolean;
   }
 
@@ -20,78 +23,78 @@
     {
       title: 'Workloads',
       items: [
-        { label: 'Pods', href: '/pods', icon: '📦' },
-        { label: 'Deployments', href: '/resources/deployments', icon: '🚀' },
-        { label: 'StatefulSets', href: '/resources/statefulsets', icon: '🗄️' },
-        { label: 'DaemonSets', href: '/resources/daemonsets', icon: '🔄' },
-        { label: 'ReplicaSets', href: '/resources/replicasets', icon: '🧬' },
-        { label: 'Jobs', href: '/resources/jobs', icon: '⚙️' },
-        { label: 'CronJobs', href: '/resources/cronjobs', icon: '🕐' },
-        { label: 'HPAs', href: '/resources/hpas', icon: '📈' },
-        { label: 'PDBs', href: '/resources/poddisruptionbudgets', icon: '🛡️' },
+        { label: 'Pods', href: '/pods', icon: 'pods' },
+        { label: 'Deployments', href: '/resources/deployments', icon: 'deployments' },
+        { label: 'StatefulSets', href: '/resources/statefulsets', icon: 'statefulsets' },
+        { label: 'DaemonSets', href: '/resources/daemonsets', icon: 'daemonsets' },
+        { label: 'ReplicaSets', href: '/resources/replicasets', icon: 'replicasets' },
+        { label: 'Jobs', href: '/resources/jobs', icon: 'jobs' },
+        { label: 'CronJobs', href: '/resources/cronjobs', icon: 'cronjobs' },
+        { label: 'HPAs', href: '/resources/hpas', icon: 'hpas' },
+        { label: 'PDBs', href: '/resources/poddisruptionbudgets', icon: 'poddisruptionbudgets' },
       ]
     },
     {
       title: 'Network',
       items: [
-        { label: 'Services', href: '/resources/services', icon: '🌐' },
-        { label: 'Ingresses', href: '/resources/ingresses', icon: '🚪' },
-        { label: 'NetworkPolicies', href: '/resources/networkpolicies', icon: '🔰' },
-        { label: 'EndpointSlices', href: '/resources/endpointslices', icon: '🧭' },
+        { label: 'Services', href: '/resources/services', icon: 'services' },
+        { label: 'Ingresses', href: '/resources/ingresses', icon: 'ingresses' },
+        { label: 'NetworkPolicies', href: '/resources/networkpolicies', icon: 'networkpolicies' },
+        { label: 'EndpointSlices', href: '/resources/endpointslices', icon: 'endpointslices' },
       ]
     },
     {
       title: 'Config',
       items: [
-        { label: 'ConfigMaps', href: '/resources/configmaps', icon: '📋' },
-        { label: 'Secrets', href: '/resources/secrets', icon: '🔒' },
-        { label: 'ResourceQuotas', href: '/resources/resourcequotas', icon: '📏' },
-        { label: 'LimitRanges', href: '/resources/limitranges', icon: '📐' },
+        { label: 'ConfigMaps', href: '/resources/configmaps', icon: 'configmaps' },
+        { label: 'Secrets', href: '/resources/secrets', icon: 'secrets' },
+        { label: 'ResourceQuotas', href: '/resources/resourcequotas', icon: 'resourcequotas' },
+        { label: 'LimitRanges', href: '/resources/limitranges', icon: 'limitranges' },
       ]
     },
     {
       title: 'Storage',
       items: [
-        { label: 'PVCs', href: '/resources/pvcs', icon: '💾' },
-        { label: 'Persistent Volumes', href: '/resources/persistentvolumes', icon: '🗃️' },
-        { label: 'Storage Classes', href: '/resources/storageclasses', icon: '🏷️' },
+        { label: 'PVCs', href: '/resources/pvcs', icon: 'pvcs' },
+        { label: 'Persistent Volumes', href: '/resources/persistentvolumes', icon: 'persistentvolumes' },
+        { label: 'Storage Classes', href: '/resources/storageclasses', icon: 'storageclasses' },
       ]
     },
     {
       title: 'Helm',
       items: [
-        { label: 'Releases', href: '/helm', icon: '⎈' },
+        { label: 'Releases', href: '/helm', icon: 'helm' },
       ]
     },
     {
       title: 'Custom Resources',
       items: [
-        { label: 'CRDs', href: '/crds', icon: '🧩' },
+        { label: 'CRDs', href: '/crds', icon: 'crds' },
       ]
     },
     {
       title: 'System',
       items: [
-        { label: 'ClusterRoles', href: '/resources/clusterroles', icon: '🧾' },
-        { label: 'ClusterRoleBindings', href: '/resources/clusterrolebindings', icon: '🔗' },
-        { label: 'Settings', href: '/settings', icon: '⚙️' },
+        { label: 'ClusterRoles', href: '/resources/clusterroles', icon: 'clusterroles' },
+        { label: 'ClusterRoleBindings', href: '/resources/clusterrolebindings', icon: 'clusterrolebindings' },
+        { label: 'Settings', href: '/settings', icon: 'settings' },
       ]
     },
   ];
 
   const sections = $derived.by((): NavSection[] => {
     const clusterItems: NavItem[] = [
-      { label: 'Overview', href: '/overview', icon: '📊' },
-      { label: 'Namespaces', href: '/namespaces', icon: '🗂️' },
-      { label: 'Create', href: '/create', icon: '➕' },
-      { label: 'Nodes', href: '/nodes', icon: '🖥️' },
-      { label: 'Priority Classes', href: '/resources/priorityclasses', icon: '🏷️' },
-      { label: 'Events', href: '/events', icon: '⚡' },
+      { label: 'Overview', href: '/overview', icon: 'overview' },
+      { label: 'Namespaces', href: '/namespaces', icon: 'namespaces' },
+      { label: 'Create', href: '/create', icon: 'create' },
+      { label: 'Nodes', href: '/nodes', icon: 'nodes' },
+      { label: 'Priority Classes', href: '/resources/priorityclasses', icon: 'priorityclasses' },
+      { label: 'Events', href: '/events', icon: 'events' },
     ];
 
     // Add Node Pools to Cluster section if on AKS and connected
     if ($isAks && $isConnected) {
-      clusterItems.push({ label: 'Node Pools', href: '/azure/node-pools', icon: '☁️' });
+      clusterItems.push({ label: 'Node Pools', href: '/azure/node-pools', icon: 'node-pools' });
     }
 
     const clusterSection: NavSection = {
@@ -150,7 +153,9 @@
                   aria-disabled={disabled}
                   tabindex={disabled ? -1 : undefined}
                 >
-                  <span class="icon">{item.icon}</span>
+                  <span class="icon-wrapper">
+                    <Icon name={item.icon} size={18} />
+                  </span>
                   <span class="label">{item.label}</span>
                 </a>
               </li>
@@ -174,8 +179,10 @@
             title={getItemTitle(item, true)}
             aria-disabled={disabled}
             tabindex={disabled ? -1 : undefined}
-          >
-            {item.icon}
+>
+            <span class="icon-wrapper">
+              <Icon name={item.icon} size={20} />
+            </span>
           </a>
         {/each}
       {/each}
@@ -233,14 +240,21 @@
   li a:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   li a.active { background: var(--bg-hover); color: var(--accent); font-weight: 500; }
   li a.disabled { opacity: 0.4; pointer-events: none; }
-  .icon { font-size: 1rem; width: 1.25rem; text-align: center; }
-  .icon-only {
+  .icon-wrapper {
+    width: 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .icon-wrapper :global(svg) {
     display: block;
+  }
+  .icon-only {
+    display: inline-flex;
     padding: 0.5rem;
     text-align: center;
     color: var(--text-secondary);
     text-decoration: none;
-    font-size: 1.1rem;
   }
   .icon-only:hover { background: var(--bg-tertiary); }
   .icon-only.active { background: var(--bg-hover); color: var(--accent); }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from '$lib/icons/Icon.svelte';
   let { query = '', onfilter }: { query?: string; onfilter?: (q: string) => void } = $props();
   let input = $state('');
 
@@ -14,9 +15,15 @@
 </script>
 
 <div class="filter-bar">
-  <span class="search-icon">🔍</span>
+  <span class="search-icon" aria-hidden="true">
+    <Icon name="search" size={14} />
+  </span>
   <input type="text" value={input} oninput={handleInput} placeholder="Filter by name..." aria-label="Filter resources" />
-  {#if input}<button type="button" onclick={clear} class="clear-btn" aria-label="Clear filter">✕</button>{/if}
+  {#if input}
+    <button type="button" onclick={clear} class="clear-btn" aria-label="Clear filter">
+      <Icon name="reset" size={12} aria-hidden="true" />
+    </button>
+  {/if}
 </div>
 
 <style>

@@ -60,7 +60,7 @@ jobs:
             core.info(`Found ${members.length} squad members: ${members.map(m => m.name).join(', ')}`);
 
             // Check if @copilot is on the team
-            const hasCopilot = content.includes('🤖 Coding Agent');
+            const hasCopilot = content.includes('copilot Coding Agent');
 
             // Define label color palette for squad labels
             const SQUAD_COLOR = '9B8FCC';

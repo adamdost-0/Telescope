@@ -14,6 +14,7 @@
   import AzureIdentitySection from '$lib/components/AzureIdentitySection.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+  import Icon from '$lib/icons/Icon.svelte';
   import { gvkForKind, resourceDetailHref } from '$lib/resource-routing';
   import { isProduction } from '$lib/stores';
   import type { ResourceEntry } from '$lib/tauri-commands';
@@ -176,8 +177,12 @@
     <h1>{podName}</h1>
     <span class="namespace-badge">{namespace}</span>
     {#if pod}
-      <button class="action-btn" onclick={() => showPortForward = true}>⇌ Port Forward</button>
-      <button class="danger-btn" onclick={() => showDeleteDialog = true}>🗑 Delete</button>
+      <button class="action-btn" onclick={() => showPortForward = true} data-testid="port-forward-btn">
+        <Icon name="port-forward" size={14} aria-hidden="true" /> Port Forward
+      </button>
+      <button class="danger-btn" onclick={() => showDeleteDialog = true} data-testid="delete-pod-btn">
+        <Icon name="delete" size={14} aria-hidden="true" /> Delete
+      </button>
     {/if}
   </header>
 
@@ -303,9 +308,15 @@
     {:else if activeTab === 'yaml'}
       <div class="yaml-tab">
         <div class="yaml-actions">
-          <button onclick={() => handleApply(true)} disabled={!yamlDirty || applying} class="action-btn">🧪 Dry Run</button>
-          <button onclick={() => handleApply(false)} disabled={!yamlDirty || applying} class="action-btn primary">✅ Apply</button>
-          <button onclick={resetYaml} disabled={!yamlDirty} class="action-btn">↩ Reset</button>
+          <button onclick={() => handleApply(true)} disabled={!yamlDirty || applying} class="action-btn" data-testid="pod-yaml-dry-run">
+            <Icon name="dry-run" size={14} aria-hidden="true" /> Dry Run
+          </button>
+          <button onclick={() => handleApply(false)} disabled={!yamlDirty || applying} class="action-btn primary" data-testid="pod-yaml-apply">
+            <Icon name="apply" size={14} aria-hidden="true" /> Apply
+          </button>
+          <button onclick={resetYaml} disabled={!yamlDirty} class="action-btn" data-testid="pod-yaml-reset">
+            <Icon name="reset" size={14} aria-hidden="true" /> Reset
+          </button>
           {#if applyMessage}<span class={applyError ? 'apply-error' : 'apply-success'}>{applyMessage}</span>{/if}
         </div>
         <YamlEditor content={yamlContent} onchange={(v) => editedYaml = v} />

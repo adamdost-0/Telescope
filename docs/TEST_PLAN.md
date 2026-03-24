@@ -6,7 +6,7 @@ description: "Aspirational test policy — internal reference"
 
 # Telescope — Test Plan (Policy)
 
-> ⚠️ **Status: Aspirational** — This describes the *target* test policy. Current coverage is minimal — see TESTING.md status note.
+> **Status:** Aspirational — This describes the *target* test policy. Current coverage is minimal — see TESTING.md status note.
 
 This repository is **test-driven by policy**. PRs that change behavior must ship with the tests and the pipeline updates in the same PR.
 

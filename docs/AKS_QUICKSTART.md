@@ -24,7 +24,7 @@ pnpm -C apps/desktop dev
 ```
 
 ## Step 3: Connect
-1. Your AKS context appears automatically (shows 🔑 Exec auth badge)
+1. Your AKS context appears automatically (shows Exec auth badge with key icon)
 2. Complete the device code auth when prompted
 3. Status changes to ● Connected (green)
 

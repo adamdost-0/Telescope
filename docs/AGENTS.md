@@ -84,7 +84,7 @@ Before merging doc updates:
 1. Verify the code path or route actually exists.
 2. Confirm CI/workflow commands match `.github/workflows/ci.yml`.
 3. Use "implemented / partial / planned" language.
-4. Mark future sections with `(Planned)` or `⚠️ Note` admonitions.
+4. Mark future sections with `(Planned)` or `NOTE` admonitions.
 
 ## Documentation Conventions
 - GitHub-flavored Markdown.

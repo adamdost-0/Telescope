@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 /** Open the search palette by dispatching a keyboard event. */
 async function openPalette(page: import('@playwright/test').Page) {
   // Wait for the app layout to be rendered before dispatching the shortcut
-  await expect(page.locator('.app-shell')).toBeAttached();
+  await expect(page.locator('.app-shell')).toBeVisible({ timeout: 15000 });
   await page.evaluate(() => {
     window.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })
