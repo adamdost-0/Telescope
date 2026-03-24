@@ -1,9 +1,9 @@
 ---
-updated_at: 2026-03-19T21:11:24.595Z
-focus_area: Initial setup
+updated_at: 2026-03-24T00:00:00Z
+focus_area: AI Insights implementation planning
 active_issues: []
 ---
 
 # What We're Focused On
 
-Getting started. Updated by coordinator at session start.
+Turning the finalized AI Insights PRD into an implementation plan across backend, frontend, and test workstreams.

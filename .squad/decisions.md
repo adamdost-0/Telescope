@@ -262,18 +262,71 @@ Percent Formatting:
 - All meaningful changes require team consensus
 - Document architectural decisions here
 - Keep history focused on work, decisions focused on direction
-\n---\n
----
-title: Align docs with shipped desktop architecture
-author: Dallas
-status: accepted
-created: 2026-03-20
+
 ---
 
-Decision: Updated architecture documentation to reflect the current shipped, desktop-only system and the canonical workspace shape. Small, targeted doc edits are preferred over speculative additions. When docs disagree with code or CI, update docs and record a short decision.
+### 2026-03-20: Align Docs with Shipped Desktop Architecture
 
-Files changed:
-- docs/ARCHITECTURE.md (clarified frontend description)
-- .squad/agents/dallas/history.md (appended learning entry)
+**Author:** Dallas  
+**Status:** Accepted  
+**Type:** Documentation architecture
 
-Rationale: The repository's source of truth is the code and CI. Keeping docs aligned reduces onboarding friction and prevents stale guidance from influencing design decisions.
+**Decision:** Updated architecture documentation to reflect the current shipped, desktop-only system and the canonical workspace shape. Small, targeted doc edits are preferred over speculative additions. When docs disagree with code or CI, update docs and record a short decision.
+
+**Files changed:**
+- `docs/ARCHITECTURE.md` (clarified frontend description)
+- `.squad/agents/dallas/history.md` (appended learning entry)
+
+**Rationale:** The repository's source of truth is the code and CI. Keeping docs aligned reduces onboarding friction and prevents stale guidance from influencing design decisions.
+
+---
+
+### 2026-03-23: No-Emoji Policy for Docs, Prompts, Logs, and UI
+
+**Author:** Dallas  
+**Status:** Accepted  
+**Type:** Communication and iconography policy
+
+**Context:** Emoji usage had become inconsistent across prompts, docs, orchestration outputs, and UI text. Telescope already has guidance to prefer plain text labels and a standardized icon system.
+
+**Decision:** Do not add emojis to docs, prompts, orchestration logs, or UI text. Use plain text labels or the icon registry when a visual indicator is needed, and replace status markers with markdown checkboxes or neutral headings.
+
+**Implications:**
+- New squad outputs should use plain role labels and neutral status text
+- UI work should prefer the icon registry over inline emoji glyphs
+- Documentation cleanup should remove emoji markers when touched
+
+---
+
+### 2026-03-24: AI Insights v1 Implementation Plan and Scope Locks
+
+**Authors:** Adam Dost (directives), Dallas (lead), Ripley, Lambert, Kane  
+**Status:** Accepted  
+**Type:** Implementation planning and architecture
+
+**Context:** AI Insights planning was finalized across product directives, backend/frontend/test specialist briefs, and the implementation plan artifact in `docs/plans/2026-03-24-ai-insights-implementation.md`.
+
+**Decision:**
+- Ship AI Insights as a dedicated `/insights` route rather than an Overview tab
+- Support two explicit auth modes in v1: Azure login context via `DefaultAzureCredential()` and API key; do not auto-fallback between them
+- Expose Azure OpenAI endpoint, deployment/model, auth mode, and cloud profile in Settings; keep diagnostics limited to dev-mode metadata on Settings
+- Keep ownership aligned to the existing architecture:
+	- `crates/azure` owns Azure OpenAI auth, endpoint/cloud handling, and provider error classification
+	- `crates/engine` owns allowlist-only context shaping, prompt/schema contracts, and insight orchestration models
+	- `crates/core` owns encrypted local history persistence
+	- `apps/desktop/src-tauri` owns secure credential storage integration and thin Tauri commands
+	- `apps/web` owns the `/insights` route and Settings UX
+- Persist encrypted local insight history, retain only the last 3 entries per cluster, and expose clear-all only for deletion
+- Build model input from curated summaries with deterministic per-category caps, stable ordering, and hard exclusion of secrets, kubeconfigs, token-like values, and raw unsafe payloads
+- Render only schema-validated structured output in the UI
+- Keep v1 intentionally narrow: no prompt preview, no chat surface, no browser fallback, and no per-entry delete
+
+**Testing direction:**
+- Test Azure login and RBAC-denied behavior with fake credential and transport seams, not live Azure dependencies
+- Validate encrypted history at the storage boundary with ciphertext-at-rest and per-cluster retention assertions
+- Add deterministic unit tests for allowlist-only context shaping, ordering, and cap enforcement before UI/E2E coverage
+- Use existing mocked Tauri Playwright flows for route, settings, and error-path coverage
+
+**Artifacts:**
+- `docs/plans/2026-03-24-ai-insights-implementation.md`
+- Merged inbox notes from Dallas, Ripley, Lambert, Kane, and the three AI Insights directive updates

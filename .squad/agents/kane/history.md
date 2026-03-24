@@ -35,3 +35,7 @@ Fixed P2 route E2E test mismatches in `tests-e2e/p2-routes.spec.ts` — aligned 
 - 2026-03-20: E2E validation run by Kane: executed `pnpm -C apps/web test`, `pnpm -C apps/web build`, and `pnpm -C apps/web e2e`. All checks passed (test, build, and E2E). Session log: `.squad/log/20260320-120000-e2e-validation-suite.md`. Orchestration record: `.squad/orchestration-log/20260320-120000-kane.md`.
 - 2026-03-20: Learning: The `apps/web` validation gate remains stable for this run; no new flaky specs observed.
 
+- 2026-03-24: AI Insights auth and RBAC coverage should use fake credential and provider transport seams; do not rely on live Azure OpenAI validation in CI or routine local runs.
+- 2026-03-24: Encrypted history needs storage-boundary assertions for ciphertext at rest plus retention trimming to the last 3 entries per cluster.
+- 2026-03-24: Allowlist-only context shaping needs deterministic unit tests that fail on secret-like payloads, unexpected fields, unstable ordering, and per-category cap overruns before Playwright route coverage is added.
+

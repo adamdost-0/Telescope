@@ -77,3 +77,14 @@ Dallas led the GitHub Pages docs structure workstream. Created `docs/_config.yml
 - Files produced: docs/ARCHITECTURE.md, .squad/agents/dallas/history.md
 - Outcome: Documentation aligned to shipped desktop architecture; small surgical doc edits preferred when code/CI disagree.
 
+### 2026-03-24 — AI Insights Implementation Planning
+
+- Finalized the cross-agent AI Insights implementation plan in `docs/plans/2026-03-24-ai-insights-implementation.md`.
+- Durable scope locks: dedicated `/insights` route, explicit Azure login or API key auth, encrypted local history capped to 3 entries per cluster, allowlist-only context shaping, and Settings-only dev diagnostics.
+- Keep ownership narrow: `crates/azure` for provider auth/cloud/error handling, `crates/engine` for context and schema, `crates/core` for encrypted history, `apps/desktop/src-tauri` for secure storage and thin commands, `apps/web` for route and settings UX.
+
+### 2026-03-24 — No-Emoji Policy
+
+- Standardize on plain text labels or the icon registry across docs, prompts, orchestration outputs, and UI.
+- When existing files are touched, replace emoji-style status markers with markdown checkboxes or neutral headings.
+

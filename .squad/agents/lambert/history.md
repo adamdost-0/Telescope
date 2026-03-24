@@ -45,3 +45,7 @@ Wired helm uninstall UI into `apps/web/src/routes/helm/+page.svelte`: per-row Un
 ### 2026-03-19 — GitHub Pages + README Session (Scribe)
 
 Lambert delivered the README cleanup workstream. Rewrote README.md with badges, hero section, feature matrix tables, streamlined quick start, clean footer. Pure markdown for GitHub + Jekyll compatibility. Dallas ran parallel GitHub Pages structure. Decision merged to decisions.md.
+
+- 2026-03-24: AI Insights v1 should use a dedicated top-level `/insights` route and allow offline encrypted-history review even when the disconnected-nav rule blocks most other routes.
+- 2026-03-24: Keep AI configuration on the existing Settings page with shared cloud-profile selection, explicit auth-mode selection, test-connect controls, and dev-mode-only diagnostics.
+- 2026-03-24: The Insights UI should render only schema-validated sections in a fixed order and continue using deterministic mocked Tauri flows for Playwright coverage.
