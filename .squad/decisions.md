@@ -330,3 +330,59 @@ Percent Formatting:
 **Artifacts:**
 - `docs/plans/2026-03-24-ai-insights-implementation.md`
 - Merged inbox notes from Dallas, Ripley, Lambert, Kane, and the three AI Insights directive updates
+
+---
+
+### 2026-03-24: AI Insights Task 1 Contract Surface Accepted
+
+**Authors:** Ripley (engine contract + frontend revision), Dallas (final persistence fix), Kane (QA acceptance)  
+**Status:** Accepted  
+**Type:** Contract implementation
+
+**Context:** Task 1 locked the first shipped AI Insights contract across Rust and TypeScript. The engine contract landed first in `crates/engine/src/insights.rs`. The initial frontend contract implementation drifted from the Rust schema and reused the shared Azure cloud preference path, so Dallas rejected it. Ripley revised the frontend contract layer, and a second review found one remaining persistence bug where `modelName: null` could round-trip as `""`. Dallas fixed that final wrapper issue and Kane accepted the slice.
+
+**Changes:**
+- Added the engine-owned request, response, settings, diagnostics, and stable preference-key contract in `crates/engine/src/insights.rs`
+- Exported the AI Insights contract surface through `apps/web/src/lib/tauri-commands.ts`
+- Added strict frontend validators and helpers in `apps/web/src/lib/insights.ts`
+- Added dedicated AI Insights settings wrappers in `apps/web/src/lib/api.ts` using `ai_insights_*` preference keys only
+- Preserved `modelName` optionality by storing the empty-string sentinel and normalizing it back to `null` on load
+- Added targeted frontend contract and persistence tests in `apps/web/src/lib/insights.test.ts` and `apps/web/src/lib/api.test.ts`
+
+**Decision:**
+- Treat the Rust engine contract as the source of truth for AI Insights serialization and enum values
+- Keep AI Insights settings isolated from the shared Azure cloud preference/localStorage path
+- Fail closed on unknown response and diagnostics fields in the frontend validators
+- Preserve Rust `Option<String>` semantics for `modelName` across the persistence wrapper boundary
+
+**Validation:**
+- `cargo test -p telescope-engine --lib insights` [ok]
+- `pnpm -C apps/web test -- --run src/lib/insights.test.ts src/lib/api.test.ts` [ok]
+- `pnpm -C apps/web build` [ok]
+
+---
+
+### 2026-03-24: AI Insights Task 2 Azure OpenAI Transport Accepted
+
+**Authors:** Ripley (initial transport), Dallas (transport corrections), Kane (QA acceptance)  
+**Status:** Accepted  
+**Type:** Provider transport implementation
+
+**Context:** Task 2 added the first Azure OpenAI transport seam in `crates/azure`. Ripley delivered the initial transport, then Dallas rejected it because sovereign cloud authority selection was incomplete for Azure-login mode, endpoint validation silently accepted pasted `/openai/...` request paths, and provider-side 401s were conflated with local credential failures. Dallas implemented the correction slice in `crates/azure`, and Kane accepted the revised transport.
+
+**Changes:**
+- Added Azure OpenAI transport wiring in `crates/azure/src/openai.rs` and exported it from `crates/azure/src/lib.rs`
+- Applied cloud-specific `TokenCredentialOptions` authority host selection for Azure-login mode
+- Tightened endpoint validation to accept only the Azure OpenAI resource root and reject non-root path, query-string, and fragment inputs
+- Split provider-side authentication and authorization failures into clearer AI-specific `AzureError` variants and messages
+- Extended targeted transport and error coverage in `cargo test -p telescope-azure openai` and `cargo test -p telescope-azure error`
+
+**Decision:**
+- Keep the Azure OpenAI seam inside `crates/azure`
+- Require the selected `AzureCloud` to drive both endpoint validation and `DefaultAzureCredential` authority construction
+- Keep Azure login and API key as explicit user-selected auth modes with no fallback between them
+- Surface provider-side auth failures distinctly enough for future Settings test-connect guidance and dev diagnostics
+
+**Validation:**
+- `cargo test -p telescope-azure openai` [ok]
+- `cargo test -p telescope-azure error` [ok]

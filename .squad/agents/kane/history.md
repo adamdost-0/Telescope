@@ -38,4 +38,6 @@ Fixed P2 route E2E test mismatches in `tests-e2e/p2-routes.spec.ts` — aligned 
 - 2026-03-24: AI Insights auth and RBAC coverage should use fake credential and provider transport seams; do not rely on live Azure OpenAI validation in CI or routine local runs.
 - 2026-03-24: Encrypted history needs storage-boundary assertions for ciphertext at rest plus retention trimming to the last 3 entries per cluster.
 - 2026-03-24: Allowlist-only context shaping needs deterministic unit tests that fail on secret-like payloads, unexpected fields, unstable ordering, and per-category cap overruns before Playwright route coverage is added.
+- 2026-03-24: AI settings wrappers need explicit persistence-boundary round-trip tests for optional fields like `modelName`; mirrored type tests alone do not protect Rust `Option` semantics.
+- 2026-03-24: Azure OpenAI transport QA is acceptable with crate-local credential and response seams for now, but request-header assertions remain a low-risk follow-up gap.
 

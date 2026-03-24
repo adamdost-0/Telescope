@@ -88,3 +88,10 @@ Dallas led the GitHub Pages docs structure workstream. Created `docs/_config.yml
 - Standardize on plain text labels or the icon registry across docs, prompts, orchestration outputs, and UI.
 - When existing files are touched, replace emoji-style status markers with markdown checkboxes or neutral headings.
 
+### 2026-03-24 — AI Insights Execution Start
+
+- `modelName: Option<String>` is a contract invariant across the Rust schema and frontend persistence wrapper; storing `""` is only safe if load normalizes it back to `null`.
+- Reviewer-gated AI contract work should fail closed on unknown fields and use the dedicated AI settings keys instead of mutating shared Azure preferences.
+- Azure OpenAI sovereign-cloud correctness requires the selected cloud to configure both endpoint validation and `DefaultAzureCredential` authority construction.
+- Provider-side 401s need separate AI-specific classification from local credential acquisition failures so Settings guidance stays accurate.
+

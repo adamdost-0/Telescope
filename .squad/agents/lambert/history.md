@@ -49,3 +49,4 @@ Lambert delivered the README cleanup workstream. Rewrote README.md with badges, 
 - 2026-03-24: AI Insights v1 should use a dedicated top-level `/insights` route and allow offline encrypted-history review even when the disconnected-nav rule blocks most other routes.
 - 2026-03-24: Keep AI configuration on the existing Settings page with shared cloud-profile selection, explicit auth-mode selection, test-connect controls, and dev-mode-only diagnostics.
 - 2026-03-24: The Insights UI should render only schema-validated sections in a fixed order and continue using deterministic mocked Tauri flows for Playwright coverage.
+- 2026-03-24: AI Insights settings must not reuse the shared Azure cloud preference or localStorage path; contract-layer work has to bind to the engine-owned Rust schema and dedicated `ai_insights_*` keys before UI wiring expands.
