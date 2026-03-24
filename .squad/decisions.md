@@ -386,3 +386,34 @@ Percent Formatting:
 **Validation:**
 - `cargo test -p telescope-azure openai` [ok]
 - `cargo test -p telescope-azure error` [ok]
+
+---
+
+### 2026-03-24: AI Insights Task 3 Context Builder Accepted
+
+**Authors:** Ripley (implementation), Kane (QA acceptance)  
+**Status:** Accepted  
+**Type:** Engine context shaping implementation
+
+**Context:** Task 3 delivered the engine-owned AI Insights context builder in `crates/engine`. Ripley implemented an allowlist-only builder with deterministic category caps, stable ordering, namespace-aware scope handling, and explicit redaction safeguards. Kane reviewed the slice and accepted it with low-risk follow-up notes only.
+
+**Changes:**
+- Added the AI Insights context-builder entry point in `crates/engine/src/insights_context.rs`
+- Extended the engine AI Insights contract in `crates/engine/src/insights.rs` for capped, curated context categories and redaction-policy metadata
+- Exported the new engine modules from `crates/engine/src/lib.rs`
+- Built allowlist-only summaries for workloads, pods, warning events, nodes, Helm releases, connection state, and narrow AKS posture input
+- Enforced fixed deterministic caps, stable ordering, and explicit redaction for token-like values, kubeconfig-looking text, connection strings, and service-account credential material
+- Made namespace scope explicit and dropped cluster-only sections such as node posture and AKS posture when the request is namespace-limited
+
+**Decision:**
+- Keep the builder pure and deterministic over `ResourceStore` cache data plus explicit inputs for `ConnectionState`, Helm release summaries, and a narrow AKS summary
+- Keep the allowlist boundary in `crates/engine`; do not serialize raw Kubernetes objects, raw Helm values, or secret payloads into model context
+- Treat namespace-limited visibility as a hard boundary and omit cluster-only sections rather than summarizing partial cluster posture
+
+**Residual notes:**
+- Kane accepted the slice with two low-risk follow-ups: add one focused cap-overrun test for the remaining pod, event, node, and Helm categories, and add one namespace-scope test that explicitly filters cross-namespace pods and events
+- Existing workspace-level `cargo fmt --all -- --check` issues in `crates/azure` and existing `pnpm -C apps/web build` type errors remain outside this Task 3 slice
+
+**Validation:**
+- `cargo test -p telescope-engine insights_context` [ok]
+- `cargo test -p telescope-engine insights` [ok]

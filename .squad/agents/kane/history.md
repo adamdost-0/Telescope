@@ -40,4 +40,6 @@ Fixed P2 route E2E test mismatches in `tests-e2e/p2-routes.spec.ts` — aligned 
 - 2026-03-24: Allowlist-only context shaping needs deterministic unit tests that fail on secret-like payloads, unexpected fields, unstable ordering, and per-category cap overruns before Playwright route coverage is added.
 - 2026-03-24: AI settings wrappers need explicit persistence-boundary round-trip tests for optional fields like `modelName`; mirrored type tests alone do not protect Rust `Option` semantics.
 - 2026-03-24: Azure OpenAI transport QA is acceptable with crate-local credential and response seams for now, but request-header assertions remain a low-risk follow-up gap.
+- 2026-03-24: Task 3 AI Insights context-builder acceptance is satisfied by targeted Rust coverage for allowlist-only shaping, redaction, stable ordering, namespace scope, and deterministic caps, even if broader workspace checks still have unrelated pre-existing failures outside the engine slice.
+- 2026-03-24: Low-risk follow-up gaps after initial context-builder acceptance are explicit cap-overrun coverage for pod, event, node, and Helm collections and an explicit namespace-filtering regression test for cross-namespace pods and events.
 
