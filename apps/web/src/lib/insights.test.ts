@@ -5,9 +5,13 @@ import {
   DEFAULT_AI_INSIGHTS_AUTH_MODE,
   DEFAULT_AZURE_CLOUD_PROFILE,
   AI_INSIGHTS_SETTINGS_KEYS,
+  formatAiInsightsScope,
+  isAiInsightsConnectionTestResult,
   isAiInsightsCloudProfile,
   isAiInsightsDevDiagnostics,
+  isAiInsightsHistoryEntry,
   isAiInsightsResponse,
+  isAiInsightsScope,
   parseAiInsightsAuthMode,
   parseAiInsightsCloudProfile,
   parseAzureCloudProfile,
@@ -61,6 +65,47 @@ describe('AI Insights contract helpers', () => {
       risks: [{ ...validResponse.risks[0], extra: true }],
     })).toBe(false);
     expect(isAiInsightsResponse({ ...validResponse, references: [{ kind: 'Node', name: 'aks-nodepool-1' }] })).toBe(false);
+  });
+
+  it('parses scope contracts from backend-tagged enum payloads', () => {
+    expect(isAiInsightsScope({ kind: 'cluster' })).toBe(true);
+    expect(isAiInsightsScope({ kind: 'namespace', namespace: 'payments' })).toBe(true);
+    expect(isAiInsightsScope({ kind: 'namespace' })).toBe(false);
+    expect(isAiInsightsScope('cluster')).toBe(false);
+
+    expect(formatAiInsightsScope({ kind: 'cluster' })).toBe('cluster');
+    expect(formatAiInsightsScope({ kind: 'namespace', namespace: 'payments' })).toBe('namespace/payments');
+  });
+
+  it('validates connection-test and history-entry payload contracts', () => {
+    const validResponse = {
+      summary: 'Cluster health is stable with one elevated risk.',
+      risks: [{ title: 'Node pressure', detail: 'One node is under memory pressure.', impact: 'medium' }],
+      observations: [{ area: 'Workloads', detail: 'All critical deployments are available.' }],
+      recommendations: [{ action: 'Investigate the affected node', rationale: 'Memory pressure can cascade into evictions.', confidence: 0.82 }],
+      references: [{ kind: 'Node', name: 'aks-nodepool-1', namespace: null }],
+    };
+
+    expect(isAiInsightsConnectionTestResult({
+      normalizedEndpoint: 'https://example.openai.azure.com',
+      chatCompletionsUrl: 'https://example.openai.azure.com/openai/deployments/insights/chat/completions?api-version=2024-02-15-preview',
+      model: 'gpt-4.1',
+    })).toBe(true);
+    expect(isAiInsightsConnectionTestResult({
+      normalizedEndpoint: 'https://example.openai.azure.com',
+      chatCompletionsUrl: 'https://example.openai.azure.com/openai/deployments/insights/chat/completions?api-version=2024-02-15-preview',
+    })).toBe(false);
+
+    expect(isAiInsightsHistoryEntry({
+      createdAt: '2026-01-01T00:00:00Z',
+      scope: { kind: 'cluster' },
+      response: validResponse,
+    })).toBe(true);
+    expect(isAiInsightsHistoryEntry({
+      createdAt: '2026-01-01T00:00:00Z',
+      scope: 'cluster',
+      response: validResponse,
+    })).toBe(false);
   });
 
   it('validates the dev diagnostics metadata contract with optional structured fields', () => {

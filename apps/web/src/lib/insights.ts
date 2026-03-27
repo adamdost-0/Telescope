@@ -60,6 +60,22 @@ export interface AiInsightsResponse {
   references: AiInsightsReference[];
 }
 
+export interface AiInsightsConnectionTestResult {
+  normalizedEndpoint: string;
+  chatCompletionsUrl: string;
+  model: string;
+}
+
+export type AiInsightsScope =
+  | { kind: 'cluster' }
+  | { kind: 'namespace'; namespace: string };
+
+export interface AiInsightsHistoryEntry {
+  createdAt: string;
+  scope: AiInsightsScope;
+  response: AiInsightsResponse;
+}
+
 export interface AiInsightsSettings {
   endpoint: string;
   deploymentName: string;
@@ -155,6 +171,10 @@ export function parseAzureCloudProfile(value: string | null | undefined): AzureC
   return parseAiInsightsCloudProfile(value);
 }
 
+export function formatAiInsightsScope(scope: AiInsightsScope): string {
+  return scope.kind === 'cluster' ? 'cluster' : `namespace/${scope.namespace}`;
+}
+
 export function createDefaultAiInsightsSettings(
   cloudProfile: AiInsightsCloudProfile = DEFAULT_AZURE_CLOUD_PROFILE,
 ): AiInsightsSettings {
@@ -200,6 +220,41 @@ export function isAiInsightsResponse(value: unknown): value is AiInsightsRespons
       && typeof reference.kind === 'string'
       && typeof reference.name === 'string'
       && (typeof reference.namespace === 'string' || reference.namespace === null));
+}
+
+export function isAiInsightsScope(value: unknown): value is AiInsightsScope {
+  if (!isRecord(value) || typeof value.kind !== 'string') {
+    return false;
+  }
+
+  if (value.kind === 'cluster') {
+    return hasExactKeys(value, ['kind']);
+  }
+
+  if (value.kind === 'namespace') {
+    return hasExactKeys(value, ['kind', 'namespace'])
+      && typeof value.namespace === 'string';
+  }
+
+  return false;
+}
+
+export function isAiInsightsConnectionTestResult(
+  value: unknown,
+): value is AiInsightsConnectionTestResult {
+  return isRecord(value)
+    && hasExactKeys(value, ['normalizedEndpoint', 'chatCompletionsUrl', 'model'])
+    && typeof value.normalizedEndpoint === 'string'
+    && typeof value.chatCompletionsUrl === 'string'
+    && typeof value.model === 'string';
+}
+
+export function isAiInsightsHistoryEntry(value: unknown): value is AiInsightsHistoryEntry {
+  return isRecord(value)
+    && hasExactKeys(value, ['createdAt', 'scope', 'response'])
+    && typeof value.createdAt === 'string'
+    && isAiInsightsScope(value.scope)
+    && isAiInsightsResponse(value.response);
 }
 
 function isAiInsightsContextSize(value: unknown): value is AiInsightsContextSize {

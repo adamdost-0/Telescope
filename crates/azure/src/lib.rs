@@ -16,10 +16,9 @@ pub use client::ArmClient;
 pub use error::{AzureAiProviderErrorClass, AzureError, Result};
 pub use openai::{
     AzureOpenAiAuth, AzureOpenAiChatCompletion, AzureOpenAiChatCompletionsRequest,
-    AzureOpenAiChatMessage, AzureOpenAiChatRole, AzureOpenAiClient,
-    AzureOpenAiClientOptions, AzureOpenAiConnectionTestResult, AzureOpenAiEndpoint,
-    AzureOpenAiResponseFormat, AzureOpenAiResponseFormatJsonSchema,
-    AzureOpenAiTokenUsage,
+    AzureOpenAiChatMessage, AzureOpenAiChatRole, AzureOpenAiClient, AzureOpenAiClientOptions,
+    AzureOpenAiConnectionTestResult, AzureOpenAiEndpoint, AzureOpenAiResponseFormat,
+    AzureOpenAiResponseFormatJsonSchema, AzureOpenAiTokenUsage,
 };
 pub use resolve::{
     inspect_aks_identity_preferences, resolve_aks_identity, resolve_aks_identity_from_preferences,

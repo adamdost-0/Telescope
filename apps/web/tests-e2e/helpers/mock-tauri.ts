@@ -1,14 +1,34 @@
 import type { Page } from '@playwright/test';
-import type { AksNodePool, PoolUpgradeProfile, ClusterContext, ResourceEntry, HelmRelease } from '../../src/lib/tauri-commands';
+import type {
+  AiInsightsConnectionTestResult,
+  AiInsightsResponse,
+  AiInsightsScope,
+  AksNodePool,
+  PoolUpgradeProfile,
+  ClusterContext,
+  ConnectionState,
+  ResourceEntry,
+  HelmRelease,
+} from '../../src/lib/tauri-commands';
+
+interface AiInsightsHistoryEntry {
+  createdAt: string;
+  scope: AiInsightsScope;
+  response: AiInsightsResponse;
+}
 
 export interface MockTauriScenario {
   contexts?: ClusterContext[];
+  connectionState?: ConnectionState;
   namespaces?: string[];
   preferences?: Record<string, string | null>;
   pools?: AksNodePool[];
   upgradeProfiles?: Record<string, PoolUpgradeProfile>;
   resources?: Record<string, ResourceEntry[]>;
   helmReleases?: HelmRelease[];
+  aiInsightsConnectionResult?: AiInsightsConnectionTestResult;
+  aiInsightsGenerateResponse?: AiInsightsResponse;
+  aiInsightsHistory?: AiInsightsHistoryEntry[];
   commandErrors?: Record<string, string | { message: string; times?: number }>;
   commandDelays?: Record<string, number>;
 }
@@ -204,18 +224,44 @@ const defaultHelmReleases: HelmRelease[] = [
   },
 ];
 
+const defaultInsightsResponse: AiInsightsResponse = {
+  summary: 'Cluster is healthy with one medium risk.',
+  risks: [{ title: 'Node pressure', detail: 'One node reports memory pressure.', impact: 'medium' }],
+  observations: [{ area: 'Workloads', detail: 'All tracked deployments report ready replicas.' }],
+  recommendations: [{ action: 'Investigate node pressure', rationale: 'Prevent potential evictions.', confidence: 0.81 }],
+  references: [{ kind: 'Node', name: 'node-1', namespace: null }],
+};
+
+const defaultInsightsConnectionResult: AiInsightsConnectionTestResult = {
+  normalizedEndpoint: 'https://example.openai.azure.com/',
+  chatCompletionsUrl: 'https://example.openai.azure.com/openai/deployments/insights/chat/completions?api-version=2024-10-21',
+  model: 'gpt-4.1',
+};
+
+const defaultInsightsHistory: AiInsightsHistoryEntry[] = [
+  {
+    createdAt: '2026-01-03T12:00:00Z',
+    scope: { kind: 'cluster' },
+    response: defaultInsightsResponse,
+  },
+];
+
 export async function installMockTauri(page: Page, scenario: MockTauriScenario = {}): Promise<void> {
   await page.addInitScript((input: MockTauriScenario) => {
     const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 
     const state = {
       contexts: clone(input.contexts ?? []),
+      connectionState: clone(input.connectionState ?? { state: 'Ready' }),
       namespaces: clone(input.namespaces ?? []),
       preferences: clone(input.preferences ?? {}),
       pools: clone(input.pools ?? []),
       upgradeProfiles: clone(input.upgradeProfiles ?? {}),
       resources: clone(input.resources ?? {}),
       helmReleases: clone(input.helmReleases ?? []),
+      aiInsightsConnectionResult: clone(input.aiInsightsConnectionResult ?? defaultInsightsConnectionResult),
+      aiInsightsGenerateResponse: clone(input.aiInsightsGenerateResponse ?? defaultInsightsResponse),
+      aiInsightsHistory: clone(input.aiInsightsHistory ?? defaultInsightsHistory),
       commandErrors: clone(input.commandErrors ?? {}),
       commandDelays: clone(input.commandDelays ?? {}),
       calls: [] as Array<{ cmd: string; args: Record<string, unknown> }>,
@@ -264,6 +310,9 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
         },
         get resources() {
           return clone(state.resources);
+        },
+        get aiInsightsHistory() {
+          return clone(state.aiInsightsHistory);
         },
       },
     });
@@ -325,7 +374,7 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
             case 'list_namespaces':
               return clone(state.namespaces);
             case 'get_connection_state':
-              return { state: 'Ready' };
+              return clone(state.connectionState);
             case 'get_preference':
               return state.preferences[String(args.key)] ?? null;
             case 'check_metrics_available':
@@ -375,6 +424,24 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
             }
             case 'set_preference':
               state.preferences[String(args.key)] = String(args.value);
+              return null;
+            case 'test_ai_insights_connection':
+              return clone(state.aiInsightsConnectionResult);
+            case 'generate_ai_insights': {
+              const response = clone(state.aiInsightsGenerateResponse);
+              const historyEntry = {
+                createdAt: new Date().toISOString(),
+                scope: { kind: 'cluster' as const },
+                response,
+              };
+              state.aiInsightsHistory.unshift(historyEntry);
+              state.aiInsightsHistory = state.aiInsightsHistory.slice(0, 3);
+              return response;
+            }
+            case 'list_ai_insights_history':
+              return clone(state.aiInsightsHistory);
+            case 'clear_ai_insights_history':
+              state.aiInsightsHistory = [];
               return null;
             case 'active_context': {
               const active = state.contexts.find(c => c.is_active);
@@ -518,6 +585,7 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
     });
   }, {
     contexts: scenario.contexts ?? defaultContexts,
+    connectionState: scenario.connectionState ?? { state: 'Ready' },
     namespaces: scenario.namespaces ?? ['default', 'kube-system'],
     preferences: scenario.preferences ?? {
       auto_refresh_interval: '300',
@@ -528,6 +596,9 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
     upgradeProfiles: scenario.upgradeProfiles ?? defaultUpgradeProfiles,
     resources: scenario.resources ?? defaultResources,
     helmReleases: scenario.helmReleases ?? defaultHelmReleases,
+    aiInsightsConnectionResult: scenario.aiInsightsConnectionResult ?? defaultInsightsConnectionResult,
+    aiInsightsGenerateResponse: scenario.aiInsightsGenerateResponse ?? defaultInsightsResponse,
+    aiInsightsHistory: scenario.aiInsightsHistory ?? defaultInsightsHistory,
     commandErrors: scenario.commandErrors ?? {},
     commandDelays: scenario.commandDelays ?? {},
   });

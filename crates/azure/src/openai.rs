@@ -65,10 +65,11 @@ impl AzureOpenAiEndpoint {
             ));
         }
 
-        let mut parsed = Url::parse(endpoint).map_err(|error| AzureError::InvalidOpenAiEndpoint {
-            endpoint: endpoint.to_string(),
-            reason: format!("failed to parse URL: {error}"),
-        })?;
+        let mut parsed =
+            Url::parse(endpoint).map_err(|error| AzureError::InvalidOpenAiEndpoint {
+                endpoint: endpoint.to_string(),
+                reason: format!("failed to parse URL: {error}"),
+            })?;
 
         if parsed.scheme() != "https" {
             return Err(AzureError::InvalidOpenAiEndpoint {
@@ -110,8 +111,9 @@ impl AzureOpenAiEndpoint {
         if !(path.is_empty() || path == "/") {
             return Err(AzureError::InvalidOpenAiEndpoint {
                 endpoint: endpoint.to_string(),
-                reason: "endpoint must not include a path; use the Azure OpenAI resource root URL only"
-                    .to_string(),
+                reason:
+                    "endpoint must not include a path; use the Azure OpenAI resource root URL only"
+                        .to_string(),
             });
         }
 
@@ -259,11 +261,8 @@ impl fmt::Debug for AzureOpenAiClient {
 
 impl AzureOpenAiClient {
     pub fn new(options: AzureOpenAiClientOptions) -> Result<Self> {
-        let endpoint = AzureOpenAiEndpoint::new(
-            &options.endpoint,
-            options.cloud,
-            &options.deployment_name,
-        )?;
+        let endpoint =
+            AzureOpenAiEndpoint::new(&options.endpoint, options.cloud, &options.deployment_name)?;
         let credential = match options.auth {
             AzureOpenAiAuth::DefaultAzureCredential => {
                 Some(build_default_azure_credential(options.cloud)?)
@@ -284,11 +283,8 @@ impl AzureOpenAiClient {
         options: AzureOpenAiClientOptions,
         credential: Arc<dyn TokenCredential>,
     ) -> Result<Self> {
-        let endpoint = AzureOpenAiEndpoint::new(
-            &options.endpoint,
-            options.cloud,
-            &options.deployment_name,
-        )?;
+        let endpoint =
+            AzureOpenAiEndpoint::new(&options.endpoint, options.cloud, &options.deployment_name)?;
 
         Ok(Self {
             endpoint,
@@ -689,7 +685,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(endpoint.normalized_endpoint().as_str(), "https://demo.openai.azure.com/");
+        assert_eq!(
+            endpoint.normalized_endpoint().as_str(),
+            "https://demo.openai.azure.com/"
+        );
         assert_eq!(
             endpoint.chat_completions_url().as_str(),
             "https://demo.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-10-21"
@@ -818,7 +817,8 @@ mod tests {
 
         let error = map_openai_response_error(
             401,
-            r#"{"error":{"code":"Unauthorized","message":"Bearer token was rejected."}}"#.to_string(),
+            r#"{"error":{"code":"Unauthorized","message":"Bearer token was rejected."}}"#
+                .to_string(),
             &endpoint,
             &AzureOpenAiAuth::DefaultAzureCredential,
         );
@@ -949,7 +949,8 @@ mod tests {
 
     #[test]
     fn client_construction_supports_api_key_mode() {
-        let client = AzureOpenAiClient::new(api_key_options("https://demo.openai.azure.com")).unwrap();
+        let client =
+            AzureOpenAiClient::new(api_key_options("https://demo.openai.azure.com")).unwrap();
 
         assert_eq!(
             client.endpoint().chat_completions_url().as_str(),

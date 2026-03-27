@@ -100,6 +100,19 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 
 **FAST Context caching:** After the first message in a session, `team.md`, `routing.md`, and `registry.json` are already in your context. Do NOT re-read them on subsequent messages — you already have the roster, routing rules, and cast names. Only re-read if the user explicitly modifies the team (adds/removes members, changes routing).
 
+### Telescope Desktop API Visibility Gate (Required)
+
+When a task adds or changes an API surface (backend API, Tauri command, or frontend IPC wrapper), route and review the work across all required layers:
+
+1. **Desktop command surface:** handler implementation and `generate_handler![]` registration in `apps/desktop/src-tauri/src/main.rs` (or delegated module).
+2. **Frontend transport contract:** typed wrapper/guards in `apps/web/src/lib/api.ts` and related contracts (`apps/web/src/lib/tauri-commands.ts` and feature types).
+3. **User-visible routing/discoverability:** route/UI plus nav/search/shortcut integration in `apps/web` (`Sidebar.svelte`, `SearchPalette.svelte`, `src/routes/+layout.svelte`, and route files as applicable).
+
+Required delivery checks:
+- Keep route visibility aligned with connection policy (for disconnected mode, disable actions when needed rather than hiding the page).
+- Include tests proving end-to-end visibility and command wiring (unit + Playwright e2e).
+- Do not mark done unless the capability is discoverable and executable from the desktop UI.
+
 **Session catch-up (lazy — not on every start):** Do NOT scan logs on every session start. Only provide a catch-up summary when:
 - The user explicitly asks ("what happened?", "catch me up", "status", "what did the team do?")
 - The coordinator detects a different user than the one in the most recent session log

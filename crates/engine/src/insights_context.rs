@@ -12,10 +12,10 @@ use crate::helm::HelmRelease;
 use crate::insights::{
     AiInsightsAksSummary, AiInsightsCollection, AiInsightsConnectionStatus,
     AiInsightsConnectionSummary, AiInsightsContext, AiInsightsEventSummary,
-    AiInsightsHelmReleaseSummary, AiInsightsNodeSummary, AiInsightsPodSummary,
-    AiInsightsScope, AiInsightsWorkloadSummary, AI_INSIGHTS_EVENT_CAP,
-    AI_INSIGHTS_HELM_RELEASE_CAP, AI_INSIGHTS_NODE_CAP, AI_INSIGHTS_POD_CAP,
-    AI_INSIGHTS_REDACTION_POLICY_VERSION, AI_INSIGHTS_WORKLOAD_CAP,
+    AiInsightsHelmReleaseSummary, AiInsightsNodeSummary, AiInsightsPodSummary, AiInsightsScope,
+    AiInsightsWorkloadSummary, AI_INSIGHTS_EVENT_CAP, AI_INSIGHTS_HELM_RELEASE_CAP,
+    AI_INSIGHTS_NODE_CAP, AI_INSIGHTS_POD_CAP, AI_INSIGHTS_REDACTION_POLICY_VERSION,
+    AI_INSIGHTS_WORKLOAD_CAP,
 };
 
 const REDACTED_SENSITIVE_VALUE: &str = "<redacted>";
@@ -36,7 +36,9 @@ pub struct AiInsightsContextInput<'a> {
 }
 
 /// Build a deterministic, allowlist-only AI Insights context.
-pub fn build_ai_insights_context(input: &AiInsightsContextInput<'_>) -> crate::Result<AiInsightsContext> {
+pub fn build_ai_insights_context(
+    input: &AiInsightsContextInput<'_>,
+) -> crate::Result<AiInsightsContext> {
     let namespace = scope_namespace(input.scope);
 
     Ok(AiInsightsContext {
@@ -65,8 +67,9 @@ pub fn build_ai_insights_context(input: &AiInsightsContextInput<'_>) -> crate::R
 
 /// Serialize a shaped AI Insights context using stable field ordering.
 pub fn serialize_ai_insights_context(context: &AiInsightsContext) -> crate::Result<String> {
-    serde_json::to_string(context)
-        .map_err(|error| crate::EngineError::Other(format!("Failed to serialize AI Insights context: {error}")))
+    serde_json::to_string(context).map_err(|error| {
+        crate::EngineError::Other(format!("Failed to serialize AI Insights context: {error}"))
+    })
 }
 
 fn build_workload_collection(
@@ -80,9 +83,15 @@ fn build_workload_collection(
             let Some(value) = parse_entry_json(&entry) else {
                 continue;
             };
-            let (desired_replicas, ready_replicas, available_replicas, updated_replicas, unavailable_replicas) =
-                workload_replica_counts(kind, &value);
-            let issue = workload_issue(&value, desired_replicas, ready_replicas, available_replicas);
+            let (
+                desired_replicas,
+                ready_replicas,
+                available_replicas,
+                updated_replicas,
+                unavailable_replicas,
+            ) = workload_replica_counts(kind, &value);
+            let issue =
+                workload_issue(&value, desired_replicas, ready_replicas, available_replicas);
 
             items.push(AiInsightsWorkloadSummary {
                 kind: (*kind).to_string(),
@@ -122,7 +131,11 @@ fn build_pod_collection(
             .unwrap_or_default();
         let ready_containers = container_statuses
             .iter()
-            .filter(|status| value_at(status, &["ready"]).and_then(Value::as_bool).unwrap_or(false))
+            .filter(|status| {
+                value_at(status, &["ready"])
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
             .count() as u32;
         let restart_count = container_statuses
             .iter()
@@ -175,12 +188,20 @@ fn build_event_collection(
         items.push(AiInsightsEventSummary {
             namespace: sanitize_string(&entry.namespace),
             regarding_kind: sanitize_string(
-                read_string(&value, &["involvedObject", "kind"]).as_deref().unwrap_or("Unknown"),
+                read_string(&value, &["involvedObject", "kind"])
+                    .as_deref()
+                    .unwrap_or("Unknown"),
             ),
             regarding_name: sanitize_string(
-                read_string(&value, &["involvedObject", "name"]).as_deref().unwrap_or(&entry.name),
+                read_string(&value, &["involvedObject", "name"])
+                    .as_deref()
+                    .unwrap_or(&entry.name),
             ),
-            reason: sanitize_string(read_string(&value, &["reason"]).as_deref().unwrap_or("Unknown")),
+            reason: sanitize_string(
+                read_string(&value, &["reason"])
+                    .as_deref()
+                    .unwrap_or("Unknown"),
+            ),
             message: sanitize_string(read_string(&value, &["message"]).as_deref().unwrap_or("")),
             count: event_count(&value),
             last_seen: sanitize_optional_string(event_last_seen(&value)),
@@ -194,7 +215,9 @@ fn build_event_collection(
     Ok(AiInsightsCollection { total_count, items })
 }
 
-fn build_node_collection(store: &ResourceStore) -> crate::Result<AiInsightsCollection<AiInsightsNodeSummary>> {
+fn build_node_collection(
+    store: &ResourceStore,
+) -> crate::Result<AiInsightsCollection<AiInsightsNodeSummary>> {
     let mut items = Vec::new();
 
     for entry in list_entries(store, "v1/Node", None)? {
@@ -210,7 +233,10 @@ fn build_node_collection(store: &ResourceStore) -> crate::Result<AiInsightsColle
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
             pressures,
-            kubelet_version: sanitize_optional_string(read_string(&value, &["status", "nodeInfo", "kubeletVersion"])),
+            kubelet_version: sanitize_optional_string(read_string(
+                &value,
+                &["status", "nodeInfo", "kubeletVersion"],
+            )),
         });
     }
 
@@ -227,7 +253,9 @@ fn build_helm_release_collection(
 ) -> AiInsightsCollection<AiInsightsHelmReleaseSummary> {
     let mut items = helm_releases
         .iter()
-        .filter(|release| namespace.is_none_or(|scope_namespace| release.namespace == scope_namespace))
+        .filter(|release| {
+            namespace.is_none_or(|scope_namespace| release.namespace == scope_namespace)
+        })
         .map(|release| AiInsightsHelmReleaseSummary {
             namespace: sanitize_string(&release.namespace),
             name: sanitize_string(&release.name),
@@ -365,7 +393,13 @@ fn parse_entry_json(entry: &ResourceEntry) -> Option<Value> {
 fn workload_replica_counts(
     kind: &str,
     value: &Value,
-) -> (Option<u32>, Option<u32>, Option<u32>, Option<u32>, Option<u32>) {
+) -> (
+    Option<u32>,
+    Option<u32>,
+    Option<u32>,
+    Option<u32>,
+    Option<u32>,
+) {
     match kind {
         "DaemonSet" => (
             read_u32(value, &["status", "desiredNumberScheduled"]),
@@ -394,10 +428,12 @@ fn workload_issue(
         .or_else(|| {
             let desired = desired_replicas.unwrap_or(0);
             let available = available_replicas.or(ready_replicas).unwrap_or(0);
-            (desired > available).then(|| sanitize_string(&format!(
-                "{} of {} replicas are available",
-                available, desired
-            )))
+            (desired > available).then(|| {
+                sanitize_string(&format!(
+                    "{} of {} replicas are available",
+                    available, desired
+                ))
+            })
         })
 }
 
@@ -407,7 +443,9 @@ fn pod_issue(
     total_containers: u32,
     restart_count: u32,
 ) -> Option<String> {
-    if let Some(container_statuses) = value_at(value, &["status", "containerStatuses"]).and_then(Value::as_array) {
+    if let Some(container_statuses) =
+        value_at(value, &["status", "containerStatuses"]).and_then(Value::as_array)
+    {
         for status in container_statuses {
             if let Some(waiting) = value_at(status, &["state", "waiting"]) {
                 if let Some(issue) = state_reason_message(waiting) {
@@ -438,7 +476,10 @@ fn pod_issue(
                 ))
             })
         })
-        .or_else(|| (restart_count > 0).then(|| sanitize_string(&format!("Pod restarted {} times", restart_count))))
+        .or_else(|| {
+            (restart_count > 0)
+                .then(|| sanitize_string(&format!("Pod restarted {} times", restart_count)))
+        })
 }
 
 fn event_count(value: &Value) -> u32 {
@@ -468,12 +509,18 @@ fn node_is_ready(value: &Value) -> bool {
 }
 
 fn node_pressures(value: &Value) -> Vec<String> {
-    let condition_priority = ["MemoryPressure", "DiskPressure", "PIDPressure", "NetworkUnavailable"];
+    let condition_priority = [
+        "MemoryPressure",
+        "DiskPressure",
+        "PIDPressure",
+        "NetworkUnavailable",
+    ];
 
     condition_priority
         .iter()
         .filter_map(|condition_type| {
-            let conditions = value_at(value, &["status", "conditions"]).and_then(Value::as_array)?;
+            let conditions =
+                value_at(value, &["status", "conditions"]).and_then(Value::as_array)?;
             conditions.iter().find_map(|condition| {
                 let current_type = read_string(condition, &["type"])?;
                 let current_status = read_string(condition, &["status"])?;
@@ -505,7 +552,10 @@ fn first_non_ready_condition(conditions: Option<&Vec<Value>>) -> Option<String> 
                 detail = format!("Condition {condition_type} is {status}");
             }
 
-            Some((condition_priority(&condition_type), sanitize_string(&detail)))
+            Some((
+                condition_priority(&condition_type),
+                sanitize_string(&detail),
+            ))
         })
         .collect::<Vec<_>>();
 
@@ -603,8 +653,12 @@ fn looks_like_opaque_token(value: &str) -> bool {
         return false;
     }
 
-    let has_lower = trimmed.chars().any(|character| character.is_ascii_lowercase());
-    let has_upper = trimmed.chars().any(|character| character.is_ascii_uppercase());
+    let has_lower = trimmed
+        .chars()
+        .any(|character| character.is_ascii_lowercase());
+    let has_upper = trimmed
+        .chars()
+        .any(|character| character.is_ascii_uppercase());
     let has_digit = trimmed.chars().any(|character| character.is_ascii_digit());
     let has_separator = trimmed.contains('-') || trimmed.contains('_') || trimmed.contains('=');
     let only_token_chars = trimmed.chars().all(|character| {
@@ -630,23 +684,26 @@ fn looks_like_kubeconfig(value: &str) -> bool {
         "\"users\"",
     ];
 
-    markers.iter().filter(|marker| lower.contains(**marker)).count() >= 3
+    markers
+        .iter()
+        .filter(|marker| lower.contains(**marker))
+        .count()
+        >= 3
 }
 
 fn looks_like_connection_string(value: &str) -> bool {
     static URI_WITH_AUTH_RE: OnceLock<Regex> = OnceLock::new();
 
     let lower = value.to_ascii_lowercase();
-    let has_semicolon_connection_parts =
-        (lower.contains("accountkey=")
-            || lower.contains("sharedaccesskey=")
-            || lower.contains("sharedaccesssignature=")
-            || lower.contains("defaultendpointsprotocol=")
-            || lower.contains("endpointsuffix=")
-            || lower.contains("user id=")
-            || lower.contains("uid=")
-            || lower.contains("password="))
-            && value.contains(';');
+    let has_semicolon_connection_parts = (lower.contains("accountkey=")
+        || lower.contains("sharedaccesskey=")
+        || lower.contains("sharedaccesssignature=")
+        || lower.contains("defaultendpointsprotocol=")
+        || lower.contains("endpointsuffix=")
+        || lower.contains("user id=")
+        || lower.contains("uid=")
+        || lower.contains("password="))
+        && value.contains(';');
 
     has_semicolon_connection_parts
         || URI_WITH_AUTH_RE
@@ -671,7 +728,10 @@ fn looks_like_service_account_credential(value: &str) -> bool {
             .is_match(value)
 }
 
-fn compare_workloads(left: &AiInsightsWorkloadSummary, right: &AiInsightsWorkloadSummary) -> Ordering {
+fn compare_workloads(
+    left: &AiInsightsWorkloadSummary,
+    right: &AiInsightsWorkloadSummary,
+) -> Ordering {
     workload_severity(left)
         .cmp(&workload_severity(right))
         .then_with(|| unavailable_count(right).cmp(&unavailable_count(left)))
@@ -767,7 +827,10 @@ fn helm_severity(summary: &AiInsightsHelmReleaseSummary) -> u8 {
 fn unavailable_count(summary: &AiInsightsWorkloadSummary) -> u32 {
     summary.unavailable_replicas.unwrap_or_else(|| {
         let desired = summary.desired_replicas.unwrap_or(0);
-        let available = summary.available_replicas.or(summary.ready_replicas).unwrap_or(0);
+        let available = summary
+            .available_replicas
+            .or(summary.ready_replicas)
+            .unwrap_or(0);
         desired.saturating_sub(available)
     })
 }
@@ -857,7 +920,10 @@ mod tests {
         assert_eq!(first.workloads.items.len(), AI_INSIGHTS_WORKLOAD_CAP);
         assert_eq!(first.workloads.items.first().unwrap().name, "zz-problem");
         assert_eq!(first.workloads.items[1].name, "svc-00");
-        assert_eq!(serialize_ai_insights_context(&first).unwrap(), serialize_ai_insights_context(&second).unwrap());
+        assert_eq!(
+            serialize_ai_insights_context(&first).unwrap(),
+            serialize_ai_insights_context(&second).unwrap()
+        );
     }
 
     #[test]
@@ -976,8 +1042,14 @@ mod tests {
 
         assert_eq!(context.events.items[0].message, REDACTED_SENSITIVE_VALUE);
         assert_eq!(context.events.items[1].message, REDACTED_SENSITIVE_VALUE);
-        assert_eq!(context.helm_releases.items[0].chart, REDACTED_SENSITIVE_VALUE);
-        assert_eq!(context.aks.unwrap().dns_prefix, Some(REDACTED_SENSITIVE_VALUE.to_string()));
+        assert_eq!(
+            context.helm_releases.items[0].chart,
+            REDACTED_SENSITIVE_VALUE
+        );
+        assert_eq!(
+            context.aks.unwrap().dns_prefix,
+            Some(REDACTED_SENSITIVE_VALUE.to_string())
+        );
     }
 
     #[test]
@@ -1066,7 +1138,10 @@ mod tests {
         let context = build_ai_insights_context(&input).unwrap();
 
         assert_eq!(context.scope, scope);
-        assert_eq!(context.connection.status, AiInsightsConnectionStatus::Backoff);
+        assert_eq!(
+            context.connection.status,
+            AiInsightsConnectionStatus::Backoff
+        );
         assert_eq!(context.workloads.total_count, 1);
         assert_eq!(context.workloads.items[0].name, "payments-api");
         assert_eq!(context.helm_releases.total_count, 1);
@@ -1192,7 +1267,10 @@ mod tests {
         let scope = AiInsightsScope::Cluster;
         let context = build_ai_insights_context(&empty_input(&scope, &store, &[], None)).unwrap();
 
-        assert_eq!(context.events.total_count as usize, AI_INSIGHTS_EVENT_CAP + 5);
+        assert_eq!(
+            context.events.total_count as usize,
+            AI_INSIGHTS_EVENT_CAP + 5
+        );
         assert_eq!(context.events.items.len(), AI_INSIGHTS_EVENT_CAP);
     }
 
@@ -1247,6 +1325,9 @@ mod tests {
             context.helm_releases.total_count as usize,
             AI_INSIGHTS_HELM_RELEASE_CAP + 4
         );
-        assert_eq!(context.helm_releases.items.len(), AI_INSIGHTS_HELM_RELEASE_CAP);
+        assert_eq!(
+            context.helm_releases.items.len(),
+            AI_INSIGHTS_HELM_RELEASE_CAP
+        );
     }
 }

@@ -51,6 +51,7 @@
       clearTimeout(gTimer);
       const routes: Record<string, string> = {
         'o': '/overview',
+        'i': '/insights',
         'p': '/pods',
         'd': '/resources/deployments',
         's': '/resources/services',

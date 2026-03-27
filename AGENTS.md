@@ -103,6 +103,18 @@ pnpm install
 
 **Rule:** If the desktop UI changes, the implementation almost always belongs in `apps/web`.
 
+## API-to-Desktop Visibility Workflow (Required)
+
+When adding or changing an API surface (Rust backend API, Tauri command, or frontend IPC wrapper), treat the work as incomplete until all layers below are wired:
+
+1. Add/adjust the desktop command handler and register it in `apps/desktop/src-tauri/src/main.rs` (`generate_handler![]`).
+2. Expose typed frontend IPC wrappers in `apps/web/src/lib/api.ts` and keep feature contracts in sync (`apps/web/src/lib/tauri-commands.ts` and related `src/lib/*` guards/types).
+3. Wire a visible UI path in `apps/web` (route/component plus discoverability in `Sidebar.svelte`, `SearchPalette.svelte`, and shortcut mapping in `src/routes/+layout.svelte` when applicable).
+4. Preserve intended disconnected behavior (route availability vs. action disablement) instead of hiding features.
+5. Add regression coverage for command wiring and discoverability (unit + Playwright e2e).
+
+Definition of done: a user can find and execute the feature from the desktop UI; backend-only API additions are not considered complete.
+
 ## Architecture Notes
 
 - Dependency direction is effectively **desktop app → (`core`, `engine`, `azure`)** with `engine` depending on `core`.

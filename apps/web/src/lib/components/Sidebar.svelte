@@ -5,7 +5,7 @@
   let collapsed = $state(false);
 
   import Icon from '$lib/icons/Icon.svelte';
-import type { ResourceIconName } from '$lib/icons';
+  import type { ResourceIconName } from '$lib/icons';
 
   interface NavItem {
     label: string;
@@ -85,6 +85,7 @@ import type { ResourceIconName } from '$lib/icons';
   const sections = $derived.by((): NavSection[] => {
     const clusterItems: NavItem[] = [
       { label: 'Overview', href: '/overview', icon: 'overview' },
+      { label: 'Insights', href: '/insights', icon: 'insights' },
       { label: 'Namespaces', href: '/namespaces', icon: 'namespaces' },
       { label: 'Create', href: '/create', icon: 'create' },
       { label: 'Nodes', href: '/nodes', icon: 'nodes' },
@@ -117,7 +118,11 @@ import type { ResourceIconName } from '$lib/icons';
   function isDisabled(item: NavItem): boolean {
     if (item.external) return !$isConnected || !item.href;
     if (!item.href) return true;
-    return !$isConnected && item.href !== '/' && item.href !== '/overview' && item.href !== '/settings';
+    return !$isConnected
+      && item.href !== '/'
+      && item.href !== '/overview'
+      && item.href !== '/insights'
+      && item.href !== '/settings';
   }
 
   function getItemTitle(item: NavItem, iconOnly = false): string | undefined {

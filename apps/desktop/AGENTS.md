@@ -129,6 +129,15 @@ Currently, the desktop app has **no dedicated tests**:
 2. **Test in desktop context:** Run `pnpm -C apps/desktop tauri dev` to see changes in the native wrapper
 3. **Verify packaging:** Periodically run `pnpm -C apps/desktop bundle` to catch platform-specific issues
 
+### API Wiring Gate (Required)
+
+For every new or changed backend API/IPC surface:
+
+1. Implement the Tauri command handler in `src-tauri/src/main.rs` (or module it delegates to).
+2. Register the command in `generate_handler![]` so frontend `invoke()` calls can reach it.
+3. Confirm the paired frontend route/discoverability wiring exists in `apps/web` (route + navigation/search/shortcut as applicable).
+4. Do not mark complete until the feature is visible and callable from the desktop UI, not only from backend code.
+
 ## Platform-Specific Notes
 
 ### macOS

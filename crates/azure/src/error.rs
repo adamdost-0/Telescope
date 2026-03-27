@@ -131,9 +131,7 @@ impl AzureError {
             AzureError::OpenAiCredential(_)
             | AzureError::OpenAiAuthenticationFailed { .. }
             | AzureError::OpenAiInvalidApiKey { .. }
-            | AzureError::TokenExpired(_) => {
-                AzureAiProviderErrorClass::Credential
-            }
+            | AzureError::TokenExpired(_) => AzureAiProviderErrorClass::Credential,
             AzureError::OpenAiPermissionDenied { .. } => AzureAiProviderErrorClass::Authorization,
             AzureError::OpenAiTimeout(_) | AzureError::Timeout(_) => {
                 AzureAiProviderErrorClass::Timeout

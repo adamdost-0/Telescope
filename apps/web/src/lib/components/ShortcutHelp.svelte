@@ -6,6 +6,7 @@
     { keys: 'Ctrl+K', action: 'Search resources' },
     { keys: '?', action: 'Show this help' },
     { keys: 'g → o', action: 'Go to Overview' },
+    { keys: 'g → i', action: 'Go to Insights' },
     { keys: 'g → p', action: 'Go to Pods' },
     { keys: 'g → d', action: 'Go to Deployments' },
     { keys: 'g → s', action: 'Go to Services' },

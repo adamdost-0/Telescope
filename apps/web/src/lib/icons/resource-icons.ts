@@ -7,6 +7,7 @@ import {
   IconBoxMultiple,
   IconChartLine,
   IconChartPie,
+  IconBulb,
   IconClipboardList,
   IconCompass,
   IconDatabase,
@@ -45,6 +46,7 @@ export type ResourceIconName =
   | 'node-pools'
   | 'priorityclasses'
   | 'events'
+  | 'insights'
   | 'pods'
   | 'deployments'
   | 'statefulsets'
@@ -82,6 +84,7 @@ export const RESOURCE_ICONS: Record<ResourceIconName, ComponentType> = {
   'node-pools': IconServerBolt,
   priorityclasses: IconTags,
   events: IconActivity,
+  insights: IconBulb,
   pods: IconBox,
   deployments: IconRocket,
   statefulsets: IconArchive,

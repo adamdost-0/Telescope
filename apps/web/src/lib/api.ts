@@ -18,8 +18,14 @@ import {
   type AksUpgradeProfile,
   type AksMaintenanceConfig,
   type PoolUpgradeProfile,
+  type AiInsightsConnectionTestResult,
+  type AiInsightsHistoryEntry,
+  type AiInsightsResponse,
   type AiInsightsSettings,
   createDefaultAiInsightsSettings,
+  isAiInsightsConnectionTestResult,
+  isAiInsightsHistoryEntry,
+  isAiInsightsResponse,
   parseAiInsightsAuthMode,
   parseAiInsightsCloudProfile,
 } from './tauri-commands';
@@ -554,6 +560,70 @@ export async function setAiInsightsSettings(settings: AiInsightsSettings): Promi
     setPreference(AI_INSIGHTS_SETTINGS_KEYS.cloudProfile, settings.cloudProfile),
     setPreference(AI_INSIGHTS_SETTINGS_KEYS.modelName, settings.modelName ?? ''),
   ]);
+}
+
+/** Validate AI Insights provider connectivity and model/deployment resolution. */
+export async function testAiInsightsConnection(
+  apiKey?: string,
+): Promise<AiInsightsConnectionTestResult> {
+  try {
+    const result = await invoke<unknown>(
+      'test_ai_insights_connection',
+      apiKey === undefined ? undefined : { apiKey },
+    );
+    if (!isAiInsightsConnectionTestResult(result)) {
+      throw new Error('Invalid test_ai_insights_connection payload from backend.');
+    }
+    return result;
+  } catch (e) {
+    const error = toError(e);
+    notifyApiError('test_ai_insights_connection', error);
+    throw error;
+  }
+}
+
+/** Generate deterministic AI Insights for the active cluster context. */
+export async function generateAiInsights(apiKey?: string): Promise<AiInsightsResponse> {
+  try {
+    const result = await invoke<unknown>(
+      'generate_ai_insights',
+      apiKey === undefined ? undefined : { apiKey },
+    );
+    if (!isAiInsightsResponse(result)) {
+      throw new Error('Invalid generate_ai_insights payload from backend.');
+    }
+    return result;
+  } catch (e) {
+    const error = toError(e);
+    notifyApiError('generate_ai_insights', error);
+    throw error;
+  }
+}
+
+/** Load persisted AI Insights generation history entries. */
+export async function listAiInsightsHistory(): Promise<AiInsightsHistoryEntry[]> {
+  try {
+    const result = await invoke<unknown>('list_ai_insights_history');
+    if (!Array.isArray(result) || !result.every((entry) => isAiInsightsHistoryEntry(entry))) {
+      throw new Error('Invalid list_ai_insights_history payload from backend.');
+    }
+    return result;
+  } catch (e) {
+    const error = toError(e);
+    notifyApiError('list_ai_insights_history', error);
+    throw error;
+  }
+}
+
+/** Delete all persisted AI Insights history entries. */
+export async function clearAiInsightsHistory(): Promise<void> {
+  try {
+    await invoke<void>('clear_ai_insights_history');
+  } catch (e) {
+    const error = toError(e);
+    notifyApiError('clear_ai_insights_history', error);
+    throw error;
+  }
 }
 
 // ── AKS identity resolution ─────────────────────────────────────────────

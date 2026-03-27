@@ -52,6 +52,7 @@
     { icon: ResourceIconName; label: string; route: string; description?: string }
   > = {
     overview: { icon: 'overview', label: 'Overview', route: '/overview' },
+    insights: { icon: 'insights', label: 'Insights', route: '/insights' },
     pods: { icon: 'pods', label: 'Pods', route: '/pods' },
     nodes: { icon: 'nodes', label: 'Nodes', route: '/nodes' },
     nodepools: { icon: 'node-pools', label: 'Node Pools', route: '/azure/node-pools' },

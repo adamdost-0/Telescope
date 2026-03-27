@@ -1,6 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAzureCloud, getPreference, resolveAksIdentity, setAzureCloud, setPreference } from '$lib/api';
+  import {
+    getAiInsightsSettings,
+    getAzureCloud,
+    getPreference,
+    resolveAksIdentity,
+    setAiInsightsSettings,
+    setAzureCloud,
+    setPreference,
+  } from '$lib/api';
+  import { AI_INSIGHTS_AUTH_MODES, AI_INSIGHTS_CLOUD_PROFILES } from '$lib/tauri-commands';
+  import type { AiInsightsAuthMode, AiInsightsCloudProfile } from '$lib/tauri-commands';
   import { updateProductionPatterns } from '$lib/prod-detection';
   import { version } from '$lib/version';
   import Icon from '$lib/icons/Icon.svelte';
@@ -17,6 +27,11 @@
   let azureDetecting = $state(false);
   let azureSaving = $state(false);
   let azureError = $state<string | null>(null);
+  let aiInsightsEndpoint = $state('');
+  let aiInsightsDeploymentName = $state('');
+  let aiInsightsAuthMode = $state<AiInsightsAuthMode>('azureLogin');
+  let aiInsightsCloudProfile = $state<AiInsightsCloudProfile>('commercial');
+  let aiInsightsModelName = $state('');
   let saving = $state(false);
   let saved = $state(false);
 
@@ -39,6 +54,18 @@
     { value: 'UsGovTopSecret', label: 'US Gov Top Secret' },
   ] as const;
 
+  const AI_INSIGHTS_AUTH_MODE_LABELS: Record<AiInsightsAuthMode, string> = {
+    azureLogin: 'Azure login',
+    apiKey: 'API key',
+  };
+
+  const AI_INSIGHTS_CLOUD_PROFILE_LABELS: Record<AiInsightsCloudProfile, string> = {
+    commercial: 'Commercial',
+    usGovernment: 'US Government',
+    usGovernmentSecret: 'US Government Secret',
+    usGovernmentTopSecret: 'US Government Top Secret',
+  };
+
   function azureCloudLabel(cloud: string): string {
     return AZURE_CLOUD_OPTIONS.find((option) => option.value === cloud)?.label ?? cloud;
   }
@@ -54,6 +81,7 @@
       storedAzureSubscription,
       storedAzureResourceGroup,
       storedAzureClusterName,
+      aiInsightsSettings,
     ] = await Promise.all([
       getPreference(PREF_KEYS.theme),
       getPreference(PREF_KEYS.productionPatterns),
@@ -64,6 +92,7 @@
       getPreference(PREF_KEYS.azureSubscription),
       getPreference(PREF_KEYS.azureResourceGroup),
       getPreference(PREF_KEYS.azureClusterName),
+      getAiInsightsSettings(),
     ]);
     if (t) theme = t;
     if (pp) productionPatterns = pp;
@@ -78,6 +107,11 @@
     if (storedAzureSubscription) azureSubscription = storedAzureSubscription;
     if (storedAzureResourceGroup) azureResourceGroup = storedAzureResourceGroup;
     if (storedAzureClusterName) azureClusterName = storedAzureClusterName;
+    aiInsightsEndpoint = aiInsightsSettings.endpoint;
+    aiInsightsDeploymentName = aiInsightsSettings.deploymentName;
+    aiInsightsAuthMode = aiInsightsSettings.authMode;
+    aiInsightsCloudProfile = aiInsightsSettings.cloudProfile;
+    aiInsightsModelName = aiInsightsSettings.modelName ?? '';
   });
 
   async function handleAzureCloudChange(event: Event) {
@@ -129,6 +163,13 @@
         setPreference(PREF_KEYS.azureSubscription, azureSubscription),
         setPreference(PREF_KEYS.azureResourceGroup, azureResourceGroup),
         setPreference(PREF_KEYS.azureClusterName, azureClusterName),
+        setAiInsightsSettings({
+          endpoint: aiInsightsEndpoint,
+          deploymentName: aiInsightsDeploymentName,
+          authMode: aiInsightsAuthMode,
+          cloudProfile: aiInsightsCloudProfile,
+          modelName: aiInsightsModelName === '' ? null : aiInsightsModelName,
+        }),
       ]);
       updateProductionPatterns(productionPatterns);
       if (typeof document !== 'undefined') {
@@ -226,6 +267,48 @@
     </button>
   </section>
 
+  <section class="settings-section">
+    <h2>AI Insights</h2>
+    <span class="field-hint section-hint">
+      These settings are saved in preferences. API keys are never persisted and must be provided per session when API key auth is selected.
+    </span>
+    <label class="field">
+      <span class="field-label">Endpoint</span>
+      <input type="url" bind:value={aiInsightsEndpoint} placeholder="https://example.openai.azure.com/" />
+    </label>
+    <label class="field">
+      <span class="field-label">Deployment name</span>
+      <input type="text" bind:value={aiInsightsDeploymentName} placeholder="my-deployment" />
+    </label>
+    <label class="field">
+      <span class="field-label">Authentication mode</span>
+      <select bind:value={aiInsightsAuthMode}>
+        {#each AI_INSIGHTS_AUTH_MODES as mode}
+          <option value={mode}>{AI_INSIGHTS_AUTH_MODE_LABELS[mode]}</option>
+        {/each}
+      </select>
+      <span class="field-hint">
+        {#if aiInsightsAuthMode === 'apiKey'}
+          API key values are session-only and are not stored in preferences or localStorage.
+        {:else}
+          Azure login uses your current Azure identity session.
+        {/if}
+      </span>
+    </label>
+    <label class="field">
+      <span class="field-label">Cloud profile</span>
+      <select bind:value={aiInsightsCloudProfile}>
+        {#each AI_INSIGHTS_CLOUD_PROFILES as profile}
+          <option value={profile}>{AI_INSIGHTS_CLOUD_PROFILE_LABELS[profile]}</option>
+        {/each}
+      </select>
+    </label>
+    <label class="field">
+      <span class="field-label">Model name (optional)</span>
+      <input type="text" bind:value={aiInsightsModelName} placeholder="Leave blank to use deployment default" />
+    </label>
+  </section>
+
   <div class="actions">
     <button class="save-btn" onclick={save} disabled={saving}>
       {saving ? 'Saving…' : 'Save preferences'}
@@ -288,6 +371,10 @@
   .field-hint {
     font-size: 0.75rem;
     color: #6e7681;
+  }
+  .section-hint {
+    display: block;
+    margin-bottom: 0.75rem;
   }
   .field-error {
     font-size: 0.75rem;

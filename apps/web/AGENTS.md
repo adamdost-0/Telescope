@@ -137,6 +137,7 @@ E2E tests run against `tools/devtest/stub-server.mjs` with deterministic fake da
 
 ## When to Edit
 - **Add a new resource page:** Create route under `src/routes/resources/`, add GVK mapping in `resource-routing.ts`
-- **Add a Tauri command:** Add the `invoke()` call in `api.ts`, create UI in route/component
+- **Add a Tauri command:** Add the `invoke()` call in `api.ts`, create UI in route/component, and wire discoverability (`Sidebar.svelte`, `SearchPalette.svelte`, `src/routes/+layout.svelte` shortcuts when applicable)
+- **Add/modify backend API exposure:** Keep contracts aligned in `tauri-commands.ts`/feature types, ensure route remains visible under disconnected policy, and add e2e coverage proving navigation + command invocation
 - **Add a component:** Place in `src/lib/components/`
 - **Modify preferences:** Edit `preferences.ts` and corresponding Tauri commands

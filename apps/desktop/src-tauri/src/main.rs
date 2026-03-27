@@ -4,16 +4,27 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures::{AsyncBufReadExt, TryStreamExt};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 use telescope_azure::{
-    AksNodePool, ArmClient, AzureCloud, CreateNodePoolRequest, MaintenanceConfig,
-    PoolUpgradeProfile, UpgradeProfile,
+    AksNodePool, ArmClient, AzureCloud, AzureOpenAiAuth, AzureOpenAiChatCompletionsRequest,
+    AzureOpenAiChatMessage, AzureOpenAiChatRole, AzureOpenAiClient, AzureOpenAiClientOptions,
+    AzureOpenAiResponseFormat, AzureOpenAiResponseFormatJsonSchema, CreateNodePoolRequest,
+    MaintenanceConfig, PoolUpgradeProfile, UpgradeProfile,
 };
 use tokio::sync::{Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
 use telescope_core::{ConnectionState, ResourceEntry, ResourceStore};
+use telescope_engine::insights::{
+    AiInsightsAuthMode, AiInsightsCloudProfile, AiInsightsRequest, AiInsightsResponse,
+    AiInsightsScope, AiInsightsSettings, AiInsightsSettingsKeys,
+};
+use telescope_engine::insights_context::{
+    build_ai_insights_context, serialize_ai_insights_context, AiInsightsContextInput,
+};
 use telescope_engine::{audit::AuditEntry, validation, ClusterContext};
 
 /// All watched GVK strings. Used for cache invalidation on connect,
@@ -49,6 +60,15 @@ const ALL_WATCHED_GVKS: &[&str] = &[
     "storage.k8s.io/v1/StorageClass",
     "v1/PersistentVolume",
 ];
+
+const AI_INSIGHTS_HISTORY_KEY_PREFIX: &str = "ai_insights_history";
+const AI_INSIGHTS_HISTORY_LIMIT: usize = 3;
+const AI_INSIGHTS_SYSTEM_PROMPT: &str = concat!(
+    "You are Telescope AI Insights. ",
+    "Produce advisory-only operational insights for Kubernetes and AKS state. ",
+    "Return exactly one JSON object that matches the required schema. ",
+    "Do not return markdown, code fences, or explanatory prose outside JSON."
+);
 
 /// Clear all watched resource data from the store.
 fn clear_all_resources(store: &ResourceStore) {
@@ -2215,6 +2235,473 @@ fn set_preference(state: State<'_, AppState>, key: String, value: String) -> Res
         .map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AiInsightsHistoryEntry {
+    created_at: String,
+    scope: AiInsightsScope,
+    response: AiInsightsResponse,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiInsightsConnectionCheck {
+    normalized_endpoint: String,
+    chat_completions_url: String,
+    model: String,
+}
+
+fn parse_ai_insights_auth_mode(raw_value: Option<String>) -> Result<AiInsightsAuthMode, String> {
+    match raw_value
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "" | "azurelogin" => Ok(AiInsightsAuthMode::AzureLogin),
+        "apikey" => Ok(AiInsightsAuthMode::ApiKey),
+        other => Err(format!(
+            "Invalid AI Insights auth mode preference: '{other}'. Expected 'azureLogin' or 'apiKey'."
+        )),
+    }
+}
+
+fn parse_ai_insights_cloud_profile(
+    raw_value: Option<String>,
+) -> Result<AiInsightsCloudProfile, String> {
+    match raw_value
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "" | "commercial" => Ok(AiInsightsCloudProfile::Commercial),
+        "usgovernment" => Ok(AiInsightsCloudProfile::UsGovernment),
+        "usgovernmentsecret" => Ok(AiInsightsCloudProfile::UsGovernmentSecret),
+        "usgovernmenttopsecret" => Ok(AiInsightsCloudProfile::UsGovernmentTopSecret),
+        other => Err(format!(
+            "Invalid AI Insights cloud profile preference: '{other}'. Expected one of commercial, usGovernment, usGovernmentSecret, usGovernmentTopSecret."
+        )),
+    }
+}
+
+fn map_ai_insights_cloud_profile(cloud_profile: AiInsightsCloudProfile) -> AzureCloud {
+    match cloud_profile {
+        AiInsightsCloudProfile::Commercial => AzureCloud::Commercial,
+        AiInsightsCloudProfile::UsGovernment => AzureCloud::UsGovernment,
+        AiInsightsCloudProfile::UsGovernmentSecret => AzureCloud::UsGovSecret,
+        AiInsightsCloudProfile::UsGovernmentTopSecret => AzureCloud::UsGovTopSecret,
+    }
+}
+
+fn load_ai_insights_settings(state: &State<'_, AppState>) -> Result<AiInsightsSettings, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let auth_mode = parse_ai_insights_auth_mode(
+        store
+            .get_preference(AiInsightsSettingsKeys::AUTH_MODE)
+            .map_err(|e| e.to_string())?,
+    )?;
+    let cloud_profile = parse_ai_insights_cloud_profile(
+        store
+            .get_preference(AiInsightsSettingsKeys::CLOUD_PROFILE)
+            .map_err(|e| e.to_string())?,
+    )?;
+    let endpoint = store
+        .get_preference(AiInsightsSettingsKeys::ENDPOINT)
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    let deployment_name = store
+        .get_preference(AiInsightsSettingsKeys::DEPLOYMENT_NAME)
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    let model_name = store
+        .get_preference(AiInsightsSettingsKeys::MODEL_NAME)
+        .map_err(|e| e.to_string())?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    Ok(AiInsightsSettings {
+        auth_mode,
+        cloud_profile,
+        endpoint: endpoint.trim().to_string(),
+        deployment_name: deployment_name.trim().to_string(),
+        model_name,
+    })
+}
+
+async fn default_ai_insights_scope(state: &State<'_, AppState>) -> AiInsightsScope {
+    let namespace = state.active_namespace.read().await.clone();
+    let trimmed = namespace.trim();
+    if trimmed.is_empty() {
+        AiInsightsScope::Cluster
+    } else {
+        AiInsightsScope::Namespace {
+            namespace: trimmed.to_string(),
+        }
+    }
+}
+
+async fn resolve_ai_insights_request(
+    state: &State<'_, AppState>,
+    request: Option<AiInsightsRequest>,
+) -> Result<AiInsightsRequest, String> {
+    if let Some(request) = request {
+        return Ok(request);
+    }
+
+    Ok(AiInsightsRequest {
+        scope: default_ai_insights_scope(state).await,
+        settings: load_ai_insights_settings(state)?,
+    })
+}
+
+fn build_ai_insights_auth(
+    auth_mode: AiInsightsAuthMode,
+    api_key: Option<String>,
+) -> Result<AzureOpenAiAuth, String> {
+    match auth_mode {
+        AiInsightsAuthMode::AzureLogin => Ok(AzureOpenAiAuth::DefaultAzureCredential),
+        AiInsightsAuthMode::ApiKey => {
+            let api_key = api_key
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    "AI Insights auth mode is set to apiKey, but no apiKey value was provided."
+                        .to_string()
+                })?;
+            Ok(AzureOpenAiAuth::ApiKey(api_key.into()))
+        }
+    }
+}
+
+fn build_ai_insights_client(
+    settings: &AiInsightsSettings,
+    api_key: Option<String>,
+) -> Result<AzureOpenAiClient, String> {
+    let options = AzureOpenAiClientOptions {
+        endpoint: settings.endpoint.clone(),
+        deployment_name: settings.deployment_name.clone(),
+        cloud: map_ai_insights_cloud_profile(settings.cloud_profile),
+        auth: build_ai_insights_auth(settings.auth_mode, api_key)?,
+    };
+
+    AzureOpenAiClient::new(options)
+        .map_err(|error| format!("Failed to initialize Azure OpenAI client: {error}"))
+}
+
+fn ai_insights_scope_label(scope: &AiInsightsScope) -> String {
+    match scope {
+        AiInsightsScope::Cluster => "cluster".to_string(),
+        AiInsightsScope::Namespace { namespace } => format!("namespace/{namespace}"),
+    }
+}
+
+fn ai_insights_response_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary", "risks", "observations", "recommendations", "references"],
+        "properties": {
+            "summary": { "type": "string" },
+            "risks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["title", "detail", "impact"],
+                    "properties": {
+                        "title": { "type": "string" },
+                        "detail": { "type": "string" },
+                        "impact": { "type": "string", "enum": ["low", "medium", "high"] }
+                    }
+                }
+            },
+            "observations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["area", "detail"],
+                    "properties": {
+                        "area": { "type": "string" },
+                        "detail": { "type": "string" }
+                    }
+                }
+            },
+            "recommendations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["action", "rationale", "confidence"],
+                    "properties": {
+                        "action": { "type": "string" },
+                        "rationale": { "type": "string" },
+                        "confidence": { "type": "number" }
+                    }
+                }
+            },
+            "references": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["kind", "name", "namespace"],
+                    "properties": {
+                        "kind": { "type": "string" },
+                        "name": { "type": "string" },
+                        "namespace": { "type": ["string", "null"] }
+                    }
+                }
+            }
+        }
+    })
+}
+
+async fn build_serialized_ai_insights_context_payload(
+    state: &State<'_, AppState>,
+    scope: &AiInsightsScope,
+) -> Result<String, String> {
+    let connection_state = state.connection_state.read().await.clone();
+    let empty_releases = Vec::new();
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let input = AiInsightsContextInput {
+        scope,
+        connection_state: &connection_state,
+        store: &store,
+        helm_releases: &empty_releases,
+        aks_summary: None,
+    };
+    let context = build_ai_insights_context(&input)
+        .map_err(|error| format!("Failed to build AI Insights context: {error}"))?;
+    serialize_ai_insights_context(&context)
+        .map_err(|error| format!("Failed to serialize AI Insights context: {error}"))
+}
+
+fn build_ai_insights_chat_request(
+    scope: &AiInsightsScope,
+    serialized_context: &str,
+) -> AzureOpenAiChatCompletionsRequest {
+    AzureOpenAiChatCompletionsRequest {
+        messages: vec![
+            AzureOpenAiChatMessage {
+                role: AzureOpenAiChatRole::System,
+                content: AI_INSIGHTS_SYSTEM_PROMPT.to_string(),
+            },
+            AzureOpenAiChatMessage {
+                role: AzureOpenAiChatRole::User,
+                content: format!(
+                    "Scope: {}\nReturn one JSON object for AI insights.\nContext JSON:\n{}",
+                    ai_insights_scope_label(scope),
+                    serialized_context
+                ),
+            },
+        ],
+        response_format: Some(AzureOpenAiResponseFormat::JsonSchema(
+            AzureOpenAiResponseFormatJsonSchema {
+                name: "ai_insights_response".to_string(),
+                description: Some(
+                    "Structured advisory response for Telescope AI Insights.".to_string(),
+                ),
+                schema: ai_insights_response_schema(),
+                strict: true,
+            },
+        )),
+        temperature: Some(0.1),
+        max_tokens: Some(1200),
+    }
+}
+
+fn ai_insights_payload_preview(payload: &str) -> String {
+    let trimmed = payload.trim();
+    if trimmed.is_empty() {
+        return "<empty payload>".to_string();
+    }
+
+    let mut preview: String = trimmed.chars().take(256).collect();
+    if trimmed.chars().count() > 256 {
+        preview.push('…');
+    }
+    preview
+}
+
+fn parse_ai_insights_response_payload(payload: &str) -> Result<AiInsightsResponse, String> {
+    let trimmed = payload.trim();
+    if trimmed.is_empty() {
+        return Err("Azure OpenAI returned an empty AI Insights response.".to_string());
+    }
+
+    let direct_parse_error = match serde_json::from_str::<AiInsightsResponse>(trimmed) {
+        Ok(response) => return Ok(response),
+        Err(error) => error,
+    };
+
+    let fenced_payload = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .and_then(|inner| inner.strip_suffix("```"))
+        .map(str::trim);
+
+    if let Some(fenced_payload) = fenced_payload {
+        return serde_json::from_str::<AiInsightsResponse>(fenced_payload)
+            .map_err(|error| format!("AI Insights response failed schema validation: {error}"));
+    }
+
+    Err(format!(
+        "AI Insights response failed schema validation: {direct_parse_error}; payload preview: {}",
+        ai_insights_payload_preview(trimmed)
+    ))
+}
+
+async fn resolve_ai_insights_context_name(
+    state: &State<'_, AppState>,
+    context: Option<String>,
+) -> Result<String, String> {
+    if let Some(context) = context {
+        let trimmed = context.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+
+    if let Some(active_context) = state.active_context.read().await.clone() {
+        let trimmed = active_context.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+
+    telescope_engine::kubeconfig::active_context().map_err(|error| {
+        format!("Failed to resolve active context for AI Insights history: {error}")
+    })
+}
+
+fn ai_insights_history_key(context_name: &str) -> String {
+    let context_name = context_name.trim();
+    if context_name.is_empty() {
+        format!("{AI_INSIGHTS_HISTORY_KEY_PREFIX}:default")
+    } else {
+        format!("{AI_INSIGHTS_HISTORY_KEY_PREFIX}:{context_name}")
+    }
+}
+
+fn read_ai_insights_history(
+    store: &ResourceStore,
+    context_name: &str,
+) -> Result<Vec<AiInsightsHistoryEntry>, String> {
+    let key = ai_insights_history_key(context_name);
+    let stored_value = store.get_preference(&key).map_err(|e| e.to_string())?;
+    let Some(stored_value) = stored_value else {
+        return Ok(Vec::new());
+    };
+
+    if stored_value.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    serde_json::from_str::<Vec<AiInsightsHistoryEntry>>(&stored_value).map_err(|error| {
+        format!("Failed to parse AI Insights history for context '{context_name}': {error}")
+    })
+}
+
+fn append_ai_insights_history(
+    store: &ResourceStore,
+    context_name: &str,
+    entry: AiInsightsHistoryEntry,
+) -> Result<(), String> {
+    let mut history = read_ai_insights_history(store, context_name)?;
+    history.insert(0, entry);
+    history.truncate(AI_INSIGHTS_HISTORY_LIMIT);
+    let serialized = serde_json::to_string(&history).map_err(|error| {
+        format!("Failed to serialize AI Insights history for '{context_name}': {error}")
+    })?;
+    store
+        .set_preference(&ai_insights_history_key(context_name), &serialized)
+        .map_err(|error| {
+            format!("Failed to persist AI Insights history for context '{context_name}': {error}")
+        })
+}
+
+#[tauri::command]
+async fn test_ai_insights_connection(
+    state: State<'_, AppState>,
+    request: Option<AiInsightsRequest>,
+    api_key: Option<String>,
+) -> Result<AiInsightsConnectionCheck, String> {
+    let request = resolve_ai_insights_request(&state, request).await?;
+    let client = build_ai_insights_client(&request.settings, api_key)?;
+    let result = client
+        .test_connection()
+        .await
+        .map_err(|error| format!("AI Insights connection test failed: {error}"))?;
+
+    Ok(AiInsightsConnectionCheck {
+        normalized_endpoint: result.normalized_endpoint,
+        chat_completions_url: result.chat_completions_url,
+        model: result.model,
+    })
+}
+
+#[tauri::command]
+async fn generate_ai_insights(
+    state: State<'_, AppState>,
+    request: Option<AiInsightsRequest>,
+    api_key: Option<String>,
+) -> Result<AiInsightsResponse, String> {
+    let request = resolve_ai_insights_request(&state, request).await?;
+    let serialized_context =
+        build_serialized_ai_insights_context_payload(&state, &request.scope).await?;
+    let client = build_ai_insights_client(&request.settings, api_key)?;
+    let completion = client
+        .chat_completions(build_ai_insights_chat_request(
+            &request.scope,
+            &serialized_context,
+        ))
+        .await
+        .map_err(|error| format!("AI Insights generation request failed: {error}"))?;
+    let response = parse_ai_insights_response_payload(&completion.content)?;
+
+    let context_name = resolve_ai_insights_context_name(&state, None).await?;
+    let history_entry = AiInsightsHistoryEntry {
+        created_at: chrono::Utc::now().to_rfc3339(),
+        scope: request.scope.clone(),
+        response: response.clone(),
+    };
+    {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        append_ai_insights_history(&store, &context_name, history_entry)?;
+    }
+
+    Ok(response)
+}
+
+#[tauri::command]
+async fn list_ai_insights_history(
+    state: State<'_, AppState>,
+    context: Option<String>,
+) -> Result<Vec<AiInsightsHistoryEntry>, String> {
+    let context_name = resolve_ai_insights_context_name(&state, context).await?;
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let mut history = read_ai_insights_history(&store, &context_name)?;
+    history.truncate(AI_INSIGHTS_HISTORY_LIMIT);
+    Ok(history)
+}
+
+#[tauri::command]
+async fn clear_ai_insights_history(
+    state: State<'_, AppState>,
+    context: Option<String>,
+) -> Result<(), String> {
+    let context_name = resolve_ai_insights_context_name(&state, context).await?;
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store
+        .delete_preference(&ai_insights_history_key(&context_name))
+        .map_err(|error| {
+            format!("Failed to clear AI Insights history for context '{context_name}': {error}")
+        })?;
+    Ok(())
+}
+
 /// Fetch comprehensive AKS cluster details from the Azure ARM API.
 #[tauri::command]
 async fn get_aks_cluster_detail(
@@ -2385,6 +2872,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             list_crds,
             get_preference,
             set_preference,
+            test_ai_insights_connection,
+            generate_ai_insights,
+            list_ai_insights_history,
+            clear_ai_insights_history,
             get_azure_cloud,
             set_azure_cloud,
             get_aks_cluster_detail,
