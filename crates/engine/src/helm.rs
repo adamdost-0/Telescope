@@ -389,14 +389,12 @@ const SENSITIVE_KEYS: &[&str] = &[
 
 const REDACTED: &str = "●●●●●●●●";
 
-/// Keys that require redacting all nested string values.
-const RECURSIVE_REDACTION_KEYS: &[&str] = &["auth", "credentials"];
-
 /// Redact sensitive values in a JSON value tree.
 ///
 /// Walks the tree and replaces string values whose key (case-insensitive)
 /// contains any of [`SENSITIVE_KEYS`] with a fixed placeholder.
-/// For keys in [`RECURSIVE_REDACTION_KEYS`], recursively redacts all nested strings.
+/// If a sensitive key contains an object or array, all nested string values
+/// beneath that branch are redacted as well.
 pub fn redact_sensitive_values(value: &mut serde_json::Value) {
     redact_sensitive_values_impl(value, false);
 }
@@ -409,21 +407,12 @@ fn redact_sensitive_values_impl(value: &mut serde_json::Value, force_redact: boo
                 let is_sensitive_key = SENSITIVE_KEYS
                     .iter()
                     .any(|s| key_lower.contains(&s.to_lowercase()));
-                let is_recursive_key = RECURSIVE_REDACTION_KEYS
-                    .iter()
-                    .any(|s| key_lower == s.to_lowercase());
 
-                if force_redact {
+                if force_redact || is_sensitive_key {
                     if val.is_string() {
                         *val = serde_json::Value::String(REDACTED.to_string());
                     } else {
                         redact_sensitive_values_impl(val, true);
-                    }
-                } else if is_recursive_key {
-                    redact_sensitive_values_impl(val, true);
-                } else if is_sensitive_key {
-                    if val.is_string() {
-                        *val = serde_json::Value::String(REDACTED.to_string());
                     }
                 } else {
                     redact_sensitive_values_impl(val, false);
@@ -784,19 +773,21 @@ mod tests {
     }
 
     #[test]
-    fn redact_sensitive_values_skips_non_string_sensitive() {
+    fn redact_sensitive_values_redacts_nested_strings_under_sensitive_objects() {
         let mut val = serde_json::json!({
             "password": 12345,
             "auth": true,
-            "secret": {"nested": "value"}
+            "secret": {
+                "nested": "value",
+                "enabled": true
+            }
         });
-        let original = val.clone();
         redact_sensitive_values(&mut val);
 
-        // Non-string sensitive values are left unchanged
-        assert_eq!(val["password"], original["password"]);
-        assert_eq!(val["auth"], original["auth"]);
-        assert_eq!(val["secret"], original["secret"]);
+        assert_eq!(val["password"], 12345);
+        assert_eq!(val["auth"], true);
+        assert_eq!(val["secret"]["nested"], REDACTED);
+        assert_eq!(val["secret"]["enabled"], true);
     }
 
     #[test]
@@ -842,7 +833,7 @@ mod tests {
         assert_eq!(val["database"]["credentials"]["username"], REDACTED);
         assert_eq!(val["database"]["credentials"]["password"], REDACTED);
         assert_eq!(val["database"]["credentials"]["connection"]["host"], REDACTED);
-        assert_eq!(val["database"]["credentials"]["connection"]["port"], REDACTED);
+        assert_eq!(val["database"]["credentials"]["connection"]["port"], 5432);
     }
 
     #[test]

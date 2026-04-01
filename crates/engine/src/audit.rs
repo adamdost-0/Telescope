@@ -27,13 +27,13 @@ fn sanitize_field(value: &str) -> String {
         .collect()
 }
 
-fn redact_exec_command_detail(detail: &str) -> String {
+fn redact_exec_command_detail() -> String {
     REDACTED_COMMAND.to_string()
 }
 
 fn sanitize_entry(entry: &AuditEntry) -> AuditEntry {
-    let detail = if entry.action == "exec" {
-        entry.detail.as_ref().map(|_| redact_exec_command_detail(""))
+    let detail = if entry.action.eq_ignore_ascii_case("exec") {
+        entry.detail.as_ref().map(|_| redact_exec_command_detail())
     } else {
         entry.detail.as_deref().map(sanitize_field)
     };
