@@ -60,3 +60,13 @@ Expanded regression, edge-case, and acceptance test matrix per issue:
 - **#202:** Unit tests for nested objects, arrays, mixed safe/unsafe content, reveal=true behavior; acceptance via desktop `get_helm_release_values` flow confirming default view hides nested secrets while reveal mode still works.
 All tests integrated into existing CI validation gate and rely on repo-native command set.
 
+### 2026-04-01 — Playwright CLI/E2E Environment Triage Spawn
+
+**Context:** Post-security remediation release (issues #200, #201, #202 resolved), E2E suite validation gate may have been affected by Playwright CLI environment incompatibilities on Linux CI runners, dependency version constraints, transitive vulnerabilities, or Tauri IPC mock setup issues.
+
+**Spawn time:** 2026-04-01T04:33:43Z  
+**Task:** Reproduce and validate E2E failure path and confirm evidence  
+**Orchestration log:** `.squad/orchestration-log/20260401-043343-kane.md`  
+**Session log:** `.squad/log/20260401-043343-playwright-cli-e2e-triage.md`  
+**Partner:** Ripley (backend blocker triage)
+

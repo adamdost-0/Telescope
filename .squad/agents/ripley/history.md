@@ -47,3 +47,13 @@ Mapped three filed security issues to repo implementation sites and test locatio
 - **#201** (frontend dependencies): `apps/web` lockfile, validate `picomatch >= 4.0.4` and `devalue >= 5.6.4`; acceptance checks via `pnpm audit`, build, and test.
 - **#202** (Helm nested secret redaction): `crates/engine/src/helm.rs` tests for nested objects under `auth`/`credentials`/`secret` keys; acceptance via `get_helm_release_values` desktop flow with reveal mode toggling.
 All mapped to actual CI commands and evidence-based go/no-go criteria.
+
+### 2026-04-01 — Playwright CLI/E2E Environment Triage Spawn
+
+**Context:** Post-security remediation release (issues #200, #201, #202 resolved), E2E suite validation gate may have been affected by Playwright CLI environment incompatibilities on Linux CI runners, dependency version constraints, transitive vulnerabilities, or Tauri IPC mock setup issues.
+
+**Spawn time:** 2026-04-01T04:33:43Z  
+**Task:** Triage Playwright Linux runtime blocker and implement repo-side fix if appropriate  
+**Orchestration log:** `.squad/orchestration-log/20260401-043343-ripley.md`  
+**Session log:** `.squad/log/20260401-043343-playwright-cli-e2e-triage.md`  
+**Partner:** Kane (E2E reproducibility validation)
