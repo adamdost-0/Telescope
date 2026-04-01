@@ -48,9 +48,14 @@ description: "Test pyramid — Rust unit tests, Vitest, Playwright E2E"
 
 These E2E tests run against deterministic stubbed data using `tests-e2e/helpers/mock-tauri.ts` to simulate Tauri IPC in the browser, not a live Kubernetes cluster.
 
-**Setup:** `pnpm -C apps/web exec playwright install --with-deps chromium`
+**Setup:** `pnpm -C apps/web e2e:setup`  
+Equivalent direct command: `pnpm -C apps/web exec playwright install --with-deps chromium`
 
 **Run locally:** `pnpm -C apps/web e2e`
+
+**Troubleshooting**
+- If Playwright reports missing libraries such as `libatk-1.0.so.0`, rerun the setup command above with the required sudo privileges on Linux.
+- If the local Vite port is already occupied, override it with `PLAYWRIGHT_WEB_PORT=4381 pnpm -C apps/web e2e`.
 
 ### 4) Desktop (`apps/desktop`)
 **Current desktop validation**

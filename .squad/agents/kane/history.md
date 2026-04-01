@@ -70,3 +70,27 @@ All tests integrated into existing CI validation gate and rely on repo-native co
 **Session log:** `.squad/log/20260401-043343-playwright-cli-e2e-triage.md`  
 **Partner:** Ripley (backend blocker triage)
 
+
+## 2025-04-01: Playwright E2E Triage and Config Updates
+
+**Issue**: All 38 E2E tests failing with `libatk-1.0.so.0: cannot open shared object file`
+
+**Root Cause**: Chromium browser binary requires system GTK/accessibility libraries missing from Linux environment.
+
+**Actions Taken**:
+1. Updated `apps/web/playwright.config.ts`:
+   - Added explicit browser project configuration with devices
+   - Added CI/local retry and worker settings
+   - Added trace capture on first retry
+   - Added parallel execution and HTML reporter
+
+2. Created `apps/web/README.playwright.md`:
+   - System dependency install commands (automated and manual)
+   - Test execution examples
+   - Troubleshooting guide
+
+3. Documented decision in `.squad/decisions/inbox/kane-playwright-e2e.md`
+
+**Resolution**: Config now matches Playwright best practices. System dependencies are environment-specific and require one-time `playwright install-deps chromium` (sudo) or manual apt-get install.
+
+**Status**: ⚠️ Environment-level fix required before tests can run. Config changes ready for commit.

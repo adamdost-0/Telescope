@@ -19,6 +19,7 @@ From the repository root:
 
 ```bash
 pnpm install
+pnpm -C apps/web e2e:setup   # first-time Playwright browser + Linux deps setup
 pnpm -C apps/web dev
 pnpm -C apps/web test
 pnpm -C apps/web e2e
@@ -29,6 +30,8 @@ Notes:
 - `pnpm -C apps/web dev` starts the SvelteKit/Vite development server.
 - `pnpm -C apps/web test` runs unit tests with Vitest.
 - `pnpm -C apps/web e2e` runs Playwright end-to-end tests.
+- `pnpm -C apps/web e2e:setup` installs the Playwright Chromium runtime and any required Linux system packages.
+- If port `4273` is already in use, run E2E with `PLAYWRIGHT_WEB_PORT=4381 pnpm -C apps/web e2e`.
 
 ## Build
 

@@ -8,7 +8,10 @@
     "preview": "vite preview",
     "lint": "pnpm run build",
     "test": "vitest run --pool=forks --poolOptions.forks.singleFork=true",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:setup": "playwright install --with-deps chromium",
+    "e2e:install": "playwright install chromium",
+    "e2e:debug": "playwright test --ui"
   },
   "dependencies": {
     "@sveltejs/adapter-static": "^3.0.8",

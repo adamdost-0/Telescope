@@ -7,6 +7,7 @@
     "lint": "node ./scripts/check-no-emoji.mjs && ./scripts/pnpm.sh -r --if-present lint",
     "test": "./scripts/pnpm.sh -r --if-present test",
     "e2e": "./scripts/pnpm.sh -C apps/web e2e",
+    "e2e:setup": "./scripts/pnpm.sh -C apps/web e2e:setup",
     "desktop:build": "./scripts/pnpm.sh -C apps/desktop build",
     "desktop:bundle": "./scripts/pnpm.sh -C apps/desktop bundle"
   },
