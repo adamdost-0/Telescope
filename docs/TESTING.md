@@ -55,6 +55,7 @@ Equivalent direct command: `pnpm -C apps/web exec playwright install --with-deps
 
 **Troubleshooting**
 - If Playwright reports missing libraries such as `libatk-1.0.so.0`, rerun the setup command above with the required sudo privileges on Linux.
+- If you cannot install system packages locally, use the containerized fallback: `pnpm e2e:docker`.
 - If the local Vite port is already occupied, override it with `PLAYWRIGHT_WEB_PORT=4381 pnpm -C apps/web e2e`.
 
 ### 4) Desktop (`apps/desktop`)

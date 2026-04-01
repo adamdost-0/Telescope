@@ -31,6 +31,7 @@ Notes:
 - `pnpm -C apps/web test` runs unit tests with Vitest.
 - `pnpm -C apps/web e2e` runs Playwright end-to-end tests.
 - `pnpm -C apps/web e2e:setup` installs the Playwright Chromium runtime and any required Linux system packages.
+- `pnpm -C apps/web e2e:docker` runs the browser suite inside the repo's Playwright-ready dev container when local Linux libraries are unavailable.
 - If port `4273` is already in use, run E2E with `PLAYWRIGHT_WEB_PORT=4381 pnpm -C apps/web e2e`.
 
 ## Build
