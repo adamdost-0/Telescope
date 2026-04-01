@@ -11,7 +11,8 @@
     "e2e": "playwright test",
     "e2e:setup": "playwright install --with-deps chromium",
     "e2e:install": "playwright install chromium",
-    "e2e:debug": "playwright test --ui"
+    "e2e:debug": "playwright test --ui",
+    "e2e:docker": "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright PLAYWRIGHT_PNPM_COMMAND='../../scripts/pnpm.sh' playwright test"
   },
   "dependencies": {
     "@sveltejs/adapter-static": "^3.0.8",

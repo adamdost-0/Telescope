@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const webPort = Number(process.env.PLAYWRIGHT_WEB_PORT ?? '4273');
+const repoPnpm = process.env.PLAYWRIGHT_PNPM_COMMAND ?? 'pnpm';
 
 export default defineConfig({
   testDir: './tests-e2e',
@@ -14,7 +15,7 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: `pnpm exec vite dev --host 127.0.0.1 --port ${webPort} --strictPort`,
+    command: `${repoPnpm} exec vite dev --host 127.0.0.1 --port ${webPort} --strictPort`,
     url: `http://127.0.0.1:${webPort}`,
     timeout: 180_000,
     reuseExistingServer: !process.env.CI

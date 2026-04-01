@@ -8,6 +8,7 @@
     "test": "./scripts/pnpm.sh -r --if-present test",
     "e2e": "./scripts/pnpm.sh -C apps/web e2e",
     "e2e:setup": "./scripts/pnpm.sh -C apps/web e2e:setup",
+    "e2e:docker": "docker build -f tools/devtest/Dockerfile -t telescope-devtest:local . && docker run --rm -t -v \"$PWD\":/repo -w /repo -e CI=1 telescope-devtest:local bash -lc 'set -euo pipefail; ./scripts/pnpm.sh -C apps/web e2e:docker'",
     "desktop:build": "./scripts/pnpm.sh -C apps/desktop build",
     "desktop:bundle": "./scripts/pnpm.sh -C apps/desktop bundle"
   },
