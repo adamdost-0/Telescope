@@ -101,3 +101,7 @@ Dallas led the GitHub Pages docs structure workstream. Created `docs/_config.yml
 - Key review finding: the `#[serde(skip_serializing_if)]` on `AzureOpenAiResponseFormatJsonSchema.description` is redundant since the struct is never directly serialized to the wire -- the manual `Value` builder controls the actual payload. Harmless but could mislead contributors.
 - All fixes are narrow, contract-aligned, and correctly ordered (408/504/429 branches follow 401/403/404 checks). No regressions.
 
+### 2026-04-01 — Security Issues #200, #201, #202 Verification & Validation Planning
+
+Led multi-agent planning pass to scope verification vs. validation test strategy for three filed security issues. Produced unified layered test framework (unit/regression, integration, acceptance) across all three issues with evidence-based closure criteria. Framework emphasizes traceability, correctness, regression resistance, and real-world fitness. Execution order: #200, #202 (code-behavior fixes) before #201 (dependency remediation). Plan delivered in session state at `6d7acee3-3261-4394-897c-b4c39f85426a/plan.md`.
+

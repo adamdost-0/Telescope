@@ -39,3 +39,11 @@ Delivered helm_uninstall engine API + Tauri IPC command (P1-3 complete). Engine 
 - Added explicit HTTP 408/504 branches in `classify_openai_response_error()` mapping to `AzureError::OpenAiTimeout`, and HTTP 429 mapping to `OpenAiApi` with code `"TooManyRequests"`. Ordering is safe after 401/403/404.
 - Added 5 new engine tests for cross-namespace pod/event filtering and per-category cap enforcement (pod, event, node, Helm release). All use contract constants for cap values.
 - Dallas and Kane approved all fixes on first review pass.
+
+### 2026-04-01 — Security Issues #200, #201, #202 Repository Mapping
+
+Mapped three filed security issues to repo implementation sites and test locations:
+- **#200** (exec audit log secret leakage): `crates/engine/src/audit.rs`, desktop exec audit path, `~/.telescope/audit.log`; regression tests for bearer tokens, password flags, connection strings; acceptance flow through `ExecTerminal.svelte`.
+- **#201** (frontend dependencies): `apps/web` lockfile, validate `picomatch >= 4.0.4` and `devalue >= 5.6.4`; acceptance checks via `pnpm audit`, build, and test.
+- **#202** (Helm nested secret redaction): `crates/engine/src/helm.rs` tests for nested objects under `auth`/`credentials`/`secret` keys; acceptance via `get_helm_release_values` desktop flow with reveal mode toggling.
+All mapped to actual CI commands and evidence-based go/no-go criteria.

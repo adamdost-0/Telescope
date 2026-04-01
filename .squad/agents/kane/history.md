@@ -52,3 +52,11 @@ Fixed P2 route E2E test mismatches in `tests-e2e/p2-routes.spec.ts` — aligned 
 - Observation: the redundant `#[serde(skip_serializing_if)]` annotation on `AzureOpenAiResponseFormatJsonSchema.description` is cosmetic and does not affect correctness.
 - All previously identified low-risk follow-up gaps are now resolved.
 
+### 2026-04-01 — Security Issues #200, #201, #202 Test Matrix & Acceptance Scope
+
+Expanded regression, edge-case, and acceptance test matrix per issue:
+- **#200:** Unit tests for redaction/omission rules (benign metadata preserved, secret detail filtered), regression tests covering bearer tokens, password flags, connection strings; acceptance flow through `ExecTerminal.svelte` → `exec_command` handler → disk audit log.
+- **#201:** Verification via lockfile inspection and `pnpm audit --audit-level=moderate`; acceptance validation `pnpm -C apps/web test`, `pnpm -C apps/web build`.
+- **#202:** Unit tests for nested objects, arrays, mixed safe/unsafe content, reveal=true behavior; acceptance via desktop `get_helm_release_values` flow confirming default view hides nested secrets while reveal mode still works.
+All tests integrated into existing CI validation gate and rely on repo-native command set.
+
