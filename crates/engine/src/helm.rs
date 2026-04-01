@@ -389,33 +389,57 @@ const SENSITIVE_KEYS: &[&str] = &[
 
 const REDACTED: &str = "●●●●●●●●";
 
+/// Keys that require redacting all nested string values.
+const RECURSIVE_REDACTION_KEYS: &[&str] = &["auth", "credentials"];
+
 /// Redact sensitive values in a JSON value tree.
 ///
 /// Walks the tree and replaces string values whose key (case-insensitive)
 /// contains any of [`SENSITIVE_KEYS`] with a fixed placeholder.
+/// For keys in [`RECURSIVE_REDACTION_KEYS`], recursively redacts all nested strings.
 pub fn redact_sensitive_values(value: &mut serde_json::Value) {
+    redact_sensitive_values_impl(value, false);
+}
+
+fn redact_sensitive_values_impl(value: &mut serde_json::Value, force_redact: bool) {
     match value {
         serde_json::Value::Object(map) => {
             for (key, val) in map.iter_mut() {
                 let key_lower = key.to_lowercase();
-                if SENSITIVE_KEYS
+                let is_sensitive_key = SENSITIVE_KEYS
                     .iter()
-                    .any(|s| key_lower.contains(&s.to_lowercase()))
-                {
+                    .any(|s| key_lower.contains(&s.to_lowercase()));
+                let is_recursive_key = RECURSIVE_REDACTION_KEYS
+                    .iter()
+                    .any(|s| key_lower == s.to_lowercase());
+
+                if force_redact {
+                    if val.is_string() {
+                        *val = serde_json::Value::String(REDACTED.to_string());
+                    } else {
+                        redact_sensitive_values_impl(val, true);
+                    }
+                } else if is_recursive_key {
+                    redact_sensitive_values_impl(val, true);
+                } else if is_sensitive_key {
                     if val.is_string() {
                         *val = serde_json::Value::String(REDACTED.to_string());
                     }
                 } else {
-                    redact_sensitive_values(val);
+                    redact_sensitive_values_impl(val, false);
                 }
             }
         }
         serde_json::Value::Array(arr) => {
             for item in arr.iter_mut() {
-                redact_sensitive_values(item);
+                redact_sensitive_values_impl(item, force_redact);
             }
         }
-        _ => {}
+        _ => {
+            if force_redact && value.is_string() {
+                *value = serde_json::Value::String(REDACTED.to_string());
+            }
+        }
     }
 }
 
@@ -774,6 +798,93 @@ mod tests {
         assert_eq!(val["auth"], original["auth"]);
         assert_eq!(val["secret"], original["secret"]);
     }
+
+    #[test]
+    fn redact_sensitive_values_recursively_redacts_auth_nested_strings() {
+        let mut val = serde_json::json!({
+            "auth": {
+                "username": "admin",
+                "password": "secret123",
+                "apiKey": "key-xyz",
+                "nested": {
+                    "token": "tok-abc",
+                    "url": "https://example.com"
+                }
+            },
+            "normalField": "visible"
+        });
+        redact_sensitive_values(&mut val);
+
+        assert_eq!(val["auth"]["username"], REDACTED);
+        assert_eq!(val["auth"]["password"], REDACTED);
+        assert_eq!(val["auth"]["apiKey"], REDACTED);
+        assert_eq!(val["auth"]["nested"]["token"], REDACTED);
+        assert_eq!(val["auth"]["nested"]["url"], REDACTED);
+        assert_eq!(val["normalField"], "visible");
+    }
+
+    #[test]
+    fn redact_sensitive_values_recursively_redacts_credentials_nested_strings() {
+        let mut val = serde_json::json!({
+            "database": {
+                "credentials": {
+                    "username": "dbuser",
+                    "password": "dbpass",
+                    "connection": {
+                        "host": "db.example.com",
+                        "port": 5432
+                    }
+                }
+            }
+        });
+        redact_sensitive_values(&mut val);
+
+        assert_eq!(val["database"]["credentials"]["username"], REDACTED);
+        assert_eq!(val["database"]["credentials"]["password"], REDACTED);
+        assert_eq!(val["database"]["credentials"]["connection"]["host"], REDACTED);
+        assert_eq!(val["database"]["credentials"]["connection"]["port"], REDACTED);
+    }
+
+    #[test]
+    fn redact_sensitive_values_handles_arrays_under_auth() {
+        let mut val = serde_json::json!({
+            "auth": [
+                {"username": "user1", "password": "pass1"},
+                {"username": "user2", "password": "pass2"}
+            ]
+        });
+        redact_sensitive_values(&mut val);
+
+        assert_eq!(val["auth"][0]["username"], REDACTED);
+        assert_eq!(val["auth"][0]["password"], REDACTED);
+        assert_eq!(val["auth"][1]["username"], REDACTED);
+        assert_eq!(val["auth"][1]["password"], REDACTED);
+    }
+
+    #[test]
+    fn redact_sensitive_values_mixed_recursive_and_key_based() {
+        let mut val = serde_json::json!({
+            "service": {
+                "apiKey": "visible-key",
+                "auth": {
+                    "type": "oauth",
+                    "client_id": "id-123"
+                }
+            },
+            "database": {
+                "password": "db-secret",
+                "host": "localhost"
+            }
+        });
+        redact_sensitive_values(&mut val);
+
+        assert_eq!(val["service"]["apiKey"], REDACTED);
+        assert_eq!(val["service"]["auth"]["type"], REDACTED);
+        assert_eq!(val["service"]["auth"]["client_id"], REDACTED);
+        assert_eq!(val["database"]["password"], REDACTED);
+        assert_eq!(val["database"]["host"], "localhost");
+    }
+
 
     #[test]
     fn resolve_helm_binary_prefers_explicit_absolute_path() {

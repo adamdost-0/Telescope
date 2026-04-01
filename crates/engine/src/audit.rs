@@ -18,6 +18,8 @@ pub struct AuditEntry {
     pub detail: Option<String>,
 }
 
+const REDACTED_COMMAND: &str = "[REDACTED]";
+
 fn sanitize_field(value: &str) -> String {
     value
         .chars()
@@ -25,7 +27,17 @@ fn sanitize_field(value: &str) -> String {
         .collect()
 }
 
+fn redact_exec_command_detail(detail: &str) -> String {
+    REDACTED_COMMAND.to_string()
+}
+
 fn sanitize_entry(entry: &AuditEntry) -> AuditEntry {
+    let detail = if entry.action == "exec" {
+        entry.detail.as_ref().map(|_| redact_exec_command_detail(""))
+    } else {
+        entry.detail.as_deref().map(sanitize_field)
+    };
+
     AuditEntry {
         timestamp: sanitize_field(&entry.timestamp),
         actor: sanitize_field(&entry.actor),
@@ -35,7 +47,7 @@ fn sanitize_entry(entry: &AuditEntry) -> AuditEntry {
         resource_type: sanitize_field(&entry.resource_type),
         resource_name: sanitize_field(&entry.resource_name),
         result: sanitize_field(&entry.result),
-        detail: entry.detail.as_deref().map(sanitize_field),
+        detail,
     }
 }
 
@@ -243,5 +255,77 @@ mod tests {
     fn resolve_actor_identity_sanitizes_components_and_falls_back() {
         let actor = resolve_actor_identity_from_sources(Some("  jane doe  "), Some(" \n "));
         assert_eq!(actor, "jane_doe@local");
+    }
+
+    #[test]
+    fn log_audit_redacts_exec_commands() {
+        let dir = std::env::temp_dir().join("telescope-audit-exec-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test-audit.log");
+        let path_str = path.to_string_lossy().to_string();
+
+        let _ = std::fs::remove_file(&path);
+
+        let entry = AuditEntry {
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            actor: "test-user@example.com".to_string(),
+            context: "test-ctx".to_string(),
+            namespace: "default".to_string(),
+            action: "exec".to_string(),
+            resource_type: "Pod".to_string(),
+            resource_name: "my-pod".to_string(),
+            result: "success".to_string(),
+            detail: Some("cat /run/secrets/token".to_string()),
+        };
+
+        log_audit(&path_str, &entry).expect("should write redacted exec entry");
+
+        let mut contents = String::new();
+        std::fs::File::open(&path)
+            .unwrap()
+            .read_to_string(&mut contents)
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
+        assert_eq!(parsed["action"], "exec");
+        assert_eq!(parsed["detail"], REDACTED_COMMAND);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn log_audit_does_not_redact_non_exec_actions() {
+        let dir = std::env::temp_dir().join("telescope-audit-non-exec-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test-audit.log");
+        let path_str = path.to_string_lossy().to_string();
+
+        let _ = std::fs::remove_file(&path);
+
+        let entry = AuditEntry {
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            actor: "test-user@example.com".to_string(),
+            context: "test-ctx".to_string(),
+            namespace: "default".to_string(),
+            action: "delete".to_string(),
+            resource_type: "v1/Pod".to_string(),
+            resource_name: "my-pod".to_string(),
+            result: "success".to_string(),
+            detail: Some("replicas=3".to_string()),
+        };
+
+        log_audit(&path_str, &entry).expect("should write non-redacted delete entry");
+
+        let mut contents = String::new();
+        std::fs::File::open(&path)
+            .unwrap()
+            .read_to_string(&mut contents)
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
+        assert_eq!(parsed["action"], "delete");
+        assert_eq!(parsed["detail"], "replicas=3");
+
+        let _ = std::fs::remove_file(&path);
     }
 }
