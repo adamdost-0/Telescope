@@ -1,6 +1,7 @@
 //! Shared domain types.
 
 pub mod connection;
+pub mod insights_history;
 pub mod store;
 pub mod trusted_binary;
 

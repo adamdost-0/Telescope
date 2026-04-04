@@ -2723,7 +2723,13 @@ fn read_ai_insights_history(
         return Ok(Vec::new());
     }
 
-    serde_json::from_str::<Vec<AiInsightsHistoryEntry>>(&stored_value).map_err(|error| {
+    // Try decrypting first (new format), fall back to plaintext (legacy data).
+    let json_str = match telescope_core::insights_history::decrypt_history_entry(&stored_value) {
+        Ok(decrypted) => decrypted,
+        Err(_) => stored_value,
+    };
+
+    serde_json::from_str::<Vec<AiInsightsHistoryEntry>>(&json_str).map_err(|error| {
         format!("Failed to parse AI Insights history for context '{context_name}': {error}")
     })
 }
@@ -2739,8 +2745,12 @@ fn append_ai_insights_history(
     let serialized = serde_json::to_string(&history).map_err(|error| {
         format!("Failed to serialize AI Insights history for '{context_name}': {error}")
     })?;
+    let encrypted =
+        telescope_core::insights_history::encrypt_history_entry(&serialized).map_err(|error| {
+            format!("Failed to encrypt AI Insights history for '{context_name}': {error}")
+        })?;
     store
-        .set_preference(&ai_insights_history_key(context_name), &serialized)
+        .set_preference(&ai_insights_history_key(context_name), &encrypted)
         .map_err(|error| {
             format!("Failed to persist AI Insights history for context '{context_name}': {error}")
         })
