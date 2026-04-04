@@ -39,35 +39,234 @@ use telescope_core::{ConnectionEvent, ConnectionState, ResourceEntry, ResourceSt
 /// Maximum concurrent LIST operations across all watchers.
 const MAX_CONCURRENT_LISTS: usize = 3;
 const REDACTED_CACHE_VALUE: &str = "<redacted>";
+const LAST_APPLIED_CONFIGURATION_ANNOTATION: &str =
+    "kubectl.kubernetes.io/last-applied-configuration";
+const SENSITIVE_CACHE_KEYS: &[&str] = &[
+    "accesskey",
+    "apikey",
+    "auth",
+    "cabundle",
+    "clientsecret",
+    "connectionstring",
+    "credentials",
+    "dockercfg",
+    "dockerconfigjson",
+    "kubeconfig",
+    "password",
+    "passwd",
+    "privatekey",
+    "secret",
+    "secretkey",
+    "token",
+];
 
-fn redact_cached_pod_fields(value: &mut Value) {
-    let Some(spec) = value.get_mut("spec").and_then(Value::as_object_mut) else {
+/// Kubernetes API structural field names that contain sensitive-sounding
+/// substrings (e.g. "secret", "key", "token") but are reference metadata,
+/// not user-supplied secret values. These are excluded from redaction.
+const SAFE_STRUCTURAL_KEYS: &[&str] = &[
+    "secretkeyref",
+    "secretref",
+    "configmapkeyref",
+    "configmapref",
+    "serviceaccounttokenprojection",
+    "tokenreviewstatus",
+    "valuefrom",
+];
+
+fn redacted_cache_value() -> Value {
+    Value::String(REDACTED_CACHE_VALUE.to_string())
+}
+
+fn normalize_cache_key(key: &str) -> String {
+    key.chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(|ch| ch.to_lowercase())
+        .collect()
+}
+
+fn is_sensitive_cache_key(key: &str) -> bool {
+    let normalized = normalize_cache_key(key);
+    if SAFE_STRUCTURAL_KEYS.iter().any(|safe| *safe == normalized) {
+        return false;
+    }
+    SENSITIVE_CACHE_KEYS
+        .iter()
+        .any(|needle| normalized.contains(needle))
+}
+
+fn redact_annotation_values(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if let Some(annotations) = map.get_mut("annotations").and_then(Value::as_object_mut) {
+                for (key, annotation_value) in annotations.iter_mut() {
+                    if key == LAST_APPLIED_CONFIGURATION_ANNOTATION
+                        || annotation_value.is_string()
+                        || annotation_value.is_object()
+                        || annotation_value.is_array()
+                    {
+                        *annotation_value = redacted_cache_value();
+                    }
+                }
+            }
+
+            for child in map.values_mut() {
+                redact_annotation_values(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_annotation_values(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn redact_container_fields(container: &mut Value) {
+    let Some(container) = container.as_object_mut() else {
         return;
     };
 
-    for container_key in ["containers", "initContainers", "ephemeralContainers"] {
-        let Some(containers) = spec.get_mut(container_key).and_then(Value::as_array_mut) else {
+    for field in ["command", "args"] {
+        let Some(values) = container.get_mut(field).and_then(Value::as_array_mut) else {
             continue;
         };
 
-        for container in containers {
-            let Some(env_vars) = container.get_mut("env").and_then(Value::as_array_mut) else {
-                continue;
-            };
+        for value in values {
+            *value = redacted_cache_value();
+        }
+    }
 
-            for env_var in env_vars {
-                let Some(env) = env_var.as_object_mut() else {
+    let Some(env_vars) = container.get_mut("env").and_then(Value::as_array_mut) else {
+        return;
+    };
+
+    for env_var in env_vars {
+        let Some(env) = env_var.as_object_mut() else {
+            continue;
+        };
+
+        if env.contains_key("value") {
+            env.insert("value".to_string(), redacted_cache_value());
+        }
+    }
+}
+
+fn redact_cached_pod_fields(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for container_key in ["containers", "initContainers", "ephemeralContainers"] {
+                let Some(containers) = map.get_mut(container_key).and_then(Value::as_array_mut)
+                else {
                     continue;
                 };
 
-                if env.contains_key("value") {
-                    env.insert(
-                        "value".to_string(),
-                        Value::String(REDACTED_CACHE_VALUE.to_string()),
-                    );
+                for container in containers {
+                    redact_container_fields(container);
+                }
+            }
+
+            for child in map.values_mut() {
+                redact_cached_pod_fields(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_cached_pod_fields(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn redact_sensitive_cache_branches(value: &mut Value, force_redact: bool) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map.iter_mut() {
+                let should_redact = force_redact || is_sensitive_cache_key(key);
+                if should_redact {
+                    if child.is_string() {
+                        *child = redacted_cache_value();
+                    } else {
+                        redact_sensitive_cache_branches(child, true);
+                    }
+                } else {
+                    redact_sensitive_cache_branches(child, false);
                 }
             }
         }
+        Value::Array(items) => {
+            for item in items {
+                redact_sensitive_cache_branches(item, force_redact);
+            }
+        }
+        _ => {
+            if force_redact && value.is_string() {
+                *value = redacted_cache_value();
+            }
+        }
+    }
+}
+
+fn redact_map_field_entries(value: &mut Value, field_names: &[&str]) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+
+    for field_name in field_names {
+        let Some(entries) = object.get_mut(*field_name).and_then(Value::as_object_mut) else {
+            continue;
+        };
+
+        for entry in entries.values_mut() {
+            *entry = redacted_cache_value();
+        }
+    }
+}
+
+fn redact_webhook_client_config(value: &mut Value) {
+    let Some(webhooks) = value.get_mut("webhooks").and_then(Value::as_array_mut) else {
+        return;
+    };
+
+    for webhook in webhooks {
+        let Some(client_config) = webhook
+            .get_mut("clientConfig")
+            .and_then(Value::as_object_mut)
+        else {
+            continue;
+        };
+
+        for field in ["url", "caBundle"] {
+            if client_config.contains_key(field) {
+                client_config.insert(field.to_string(), redacted_cache_value());
+            }
+        }
+
+        if let Some(service) = client_config
+            .get_mut("service")
+            .and_then(Value::as_object_mut)
+        {
+            if service.contains_key("path") {
+                service.insert("path".to_string(), redacted_cache_value());
+            }
+        }
+    }
+}
+
+fn sanitize_cached_resource(gvk: &str, value: &mut Value) {
+    redact_annotation_values(value);
+    redact_cached_pod_fields(value);
+    redact_sensitive_cache_branches(value, false);
+
+    match gvk {
+        "v1/Secret" => redact_map_field_entries(value, &["data", "stringData", "binaryData"]),
+        "v1/ConfigMap" => redact_map_field_entries(value, &["data", "binaryData"]),
+        "admissionregistration.k8s.io/v1/MutatingWebhookConfiguration"
+        | "admissionregistration.k8s.io/v1/ValidatingWebhookConfiguration" => {
+            redact_webhook_client_config(value);
+        }
+        _ => {}
     }
 }
 
@@ -81,9 +280,7 @@ where
             e
         })
         .ok()?;
-    if gvk == "v1/Pod" {
-        redact_cached_pod_fields(&mut value);
-    }
+    sanitize_cached_resource(gvk, &mut value);
     serde_json::to_string(&value)
         .map_err(|e| {
             warn!(error = %e, gvk, "failed to serialize resource to string");
@@ -814,6 +1011,76 @@ mod tests {
     }
 
     #[test]
+    fn resource_to_entry_redacts_pod_commands_args_and_annotations() {
+        let deploy: Deployment = serde_json::from_value(serde_json::json!({
+            "metadata": {
+                "name": "annotated-deploy",
+                "resourceVersion": "10",
+                "labels": {
+                    "app": "annotated-deploy"
+                },
+                "annotations": {
+                    "example.com/runbook": "https://internal.example.com/runbook"
+                }
+            },
+            "spec": {
+                "selector": {
+                    "matchLabels": {
+                        "app": "annotated-deploy"
+                    }
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app": "annotated-deploy"
+                        },
+                        "annotations": {
+                            "kubectl.kubernetes.io/restartedAt": "2026-04-04T10:00:00Z"
+                        }
+                    },
+                    "spec": {
+                        "containers": [{
+                            "name": "web",
+                            "image": "nginx",
+                            "command": ["sh", "-c"],
+                            "args": ["echo token=$API_TOKEN"],
+                            "env": [{ "name": "API_TOKEN", "value": "sensitive-token" }]
+                        }]
+                    }
+                }
+            }
+        }))
+        .expect("deployment JSON should deserialize");
+
+        let entry = resource_to_entry("apps/v1/Deployment", "default", &deploy)
+            .expect("deployment should serialize");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&entry.content).expect("cached content should be valid JSON");
+
+        assert_eq!(
+            parsed["metadata"]["annotations"]["example.com/runbook"],
+            REDACTED_CACHE_VALUE
+        );
+        assert_eq!(
+            parsed["spec"]["template"]["metadata"]["annotations"]
+                ["kubectl.kubernetes.io/restartedAt"],
+            REDACTED_CACHE_VALUE
+        );
+        assert_eq!(
+            parsed["spec"]["template"]["spec"]["containers"][0]["command"][0],
+            REDACTED_CACHE_VALUE
+        );
+        assert_eq!(
+            parsed["spec"]["template"]["spec"]["containers"][0]["args"][0],
+            REDACTED_CACHE_VALUE
+        );
+        assert_eq!(
+            parsed["spec"]["template"]["spec"]["containers"][0]["env"][0]["value"],
+            REDACTED_CACHE_VALUE
+        );
+    }
+
+    #[test]
     fn resource_to_entry_works_for_deployment() {
         let deploy = Deployment {
             metadata: ObjectMeta {
@@ -847,32 +1114,113 @@ mod tests {
 
     #[test]
     fn resource_to_entry_works_for_configmap() {
-        let cm = ConfigMap {
-            metadata: ObjectMeta {
-                name: Some("app-config".to_string()),
-                ..Default::default()
+        let cm: ConfigMap = serde_json::from_value(serde_json::json!({
+            "metadata": {
+                "name": "app-config",
+                "annotations": {
+                    "example.com/owner": "platform-team"
+                }
             },
-            ..Default::default()
-        };
+            "data": {
+                "DATABASE_URL": "postgres://db.internal.example.com/app",
+                "FEATURE_FLAG": "enabled"
+            },
+            "binaryData": {
+                "ca.crt": "ZmFrZS1jZXJ0"
+            }
+        }))
+        .expect("configmap JSON should deserialize");
         let entry = resource_to_entry("v1/ConfigMap", "kube-system", &cm).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&entry.content).unwrap();
         assert_eq!(entry.name, "app-config");
         assert_eq!(entry.gvk, "v1/ConfigMap");
+        assert_eq!(parsed["data"]["DATABASE_URL"], REDACTED_CACHE_VALUE);
+        assert_eq!(parsed["data"]["FEATURE_FLAG"], REDACTED_CACHE_VALUE);
+        assert_eq!(parsed["binaryData"]["ca.crt"], REDACTED_CACHE_VALUE);
+        assert_eq!(
+            parsed["metadata"]["annotations"]["example.com/owner"],
+            REDACTED_CACHE_VALUE
+        );
     }
 
     #[test]
     fn resource_to_entry_works_for_secret() {
-        let secret = Secret {
-            metadata: ObjectMeta {
-                name: Some("db-creds".to_string()),
-                resource_version: Some("7".to_string()),
-                ..Default::default()
+        let secret: Secret = serde_json::from_value(serde_json::json!({
+            "metadata": {
+                "name": "db-creds",
+                "resourceVersion": "7",
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"data\":{\"password\":\"raw\"}}"
+                }
             },
-            ..Default::default()
-        };
+            "data": {
+                "password": "c3VwZXItc2VjcmV0"
+            },
+            "stringData": {
+                "token": "plain-text-token"
+            }
+        }))
+        .expect("secret JSON should deserialize");
         let entry = resource_to_entry("v1/Secret", "default", &secret).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&entry.content).unwrap();
         assert_eq!(entry.name, "db-creds");
         assert_eq!(entry.gvk, "v1/Secret");
         assert_eq!(entry.resource_version, "7");
+        assert_eq!(parsed["data"]["password"], REDACTED_CACHE_VALUE);
+        assert_eq!(parsed["stringData"]["token"], REDACTED_CACHE_VALUE);
+        assert_eq!(
+            parsed["metadata"]["annotations"]["kubectl.kubernetes.io/last-applied-configuration"],
+            REDACTED_CACHE_VALUE
+        );
+    }
+
+    #[test]
+    fn resource_to_entry_redacts_webhook_client_config_payloads() {
+        let webhook: ValidatingWebhookConfiguration = serde_json::from_value(serde_json::json!({
+            "metadata": {
+                "name": "validate-demo"
+            },
+            "webhooks": [{
+                "name": "validate.demo.example.com",
+                "admissionReviewVersions": ["v1"],
+                "sideEffects": "None",
+                "clientConfig": {
+                    "url": "https://internal.example.com/validate",
+                    "caBundle": "ZmFrZS1jYS1idW5kbGU=",
+                    "service": {
+                        "namespace": "default",
+                        "name": "webhook-service",
+                        "path": "/validate"
+                    }
+                }
+            }]
+        }))
+        .expect("webhook JSON should deserialize");
+
+        let entry = resource_to_entry(
+            "admissionregistration.k8s.io/v1/ValidatingWebhookConfiguration",
+            "",
+            &webhook,
+        )
+        .expect("webhook should serialize");
+        let parsed: serde_json::Value = serde_json::from_str(&entry.content).unwrap();
+
+        assert_eq!(
+            parsed["webhooks"][0]["clientConfig"]["url"],
+            REDACTED_CACHE_VALUE
+        );
+        assert_eq!(
+            parsed["webhooks"][0]["clientConfig"]["caBundle"],
+            REDACTED_CACHE_VALUE
+        );
+        assert_eq!(
+            parsed["webhooks"][0]["clientConfig"]["service"]["path"],
+            REDACTED_CACHE_VALUE
+        );
+        assert_eq!(
+            parsed["webhooks"][0]["clientConfig"]["service"]["name"],
+            "webhook-service"
+        );
     }
 
     #[test]
