@@ -6,7 +6,7 @@ description: "Full feature matrix for Telescope — Kubernetes, Azure ARM, Helm,
 
 # Telescope — Feature Matrix
 
-> **Status: v1.0.0+** — This page reflects the shipped feature surface. For planned work, see [Roadmap]({{ site.baseurl }}/ROADMAP).
+> **Status: v1.2.0+** — This page reflects the shipped feature surface. For planned work, see [Roadmap]({{ site.baseurl }}/ROADMAP).
 
 ## Cluster Connection and Navigation
 
@@ -55,3 +55,16 @@ description: "Full feature matrix for Telescope — Kubernetes, Azure ARM, Helm,
 | Azure Portal links | One-click navigation for AKS clusters |
 | Workload identity visibility | Azure identity bindings shown on pod detail views |
 | Production guardrails | Red banner and type-to-confirm flows for destructive ops in production |
+
+## AI Insights (v1.2.0)
+
+| Capability | Details |
+|---|---|
+| BYOK Azure OpenAI integration | Bring-your-own-key model with user-configured Azure OpenAI endpoint and deployment |
+| Dual auth modes | Azure Entra ID via `DefaultAzureCredential` or session-only API Key (never persisted) |
+| Multi-cloud support | Azure Commercial, Government, Secret, and Top Secret cloud profiles |
+| Allowlist-only context builder | Curated cluster context with redaction of secrets, tokens, and credential material; deterministic per-category size caps |
+| Structured JSON responses | Summary, risks, observations, recommendations, and resource references rendered deterministically in the UI |
+| Per-cluster history | Generated insights stored per cluster scope with clear-all control |
+| Dedicated Insights route | `/insights` page with test connection, generate, history review, and clear actions |
+| Settings page configuration | Endpoint, deployment/model name, cloud profile, and auth mode managed from the Settings page |
