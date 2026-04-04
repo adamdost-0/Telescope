@@ -57,3 +57,38 @@ All mapped to actual CI commands and evidence-based go/no-go criteria.
 **Orchestration log:** `.squad/orchestration-log/20260401-043343-ripley.md`  
 **Session log:** `.squad/log/20260401-043343-playwright-cli-e2e-triage.md`  
 **Partner:** Kane (E2E reproducibility validation)
+
+### 2026-04-04 — Security Audit (Lead)
+
+Read-only Tauri/backend exploitability review as part of multi-agent security hardening pass.
+
+**Spawn time:** 2026-04-04T05:04:13Z  
+**Task:** Lead multi-agent security hardening audit (Tauri backend exploitability focus)  
+**Orchestration log:** `.squad/orchestration-log/20260404-050413-ripley.md`  
+**Session log:** `.squad/log/20260404-050413-security-audit.md`  
+**Partners:** Kane (backend/test), Dallas (frontend)
+
+**Scope:**
+- Tauri IPC command surface: input validation, auth boundaries, privilege escalation paths
+- Rust backend memory safety and unsafe code blocks
+- Error handling: information disclosure via panic messages, stack traces
+- Audit logging and secret redaction in logs
+
+**Evidence:** Cross-agent security audit documented. No blocking findings. Learnings recorded in partner history files.
+
+### 2026-04-04 — Container-First Dev Environment Implementation
+
+Implemented container-first dev workflow reusing tools/devtest/Dockerfile. Created .devcontainer/devcontainer.json with full Rust/Node.js/Tauri toolchain support. Expanded package.json and scripts/dev-test.sh with docker:build, docker:test, and docker:dev entrypoints.
+
+**Spawn time:** 2026-04-04T19:16:32Z  
+**Task:** Backend container environment setup  
+**Orchestration log:** `.squad/orchestration-log/20260404-191632-ripley.md`  
+**Session log:** `.squad/log/20260404-191632-devcontainer-workflow.md`  
+**Partner:** Kane (documentation)
+
+**Evidence:**
+- Docker image builds successfully with all dependencies
+- .devcontainer/devcontainer.json valid and parseable
+- Helper scripts pass bash -n syntax validation
+- Web unit tests pass inside container
+- Container-first path validated and ready for contributor adoption

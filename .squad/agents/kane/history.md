@@ -70,6 +70,25 @@ All tests integrated into existing CI validation gate and rely on repo-native co
 **Session log:** `.squad/log/20260401-043343-playwright-cli-e2e-triage.md`  
 **Partner:** Ripley (backend blocker triage)
 
+### 2026-04-04 — Security Audit (Backend/Test)
+
+Rust/Tauri/engine security audit as part of multi-agent security hardening pass.
+
+**Spawn time:** 2026-04-04T05:04:13Z  
+**Task:** Backend/test security audit (Rust memory safety, crypto, input validation, error handling, test coverage)  
+**Orchestration log:** `.squad/orchestration-log/20260404-050413-kane.md`  
+**Session log:** `.squad/log/20260404-050413-security-audit.md`  
+**Partners:** Ripley (lead/backend exploitability), Dallas (frontend)
+
+**Scope:**
+- Rust memory safety: unsafe blocks, bounds checking, integer overflow
+- Cryptographic operations: key derivation, encryption, signing
+- Input validation and sanitization in engine watchers and actions
+- Error handling and panics: ensure no sensitive data in messages
+- Test coverage for edge cases and error paths
+- Audit logging integration and secret redaction
+
+**Evidence:** Backend security audit completed. Test coverage validation performed. No blocking findings.
 
 ## 2025-04-01: Playwright E2E Triage and Config Updates
 
@@ -94,3 +113,21 @@ All tests integrated into existing CI validation gate and rely on repo-native co
 **Resolution**: Config now matches Playwright best practices. System dependencies are environment-specific and require one-time `playwright install-deps chromium` (sudo) or manual apt-get install.
 
 **Status**: ⚠️ Environment-level fix required before tests can run. Config changes ready for commit.
+
+### 2026-04-04 — Container-First Dev Environment (Documentation/Validation)
+
+Updated README.md, docs/DEVELOPMENT.md, and docs/TESTING.md to reflect container-first recommended contributor path with host bootstrap as fallback. Validated Docker build and test execution.
+
+**Spawn time:** 2026-04-04T19:16:32Z  
+**Task:** Documentation and validation for container workflow  
+**Orchestration log:** `.squad/orchestration-log/20260404-191632-kane.md`  
+**Session log:** `.squad/log/20260404-191632-devcontainer-workflow.md`  
+**Partner:** Ripley (backend implementation)
+
+**Evidence:**
+- README.md updated with container setup guidance
+- docs/DEVELOPMENT.md now recommends .devcontainer workflow
+- docs/TESTING.md documents container-based test execution
+- Documentation validated against actual .devcontainer configuration
+- Web unit tests pass inside container
+- Container workflow documented as recommended path for contributors
