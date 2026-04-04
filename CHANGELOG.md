@@ -8,6 +8,27 @@ GitHub releases use the matching version section from this changelog when presen
 
 ## [Unreleased]
 
+## [v1.2.0] - 2026-03-21
+
+### Added
+- **AI Insights page (BYOK Azure OpenAI):** New `/insights` route for cluster analysis powered by Azure OpenAI. Users bring their own Azure OpenAI endpoint and deployment (BYOK model) — Telescope never hosts or proxies AI requests. Two authentication modes are supported: Azure Entra ID via `DefaultAzureCredential` and API Key (session-only, never persisted to disk). Multi-cloud support covers Azure Commercial, Government, Secret, and TopSecret environments. The context builder uses an allowlist-only design with sensitive data redaction before any payload leaves the client. Responses follow a structured JSON schema for consistent, parseable analysis output. Per-cluster history is stored locally with encryption at rest. A new Settings UI panel exposes endpoint URL, deployment name, auth mode, and cloud profile configuration. Keyboard shortcut `g+i` and sidebar navigation provide quick access.
+- **Trusted binary pinning:** Exec helpers (helm, az, kubelogin, aws, gcloud) are resolved through a pinned trusted-binary registry, preventing PATH-based substitution attacks. Resolves #204.
+- **Kubeconfig exec credential helper validation:** Exec credential helper paths declared in kubeconfig are validated against the trusted binary allowlist before invocation. Resolves #205.
+- **Container-first validation gate:** `./scripts/dev-test.sh` is now the required pre-push validation step, with `shell`, `run`, and `build-image` modes for flexible local development workflows.
+
+### Changed
+- **Broadened SQLite cache redaction:** Redaction coverage expanded to Secrets, ConfigMaps, webhook configurations, annotations, environment variables, and command/args fields before they enter the local resource cache. Resolves #206.
+- **Helm values recursive subtree redaction:** Helm values redaction now walks nested subtrees so deeply nested secret material is scrubbed consistently. Resolves #202.
+- **Scoped AKS identity preferences:** Identity preferences are now stored and applied per-cluster, preventing cross-cluster credential leakage when switching between AKS contexts. Resolves #203.
+- **Exec audit log redaction:** Audit log entries for exec operations redact command arguments and output fragments that may contain sensitive runtime data. Resolves #200.
+- Updated all `AGENTS.md` files, `CONTRIBUTING.md`, and development documentation to reflect v1.2.0 workflows and conventions.
+
+### Security
+- Frontend dependency patches for picomatch and devalue address upstream vulnerability advisories. Resolves #201.
+
+### Internal
+- Enhanced `dev-test.sh` with `shell`, `run`, and `build-image` modes for container-first local validation.
+
 ## [v1.0.7] - 2026-03-19
 
 ### Added
