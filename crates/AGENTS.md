@@ -42,6 +42,23 @@ default-members = [
 
 ## Build and Test Commands
 
+**Container-first validation (required before push):**
+
+```bash
+# Full validation suite (recommended)
+./scripts/dev-test.sh
+
+# Or run Rust checks inside the container shell
+./scripts/dev-test.sh shell
+cargo fmt --all -- --check
+cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings
+cargo test --workspace --exclude telescope-desktop --all-features
+```
+
+The dev container includes Rust stable, clippy, rustfmt, and all build dependencies. Always validate Rust changes inside the container before pushing.
+
+**Individual crate testing (inside container or host):**
+
 ```bash
 # Format check (CI-enforced)
 cargo fmt --all -- --check
@@ -128,6 +145,7 @@ Azure ARM management-plane crate. Depends on `telescope-core` (for preference st
 - Unit tests in `#[cfg(test)]` modules alongside implementation
 - CI runs full test suite with `--all-features`
 - `telescope-desktop` excluded from Linux CI (platform-specific deps)
+- **Container gate:** Run `./scripts/dev-test.sh` before pushing any Rust changes to validate fmt, clippy, and tests in the same environment CI uses
 
 ## When to Edit
 

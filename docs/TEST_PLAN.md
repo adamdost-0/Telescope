@@ -53,6 +53,8 @@ This repository is **test-driven by policy**. PRs that change behavior must ship
 - [ ] What CI jobs validate this change?
 - [ ] Any new risks/flakes? (if yes, mitigation)
 
-## 5) Local rapid testing (container only)
-Local testing must be run in the provided dev container:
+## 5) Local rapid testing (container required)
+Local testing **must** be run in the provided dev container before pushing any branch or opening a PR:
 - `./scripts/dev-test.sh` (builds container + runs rust/web/e2e in a deterministic mode)
+- This is the mandatory local validation gate. Code that has not passed `./scripts/dev-test.sh` must not be pushed to `main`.
+- For iterative work, use `./scripts/dev-test.sh shell` to stay inside the container environment.

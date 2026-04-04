@@ -25,6 +25,25 @@ pnpm -C apps/web e2e       # Playwright E2E tests
 pnpm -C apps/web lint      # Lint (runs build)
 ```
 
+## Container-First Validation (Required)
+
+Before pushing any frontend change, validate inside the dev container:
+
+```bash
+# Full suite (recommended)
+./scripts/dev-test.sh
+
+# Or use the container shell for iterative work
+./scripts/dev-test.sh shell
+# then inside the container:
+./scripts/pnpm.sh -C apps/web test
+./scripts/pnpm.sh -C apps/web e2e
+```
+
+The dev container includes Playwright browsers and all Linux dependencies pre-installed. This eliminates host-specific issues (missing `libatk`, wrong Chromium version, etc.) and mirrors what CI runs.
+
+**Gate rule:** Do not push frontend changes until both `pnpm -C apps/web test` and `pnpm -C apps/web e2e` pass inside the container.
+
 ## Iconography Guidance (No Emoji)
 
 - Do not use emojis in UI text, docs, or orchestration logs.
@@ -114,6 +133,18 @@ configmaps, cronjobs, daemonsets, deployments, endpointslices, hpas, ingresses, 
 | `AzureIdentitySection.svelte` | AKS identity info |
 
 ## Testing
+
+### Container validation (preferred)
+
+Run all frontend tests inside the dev container to match CI:
+
+```bash
+./scripts/dev-test.sh          # Full Rust + web validation
+# or for frontend-only iteration:
+./scripts/dev-test.sh shell
+./scripts/pnpm.sh -C apps/web test
+./scripts/pnpm.sh -C apps/web e2e
+```
 
 ### Unit tests (Vitest)
 Located alongside source in `src/lib/`:

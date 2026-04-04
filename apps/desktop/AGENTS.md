@@ -126,8 +126,11 @@ Currently, the desktop app has **no dedicated tests**:
 ## Development Workflow
 
 1. **Work in `apps/web` first:** Make UI changes in the SvelteKit app and test with `pnpm -C apps/web dev`
-2. **Test in desktop context:** Run `pnpm -C apps/desktop tauri dev` to see changes in the native wrapper
-3. **Verify packaging:** Periodically run `pnpm -C apps/desktop bundle` to catch platform-specific issues
+2. **Validate in the dev container:** Run `./scripts/dev-test.sh` to validate all Rust and frontend checks (including Playwright E2E) before pushing. The container mirrors CI and catches issues that host-only runs may miss.
+3. **Test in desktop context:** Run `pnpm -C apps/desktop tauri dev` to see changes in the native wrapper (host-only, requires platform SDK)
+4. **Verify packaging:** Periodically run `pnpm -C apps/desktop bundle` to catch platform-specific issues
+
+**Gate rule:** All non-desktop-specific changes must pass `./scripts/dev-test.sh` before push. Desktop packaging verification (`pnpm -C apps/desktop build`) is host-only and complements the container validation.
 
 ### API Wiring Gate (Required)
 

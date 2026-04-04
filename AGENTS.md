@@ -62,31 +62,60 @@ What is not true anymore:
 - `crates/api` is not part of the workspace.
 - Agents should not plan work around removed browser-only routes or HTTP façade assumptions as if they are active product architecture.
 
-## Verified Commands
+## Local Validation (Container-First)
 
-### Rust (CI-enforced)
+All code changes must pass the containerized validation suite before being pushed to `main` or marking a PR as ready. The dev container is the primary validation environment -- it mirrors CI and eliminates host-specific toolchain drift.
+
+### One-command validation (required before push)
+
+```bash
+./scripts/dev-test.sh
+```
+
+This builds the `telescope-devtest:local` image and runs the full local validation stack inside the container:
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --exclude telescope-desktop --all-features`
+- `pnpm install --frozen-lockfile`
+- `pnpm -C apps/web test`
+- `pnpm -C apps/web e2e`
+
+**Gate rule:** Do not push a branch or open a PR until `./scripts/dev-test.sh` passes locally. This applies to all changes -- Rust, frontend, documentation that affects build output, and CI workflow edits.
+
+### Interactive container shell
+
+For iterative development, use the container shell so you stay in the same validated environment:
+
+```bash
+./scripts/dev-test.sh shell
+# or: pnpm run dev:container
+```
+
+### Individual commands (inside container or devcontainer)
+
+#### Rust (CI-enforced)
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings
 cargo test --workspace --exclude telescope-desktop --all-features
 ```
 
-### Frontend
+#### Frontend
 ```bash
-pnpm -C apps/web test
-pnpm -C apps/web build
-pnpm -C apps/web e2e
-pnpm -C apps/web exec playwright install --with-deps chromium
+./scripts/pnpm.sh -C apps/web test
+./scripts/pnpm.sh -C apps/web build
+./scripts/pnpm.sh -C apps/web e2e
 ```
 
-### Desktop
+#### Desktop (host-only, not in container)
 ```bash
 pnpm -C apps/desktop dev
 pnpm -C apps/desktop build
 pnpm -C apps/desktop bundle
 ```
 
-### Workspace-wide
+#### Workspace-wide
 ```bash
 pnpm -r --if-present lint
 pnpm -r --if-present test
@@ -125,12 +154,13 @@ Definition of done: a user can find and execute the feature from the desktop UI;
 
 ## Working in This Repo
 
-1. **Check CI first:** `.github/workflows/ci.yml` defines what is actually enforced.
-2. **Prefer desktop-focused validation:** verify Rust workspace checks, frontend tests/build, and desktop packaging commands relevant to your change.
-3. **Do not reintroduce removed architecture:** avoid adding new hub/browser assumptions to docs, plans, or code unless explicitly requested.
-4. **Cross-check docs with code:** `docs/` can still contain aspirational material.
-5. **Update nested `AGENTS.md` files** when subsystem structure or workflow expectations change significantly.
-6. **After a completed, validated change set:** commit it, push upstream, then create a `v*` tag if the task specifically requires release automation.
+1. **Validate in the dev container first:** Run `./scripts/dev-test.sh` before pushing any branch or opening a PR. This is the primary local validation gate and mirrors what CI enforces.
+2. **Check CI for enforcement details:** `.github/workflows/ci.yml` defines what is actually enforced remotely; the dev container runs the same checks locally.
+3. **Use the container shell for iterative work:** `./scripts/dev-test.sh shell` gives you the same environment without re-running the full suite each time.
+4. **Do not reintroduce removed architecture:** avoid adding new hub/browser assumptions to docs, plans, or code unless explicitly requested.
+5. **Cross-check docs with code:** `docs/` can still contain aspirational material.
+6. **Update nested `AGENTS.md` files** when subsystem structure or workflow expectations change significantly.
+7. **After a completed, validated change set:** run `./scripts/dev-test.sh` one final time, commit, push upstream, then create a `v*` tag if the task specifically requires release automation.
 
 ## Release Behavior
 
@@ -145,3 +175,4 @@ Definition of done: a user can find and execute the feature from the desktop UI;
 - Need UI changes? Start in `apps/web`.
 - Need desktop IPC or packaging changes? Start in `apps/desktop/src-tauri` or `apps/desktop`.
 - Need to verify current capabilities? Prefer code and CI over roadmap docs.
+- **Need to validate any change?** Run `./scripts/dev-test.sh` -- never push unvalidated code to `main`.

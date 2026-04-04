@@ -34,21 +34,36 @@ pnpm install
 
 ## Development Workflow
 
-### Rust workspace
+### Container-first validation (recommended)
+
+The fastest and most reliable way to validate changes is the dev container. It mirrors CI, includes all dependencies (Rust, Node, Playwright browsers), and eliminates host-specific issues.
+
+```bash
+# Full validation: Rust fmt/clippy/test + web unit tests + Playwright E2E
+./scripts/dev-test.sh
+
+# Interactive container shell for iterative development
+./scripts/dev-test.sh shell
+# or: pnpm run dev:container
+```
+
+**Gate rule:** Run `./scripts/dev-test.sh` and confirm it passes before pushing any branch or opening a PR. This is the primary local validation gate.
+
+### Rust workspace (inside container or host)
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings
 cargo test --workspace --exclude telescope-desktop --all-features
 ```
 
-### Frontend app
+### Frontend app (inside container or host)
 ```bash
 pnpm -C apps/web dev
 pnpm -C apps/web test
 pnpm -C apps/web e2e
 ```
 
-### Desktop app
+### Desktop app (host-only -- requires platform SDK)
 ```bash
 pnpm -C apps/desktop dev
 pnpm -C apps/desktop build
@@ -58,6 +73,7 @@ pnpm -C apps/desktop bundle
 ### Practical notes
 - Telescope ships as a desktop-only Tauri app; all user-facing UI work still happens in `apps/web`.
 - `apps/desktop` packages the built `apps/web` output for the native app.
+- Always validate changes with `./scripts/dev-test.sh` before pushing -- this is the primary quality gate.
 - Prefer repo-defined commands and existing CI workflows over ad hoc scripts.
 - Keep changes desktop-focused; do not reintroduce separate browser or hub flows in docs or code.
 
@@ -104,6 +120,7 @@ The `integration.yml` workflow triggers on pushes to `main` that change `crates/
 - Open PRs with the repository PR template in `.github/pull_request_template.md`.
 - Describe the change clearly, including scope, user-visible behavior, and any risks.
 - Include a short test plan and note whether unit, E2E, desktop, or CI changes were needed.
+- Confirm that `./scripts/dev-test.sh` passes before marking the PR as ready for review.
 - Ensure the relevant CI checks pass before requesting review.
 - Keep PRs focused; split unrelated changes into separate submissions.
 

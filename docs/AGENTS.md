@@ -85,12 +85,14 @@ Before merging doc updates:
 2. Confirm CI/workflow commands match `.github/workflows/ci.yml`.
 3. Use "implemented / partial / planned" language.
 4. Mark future sections with `(Planned)` or `NOTE` admonitions.
+5. Validate that any doc change affecting build/test references still passes `./scripts/dev-test.sh`.
 
 ## Documentation Conventions
 - GitHub-flavored Markdown.
 - Link to actual repo files when describing code-backed behavior.
 - Use tables for inventories and status summaries.
 - Clearly label aspirational content.
+- When documenting validation or testing workflows, always reference the container-first path (`./scripts/dev-test.sh`) as the primary method. Host-only commands should be labeled as fallback or desktop-specific.
 
 ## Retrospectives
 `docs/retrospectives/` contains per-iteration learnings: what worked, what didn't, action items.

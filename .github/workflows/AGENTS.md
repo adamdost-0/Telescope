@@ -120,18 +120,31 @@ Multiple pushes to the same branch cancel older runs.
 
 ## Debugging CI Failures
 
-1. **Rust format:** Fix with `cargo fmt --all`, verify with `cargo fmt --all -- --check`
-2. **Clippy warnings:** Fix with `cargo clippy --fix --workspace --all-targets --all-features`
-3. **Test failures:** Run locally: `cargo test --workspace --all-features` or `pnpm -C apps/web test`
-4. **Frozen lockfile:** Run `pnpm install` locally, commit updated `pnpm-lock.yaml`
-5. **Desktop build:** Check matrix-specific logs (Windows vs macOS)
+1. **Reproduce locally first:** Run `./scripts/dev-test.sh` to reproduce failures in the same containerized environment CI uses. This is the fastest path to diagnosing fmt, clippy, test, and E2E issues.
+2. **Rust format:** Fix with `cargo fmt --all`, verify with `cargo fmt --all -- --check`
+3. **Clippy warnings:** Fix with `cargo clippy --fix --workspace --all-targets --all-features`
+4. **Test failures:** Run locally: `cargo test --workspace --all-features` or `pnpm -C apps/web test`
+5. **Frozen lockfile:** Run `pnpm install` locally, commit updated `pnpm-lock.yaml`
+6. **Desktop build:** Check matrix-specific logs (Windows vs macOS)
+
+## Local CI Mirror
+
+The `./scripts/dev-test.sh` script runs the same checks as `ci.yml` jobs (`rust`, `web`, `web-e2e`) inside the dev container. Agents and contributors should use it as the primary local validation gate before pushing to any branch. This keeps `main` green and reduces CI churn.
+
+```bash
+# Equivalent of CI rust + web + web-e2e jobs
+./scripts/dev-test.sh
+```
 
 ## Agent Delivery Policy
 
 After validated changes are finished:
-1. Commit the completed work
-2. Push the branch upstream
-3. Create and push a release tag matching `v*` to trigger the release workflow
+1. Run `./scripts/dev-test.sh` to confirm the full validation suite passes in the dev container
+2. Commit the completed work
+3. Push the branch upstream
+4. Create and push a release tag matching `v*` to trigger the release workflow
+
+**Gate rule:** Never push a branch or create a tag without a passing `./scripts/dev-test.sh` run. This prevents broken code from reaching `main` or triggering a release.
 
 If the user does not provide a version, continue the existing SemVer-style tag sequence.
 

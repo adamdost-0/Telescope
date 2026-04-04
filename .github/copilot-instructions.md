@@ -35,6 +35,16 @@ AKS-first Kubernetes IDE with a Tauri v2 desktop app, a packaged SvelteKit front
 
 ## Verified Commands
 
+### Container-first validation (required before push)
+
+```bash
+./scripts/dev-test.sh
+```
+
+This is the primary validation gate. It runs Rust fmt/clippy/test, web unit tests, and Playwright E2E inside the dev container. Always run this before pushing a branch or opening a PR.
+
+### Individual commands (inside container or host)
+
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings
@@ -45,7 +55,11 @@ pnpm -r --if-present test
 pnpm -C apps/web build
 pnpm -C apps/web test
 pnpm -C apps/web e2e
-pnpm -C apps/web exec playwright install --with-deps
+```
+
+### Desktop (host-only)
+
+```bash
 pnpm -C apps/desktop build
 pnpm -C apps/desktop bundle
 ```
@@ -55,9 +69,10 @@ pnpm -C apps/desktop bundle
 
 ## Delivery and Release Behavior
 
-- After a change set is complete and validated, push the branch upstream instead of leaving work only in the local checkout.
+- After a change set is complete and validated with `./scripts/dev-test.sh`, push the branch upstream instead of leaving work only in the local checkout.
 - Then create and push a release tag that matches `v*` so `.github/workflows/release.yml` triggers a fresh release/build run.
 - Unless the user requests a specific version, continue the existing tag sequence with the next sensible SemVer-style release tag.
+- **Never push to main or create a release tag without a passing `./scripts/dev-test.sh` run.**
 
 ## Guidance
 
