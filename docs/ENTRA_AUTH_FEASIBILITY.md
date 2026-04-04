@@ -6,7 +6,7 @@ description: "Desktop Entra ID authentication investigation — internal referen
 
 # Entra ID Authentication Feasibility
 
-> **Status:** Desktop-only feasibility investigation for Telescope.
+> **Status: Aspirational / Not Shipped** -- This is an internal feasibility study. Native Entra ID authentication is not yet implemented in Telescope. The current product relies on kubeconfig and kubelogin for AKS auth.
 > Scope: the shared Svelte frontend in `apps/web` is packaged into the Tauri shell, and frontend/backend calls go through Tauri IPC `invoke()`.
 
 ## 1. Executive Summary

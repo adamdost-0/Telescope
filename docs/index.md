@@ -19,14 +19,15 @@ A desktop-first Kubernetes IDE built with Tauri, SvelteKit, and Rust — designe
 
 ## What is Telescope?
 
-Telescope is a **shipped v1.0.0 desktop application** that gives Kubernetes operators a native IDE experience:
+Telescope is a **shipped desktop application** (v1.2.0) that gives Kubernetes operators a native IDE experience:
 
 - **28+ watched Kubernetes resource types** with real-time cache updates
-- **66 Tauri IPC commands** — the full desktop command surface
+- **70+ Tauri IPC commands** — the full desktop command surface
 - **Native Azure ARM integration** for AKS cluster lifecycle, node pools, upgrades, and maintenance
 - **Helm release management** including list, detail, history, values, rollback, and uninstall
 - **Pod workflows** — logs, exec, port-forward, events, YAML editing
 - **CRD discovery and browsing** with dynamic resource support
+- **AI Insights** — advisory Kubernetes and AKS summaries via Azure OpenAI
 - **Audit logging** for all destructive operations
 - **Secret redaction** by default across the entire UI
 

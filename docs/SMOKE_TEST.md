@@ -6,6 +6,8 @@ description: "Local k3d validation checklist for core Kubernetes features"
 
 # Telescope — Local k3d Smoke Test
 
+> **Recommended:** For automated CI and local validation, use `./scripts/dev-test.sh` which runs Rust tests, frontend tests, and lint checks. The manual smoke test below is for desktop-specific testing only -- verifying the full Tauri app experience with a live cluster.
+
 > **Scope:** This checklist validates core Kubernetes features using a local k3d cluster. Azure ARM features (node pool management, cluster start/stop, upgrades) require a real AKS cluster and are not testable with k3d.
 
 ## Prerequisites

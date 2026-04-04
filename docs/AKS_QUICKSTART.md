@@ -4,12 +4,12 @@ nav_order: 4
 description: "Connect Telescope to an AKS cluster in under 5 minutes"
 ---
 
-# Telescope — AKS Quick Start
+# Telescope — AKS Quick Start (v1.2.0)
 
 ## Prerequisites
 - Azure CLI installed (`az`)
 - kubelogin installed (`az aks install-cli`)
-- AKS cluster with Azure AD enabled
+- AKS cluster with Azure AD (Entra ID) enabled
 
 ## Step 1: Get AKS Credentials
 ```bash
@@ -17,11 +17,16 @@ az aks get-credentials --resource-group <rg> --name <cluster> --overwrite-existi
 kubelogin convert-kubeconfig -l devicecode
 ```
 
-## Step 2: Launch Telescope
-Download from [Releases](https://github.com/adamdost-0/Telescope/releases) or build:
-```bash
-pnpm -C apps/desktop dev
-```
+## Step 2: Install and Launch Telescope
+
+Download the latest desktop installer for your platform from the
+[GitHub Releases page](https://github.com/adamdost-0/Telescope/releases):
+
+- **macOS:** `.dmg` installer
+- **Windows:** `.msi` installer
+- **Linux:** `.AppImage` or `.deb` package
+
+For development builds, see [Development]({{ site.baseurl }}/DEVELOPMENT).
 
 ## Step 3: Connect
 1. Your AKS context appears automatically (shows Exec auth badge with key icon)
