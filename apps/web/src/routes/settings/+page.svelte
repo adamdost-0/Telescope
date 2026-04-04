@@ -10,7 +10,9 @@
     setAksIdentityOverride,
     setAzureCloud,
     setPreference,
+    testAiInsightsConnection,
   } from '$lib/api';
+  import type { AiInsightsConnectionTestResult } from '$lib/tauri-commands';
   import { AI_INSIGHTS_AUTH_MODES, AI_INSIGHTS_CLOUD_PROFILES } from '$lib/tauri-commands';
   import type {
     AiInsightsAuthMode,
@@ -44,6 +46,10 @@
   let aiInsightsModelName = $state('');
   let saving = $state(false);
   let saved = $state(false);
+  let aiTestingConnection = $state(false);
+  let aiTestResult = $state<AiInsightsConnectionTestResult | null>(null);
+  let aiTestError = $state<string | null>(null);
+  let aiTestApiKey = $state('');
 
   const PREF_KEYS = {
     theme: 'theme',
@@ -180,6 +186,20 @@
       azureError = 'Unable to detect AKS identity from the active cluster.';
     } finally {
       azureDetecting = false;
+    }
+  }
+
+  async function handleTestAiConnection() {
+    aiTestingConnection = true;
+    aiTestResult = null;
+    aiTestError = null;
+    try {
+      const key = aiInsightsAuthMode === 'apiKey' ? aiTestApiKey || undefined : undefined;
+      aiTestResult = await testAiInsightsConnection(key);
+    } catch (e) {
+      aiTestError = e instanceof Error ? e.message : 'Failed to test AI Insights connection.';
+    } finally {
+      aiTestingConnection = false;
     }
   }
 
@@ -385,6 +405,27 @@
       <span class="field-label">Model name (optional)</span>
       <input type="text" bind:value={aiInsightsModelName} placeholder="Leave blank to use deployment default" />
     </label>
+    {#if aiInsightsAuthMode === 'apiKey'}
+      <label class="field">
+        <span class="field-label">API key (session only)</span>
+        <input type="password" bind:value={aiTestApiKey} placeholder="Enter API key for connection test" />
+        <span class="field-hint">Used only for the connection test below. Not saved.</span>
+      </label>
+    {/if}
+    <button
+      class="detect-btn"
+      data-testid="test-ai-connection"
+      onclick={handleTestAiConnection}
+      disabled={aiTestingConnection || !aiInsightsEndpoint || !aiInsightsDeploymentName}
+    >
+      {aiTestingConnection ? 'Testing...' : 'Test Connection'}
+    </button>
+    {#if aiTestResult}
+      <span class="field-success" data-testid="ai-test-success">Connection successful -- {aiTestResult.model}</span>
+    {/if}
+    {#if aiTestError}
+      <span class="field-error" data-testid="ai-test-error">{aiTestError}</span>
+    {/if}
   </section>
 
   <div class="actions">
@@ -471,6 +512,11 @@
   .field-error {
     font-size: 0.75rem;
     color: #f85149;
+  }
+  .field-success {
+    font-size: 0.75rem;
+    color: #3fb950;
+    margin-top: 0.25rem;
   }
   select, input, textarea {
     background: #0d1117;

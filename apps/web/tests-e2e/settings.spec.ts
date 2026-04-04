@@ -143,3 +143,62 @@ test('settings: AI Insights non-secret preferences load and save without persist
   ]));
   expect(aiPreferenceWrites.some((entry) => entry.key.includes('api_key'))).toBe(false);
 });
+
+test('settings: AI Insights test connection button exists and invokes IPC', async ({ page }) => {
+  await installMockTauri(page, {
+    preferences: {
+      ai_insights_endpoint: 'https://test.openai.azure.com/',
+      ai_insights_deployment_name: 'test-deploy',
+      ai_insights_auth_mode: 'azureLogin',
+      ai_insights_cloud_profile: 'commercial',
+    },
+  });
+  await page.goto('/settings');
+
+  const testBtn = page.getByTestId('test-ai-connection');
+  await expect(testBtn).toBeVisible();
+  await expect(testBtn).toHaveText('Test Connection');
+
+  await testBtn.click();
+  await expect(page.getByTestId('ai-test-success')).toBeVisible();
+  await expect(page.getByTestId('ai-test-success')).toContainText('Connection successful');
+
+  const calls = await page.evaluate(() => {
+    const tauri = (window as Window & {
+      __TEST_TAURI__: {
+        calls: Array<{ cmd: string; args: Record<string, unknown> }>;
+      };
+    }).__TEST_TAURI__;
+    return tauri.calls.filter((entry) => entry.cmd === 'test_ai_insights_connection');
+  });
+  expect(calls.length).toBeGreaterThanOrEqual(1);
+});
+
+test('settings: AI Insights test connection shows API key input when apiKey auth mode is selected', async ({ page }) => {
+  await installMockTauri(page, {
+    preferences: {
+      ai_insights_endpoint: 'https://test.openai.azure.com/',
+      ai_insights_deployment_name: 'test-deploy',
+      ai_insights_auth_mode: 'apiKey',
+      ai_insights_cloud_profile: 'commercial',
+    },
+  });
+  await page.goto('/settings');
+
+  await expect(page.getByLabel('API key (session only)')).toBeVisible();
+  await page.getByLabel('API key (session only)').fill('sk-test-key');
+
+  await page.getByTestId('test-ai-connection').click();
+  await expect(page.getByTestId('ai-test-success')).toBeVisible();
+
+  const calls = await page.evaluate(() => {
+    const tauri = (window as Window & {
+      __TEST_TAURI__: {
+        calls: Array<{ cmd: string; args: Record<string, unknown> }>;
+      };
+    }).__TEST_TAURI__;
+    return tauri.calls.filter((entry) => entry.cmd === 'test_ai_insights_connection');
+  });
+  expect(calls.length).toBeGreaterThanOrEqual(1);
+  expect(calls[0].args).toEqual({ apiKey: 'sk-test-key' });
+});
