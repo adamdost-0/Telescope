@@ -13,6 +13,8 @@ import {
   type PodMetrics,
   type NodeMetricsData,
   type AksIdentityInfo,
+  type AksIdentityOverrideInput,
+  type AksIdentityOverrideSettings,
   type AksNodePool,
   type AksClusterDetail,
   type AksUpgradeProfile,
@@ -75,6 +77,16 @@ function notifyApiError(command: string, error: unknown) {
 
 const AZURE_CLOUD_STORAGE_KEY = 'telescope-azure-cloud';
 const AZURE_CLOUD_SELECTION_STORAGE_KEY = 'telescope-azure-cloud-selection';
+const EMPTY_AKS_IDENTITY_OVERRIDE_SETTINGS: AksIdentityOverrideSettings = {
+  isConnected: false,
+  isAks: false,
+  contextName: null,
+  clusterFqdn: null,
+  hasOverride: false,
+  subscriptionId: '',
+  resourceGroup: '',
+  clusterName: '',
+};
 
 export function isTauriDesktop(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -629,13 +641,35 @@ export async function clearAiInsightsHistory(): Promise<void> {
 // ── AKS identity resolution ─────────────────────────────────────────────
 
 /** Resolve AKS resource identity (subscription, RG, cluster name) for the active context. */
-export async function resolveAksIdentity(): Promise<AksIdentityInfo | null> {
+export async function resolveAksIdentity(
+  options?: { preferOverride?: boolean },
+): Promise<AksIdentityInfo | null> {
   try {
-    return await invoke<AksIdentityInfo | null>('resolve_aks_identity');
+    return await invoke<AksIdentityInfo | null>(
+      'resolve_aks_identity',
+      options?.preferOverride === undefined
+        ? undefined
+        : { preferOverride: options.preferOverride },
+    );
   } catch (e) {
     notifyApiError('resolve_aks_identity', e);
     return null;
   }
+}
+
+/** Load the scoped AKS identity override draft for the currently connected cluster. */
+export async function getAksIdentityOverride(): Promise<AksIdentityOverrideSettings> {
+  try {
+    return await invoke<AksIdentityOverrideSettings>('get_aks_identity_override');
+  } catch (e) {
+    notifyApiError('get_aks_identity_override', e);
+    return { ...EMPTY_AKS_IDENTITY_OVERRIDE_SETTINGS };
+  }
+}
+
+/** Save or clear the scoped AKS identity override for the currently connected cluster. */
+export async function setAksIdentityOverride(settings: AksIdentityOverrideInput): Promise<void> {
+  await invoke<void>('set_aks_identity_override', { settings });
 }
 
 /** List authoritative AKS node pools from the Azure ARM API. */

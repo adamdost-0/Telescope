@@ -13,6 +13,39 @@ description: "Test pyramid — Rust unit tests, Vitest, Playwright E2E"
 - Define tests **per component** with explicit acceptance criteria.
 - Keep deterministic fixtures and stubbed frontend flows so UI validation remains stable.
 
+## Recommended local validation (container first)
+
+For most contributors, start with the containerized workflow instead of a host install:
+
+```bash
+git clone https://github.com/adamdost-0/Telescope.git
+cd Telescope
+./scripts/dev-test.sh
+```
+
+That script builds `telescope-devtest:local` from `tools/devtest/Dockerfile` and runs the core local validation stack:
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --exclude telescope-desktop --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --exclude telescope-desktop --all-features`
+- `./scripts/pnpm.sh install --frozen-lockfile`
+- `./scripts/pnpm.sh -C apps/web test`
+- `./scripts/pnpm.sh -C apps/web e2e`
+
+If you opened the repo through the included `.devcontainer/devcontainer.json`, the post-create step already prepares pnpm, installs workspace dependencies, and installs Playwright browsers. You can run the same commands directly from the container terminal.
+
+If you want to debug interactively in that same environment:
+
+```bash
+docker build -f tools/devtest/Dockerfile -t telescope-devtest:local .
+docker run --rm -it -v "$PWD":/repo -w /repo -e CI=1 telescope-devtest:local bash
+
+# first-time setup for a fresh clone
+COREPACK_HOME=/repo/.corepack corepack prepare pnpm@9.15.4 --activate
+```
+
+From that shell, rerun any of the commands listed below. Use a native host install only when you need the Tauri desktop app itself or platform-specific packaging.
+
 ## Test pyramid (what runs where)
 
 ### 1) Rust crates (`crates/*`)
@@ -25,7 +58,7 @@ description: "Test pyramid — Rust unit tests, Vitest, Playwright E2E"
 | `telescope-azure` | 29 | ArmClient construction, AzureCloud endpoint resolution, AKS identity resolution, node pool operations, upgrade profile parsing, maintenance config parsing, error mapping |
 | Integration (`engine/tests/integration_k3d.rs`) | 8 | Real-cluster integration harness for the engine surface (requires k3d) |
 
-**Run locally:** `cargo test --workspace --exclude telescope-desktop --all-features`
+**Run:** `cargo test --workspace --exclude telescope-desktop --all-features`
 
 ### 2) Frontend UI (`apps/web`)
 **Current Vitest coverage: 5 test files, 40+ test cases**
@@ -35,7 +68,7 @@ description: "Test pyramid — Rust unit tests, Vitest, Playwright E2E"
 - `src/lib/version.test.ts` (1 case) — shared version exposure.
 - `src/lib/realMetrics.test.ts` — real metrics polling logic tests.
 
-**Run locally:** `pnpm -C apps/web test` (vitest with `--pool=forks`)
+**Run:** `./scripts/pnpm.sh -C apps/web test` (vitest with `--pool=forks`)
 
 ### 3) Frontend E2E (`apps/web/tests-e2e`)
 **Current Playwright coverage: 6 specs**
@@ -48,15 +81,17 @@ description: "Test pyramid — Rust unit tests, Vitest, Playwright E2E"
 
 These E2E tests run against deterministic stubbed data using `tests-e2e/helpers/mock-tauri.ts` to simulate Tauri IPC in the browser, not a live Kubernetes cluster.
 
-**Setup:** `pnpm -C apps/web e2e:setup`  
-Equivalent direct command: `pnpm -C apps/web exec playwright install --with-deps chromium`
+**Host-only setup:** `./scripts/pnpm.sh -C apps/web e2e:setup`
+Equivalent direct command: `./scripts/pnpm.sh -C apps/web exec playwright install --with-deps chromium`
 
-**Run locally:** `pnpm -C apps/web e2e`
+The dev container already includes the Playwright browsers and Linux OS dependencies, so no extra setup step is needed there.
+
+**Run:** `./scripts/pnpm.sh -C apps/web e2e`
 
 **Troubleshooting**
-- If Playwright reports missing libraries such as `libatk-1.0.so.0`, rerun the setup command above with the required sudo privileges on Linux.
-- If you cannot install system packages locally, use the containerized fallback: `pnpm e2e:docker`.
-- If the local Vite port is already occupied, override it with `PLAYWRIGHT_WEB_PORT=4381 pnpm -C apps/web e2e`.
+- If Playwright reports missing libraries such as `libatk-1.0.so.0`, switch to the recommended container workflow with `./scripts/dev-test.sh`.
+- If you need to stay on the host, rerun the setup command above with the required sudo privileges on Linux.
+- If the local Vite port is already occupied, override it with `PLAYWRIGHT_WEB_PORT=4381 ./scripts/pnpm.sh -C apps/web e2e`.
 
 ### 4) Desktop (`apps/desktop`)
 **Current desktop validation**

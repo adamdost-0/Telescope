@@ -2,9 +2,11 @@
 
 pub mod connection;
 pub mod store;
+pub mod trusted_binary;
 
 pub use connection::{ConnectionEvent, ConnectionState};
 pub use store::{now_rfc3339, ResourceEntry, ResourceStore};
+pub use trusted_binary::resolve_trusted_binary;
 
 use serde::{Deserialize, Serialize};
 

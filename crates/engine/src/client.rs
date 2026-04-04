@@ -159,28 +159,38 @@ fn is_aks_url(url: &str) -> bool {
         || url.contains(".cx.aks.containerservice.azure.us")
 }
 
+async fn build_client_from_kubeconfig(
+    kubeconfig: Kubeconfig,
+    options: &KubeConfigOptions,
+    context_label: &str,
+) -> crate::Result<kube::Config> {
+    kube::Config::from_custom_kubeconfig(kubeconfig, options)
+        .await
+        .map_err(|error| {
+            crate::EngineError::Other(format!(
+                "Failed to build config for context '{context_label}': {error}"
+            ))
+        })
+}
+
 /// Create a Kubernetes client from the default kubeconfig.
 /// Uses the currently active context.
 pub async fn create_client() -> crate::Result<Client> {
-    let client = Client::try_default().await?;
+    let kubeconfig = crate::kubeconfig::load_kubeconfig_for_context(None)?;
+    let options = KubeConfigOptions::default();
+    let config = build_client_from_kubeconfig(kubeconfig, &options, "current context").await?;
+    let client = Client::try_from(config)?;
     Ok(client)
 }
 
 /// Create a client for a specific kubeconfig context.
 pub async fn create_client_for_context(context_name: &str) -> crate::Result<Client> {
-    let kubeconfig = Kubeconfig::read()?;
+    let kubeconfig = crate::kubeconfig::load_kubeconfig_for_context(Some(context_name))?;
     let options = KubeConfigOptions {
         context: Some(context_name.to_string()),
         ..Default::default()
     };
-    let config = kube::Config::from_custom_kubeconfig(kubeconfig, &options)
-        .await
-        .map_err(|e| {
-            crate::EngineError::Other(format!(
-                "Failed to build config for context '{}': {}",
-                context_name, e
-            ))
-        })?;
+    let config = build_client_from_kubeconfig(kubeconfig, &options, context_name).await?;
     let client = Client::try_from(config)?;
     Ok(client)
 }
@@ -196,19 +206,12 @@ pub async fn create_client_for_context_as_user(
     user_email: &str,
     groups: &[String],
 ) -> crate::Result<Client> {
-    let kubeconfig = Kubeconfig::read()?;
+    let kubeconfig = crate::kubeconfig::load_kubeconfig_for_context(Some(context_name))?;
     let options = KubeConfigOptions {
         context: Some(context_name.to_string()),
         ..Default::default()
     };
-    let mut config = kube::Config::from_custom_kubeconfig(kubeconfig, &options)
-        .await
-        .map_err(|e| {
-            crate::EngineError::Other(format!(
-                "Failed to build config for context '{}': {}",
-                context_name, e
-            ))
-        })?;
+    let mut config = build_client_from_kubeconfig(kubeconfig, &options, context_name).await?;
 
     if !user_email.is_empty() && user_email != "anonymous@local" {
         config.auth_info.impersonate = Some(user_email.to_string());

@@ -3,12 +3,14 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "scripts": {
+    "dev:container": "./scripts/dev-test.sh shell",
     "lint:no-emoji": "node ./scripts/check-no-emoji.mjs",
     "lint": "node ./scripts/check-no-emoji.mjs && ./scripts/pnpm.sh -r --if-present lint",
     "test": "./scripts/pnpm.sh -r --if-present test",
+    "test:container": "./scripts/dev-test.sh",
     "e2e": "./scripts/pnpm.sh -C apps/web e2e",
     "e2e:setup": "./scripts/pnpm.sh -C apps/web e2e:setup",
-    "e2e:docker": "docker build -f tools/devtest/Dockerfile -t telescope-devtest:local . && docker run --rm -t -v \"$PWD\":/repo -w /repo -e CI=1 telescope-devtest:local bash -lc 'set -euo pipefail; ./scripts/pnpm.sh -C apps/web e2e:docker'",
+    "e2e:docker": "docker build -f tools/devtest/Dockerfile -t telescope-devtest:local . && docker run --rm --init -t --ipc=host -v \"$PWD\":/repo -w /repo -e CI=1 -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 telescope-devtest:local bash -lc 'set -euo pipefail; COREPACK_HOME=/repo/.corepack corepack prepare pnpm@9.15.4 --activate >/dev/null; ./scripts/pnpm.sh -C apps/web e2e:docker'",
     "desktop:build": "./scripts/pnpm.sh -C apps/desktop build",
     "desktop:bundle": "./scripts/pnpm.sh -C apps/desktop bundle"
   },

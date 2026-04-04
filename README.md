@@ -43,17 +43,34 @@ Get the latest build from [GitHub Releases](https://github.com/adamdost-0/Telesc
 
 Every release includes SHA256 checksums for verification.
 
-### Build from Source
+### Build and Test from Source
 
 ```bash
 git clone https://github.com/adamdost-0/Telescope.git
 cd Telescope
-pnpm install
-pnpm -C apps/desktop dev     # Development mode
-pnpm -C apps/desktop bundle  # Release build
+
+# Recommended: run the CI-like Rust + web + Playwright checks in the dev container
+./scripts/dev-test.sh
 ```
 
-Prerequisites: Rust, Node.js 22+, pnpm. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for platform-specific setup.
+The container workflow is the recommended contributor path for build/test work. Open the repo in the included `.devcontainer/devcontainer.json` (for example, VS Code/Cursor: `Dev Containers: Reopen in Container`) or use the Docker commands below. The image provides Rust, Node.js, build tools, and Playwright browsers out of the box.
+
+Need an interactive shell instead of the one-shot script?
+
+```bash
+./scripts/dev-test.sh shell
+# or: pnpm run dev:container
+```
+
+If you need to run the native Tauri desktop shell or build installers on your host OS, use the local bootstrap fallback:
+
+```bash
+./scripts/bootstrap-dev.sh
+./scripts/pnpm.sh -C apps/desktop dev
+./scripts/pnpm.sh -C apps/desktop bundle
+```
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full container-first workflow and [docs/TESTING.md](docs/TESTING.md) for the exact validation commands.
 
 ### Connect to a Cluster
 
@@ -69,10 +86,10 @@ Prerequisites: Rust, Node.js 22+, pnpm. See [docs/DEVELOPMENT.md](docs/DEVELOPME
 | [Features](docs/FEATURES.md) | Full feature matrix |
 | [Architecture](docs/ARCHITECTURE.md) | System design, crate layering, data flow |
 | [AKS Quick Start](docs/AKS_QUICKSTART.md) | Connect to AKS in under 5 minutes |
-| [Development](docs/DEVELOPMENT.md) | Prerequisites, commands, project structure |
+| [Development](docs/DEVELOPMENT.md) | Container-first setup, fallback host bootstrap, project structure |
 | [Deployment](docs/DEPLOYMENT.md) | Build, bundle, and distribute |
 | [Security](docs/SECURITY.md) | Threat model, secret handling, audit logging |
-| [Testing](docs/TESTING.md) | Test pyramid and CI policy |
+| [Testing](docs/TESTING.md) | Containerized validation flow, test pyramid, CI policy |
 | [Roadmap](docs/ROADMAP.md) | Post-v1.0.0 priorities |
 | [Contributing](CONTRIBUTING.md) | How to contribute |
 | [Changelog](CHANGELOG.md) | Release history |

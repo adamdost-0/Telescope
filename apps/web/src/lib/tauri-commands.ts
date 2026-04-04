@@ -101,6 +101,23 @@ export interface AksIdentityInfo {
   arm_resource_id: string;
 }
 
+export interface AksIdentityOverrideSettings {
+  isConnected: boolean;
+  isAks: boolean;
+  contextName: string | null;
+  clusterFqdn: string | null;
+  hasOverride: boolean;
+  subscriptionId: string;
+  resourceGroup: string;
+  clusterName: string;
+}
+
+export interface AksIdentityOverrideInput {
+  subscriptionId: string;
+  resourceGroup: string;
+  clusterName: string;
+}
+
 interface PowerState {
   code: string | null;
 }

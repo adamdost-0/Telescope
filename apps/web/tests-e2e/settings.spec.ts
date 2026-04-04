@@ -11,6 +11,78 @@ test('settings: about shows the shared app version', async ({ page }) => {
   await expect(page.locator('section.about')).toContainText(version);
 });
 
+test('settings: AKS overrides load and save through scoped IPC for the connected cluster', async ({ page }) => {
+  await installMockTauri(page, {
+    aksIdentityOverride: {
+      isConnected: true,
+      isAks: true,
+      contextName: 'aks-prod',
+      clusterFqdn: 'prod.hcp.eastus.azmk8s.io',
+      hasOverride: true,
+      subscriptionId: 'sub-saved',
+      resourceGroup: 'rg-saved',
+      clusterName: 'cluster-saved',
+    },
+    resolvedAksIdentity: {
+      subscription_id: 'sub-detected',
+      resource_group: 'rg-detected',
+      cluster_name: 'cluster-detected',
+      arm_resource_id:
+        '/subscriptions/sub-detected/resourceGroups/rg-detected/providers/Microsoft.ContainerService/managedClusters/cluster-detected',
+    },
+  });
+  await page.goto('/settings');
+
+  await expect(page.getByText(/saved only for the currently connected AKS cluster/i)).toBeVisible();
+  await expect(page.getByText(/aks-prod/)).toBeVisible();
+  await expect(page.getByText(/prod\.hcp\.eastus\.azmk8s\.io/)).toBeVisible();
+  await expect(page.getByLabel('Subscription ID')).toHaveValue('sub-saved');
+  await expect(page.getByLabel('Resource Group')).toHaveValue('rg-saved');
+  await expect(page.getByLabel('Cluster Name')).toHaveValue('cluster-saved');
+
+  await page.getByRole('button', { name: 'Auto-detect from cluster' }).click();
+  await expect(page.getByLabel('Subscription ID')).toHaveValue('sub-detected');
+  await expect(page.getByLabel('Resource Group')).toHaveValue('rg-detected');
+  await expect(page.getByLabel('Cluster Name')).toHaveValue('cluster-detected');
+
+  await page.getByRole('button', { name: 'Save preferences' }).click();
+  await expect(page.locator('.saved-badge')).toBeVisible();
+
+  const aksOverrideCalls = await page.evaluate(() => {
+    const tauri = (window as Window & {
+      __TEST_TAURI__: {
+        calls: Array<{
+          cmd: string;
+          args: { key?: string; preferOverride?: boolean; settings?: Record<string, string> };
+        }>;
+      };
+    }).__TEST_TAURI__;
+
+    return tauri.calls;
+  });
+
+  expect(aksOverrideCalls.some((entry) => entry.cmd === 'get_aks_identity_override')).toBe(true);
+  expect(aksOverrideCalls.some((entry) =>
+    entry.cmd === 'resolve_aks_identity' && entry.args.preferOverride === false
+  )).toBe(true);
+  expect(aksOverrideCalls).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      cmd: 'set_aks_identity_override',
+      args: {
+        settings: {
+          subscriptionId: 'sub-detected',
+          resourceGroup: 'rg-detected',
+          clusterName: 'cluster-detected',
+        },
+      },
+    }),
+  ]));
+  expect(aksOverrideCalls.some((entry) =>
+    entry.cmd === 'set_preference'
+      && ['azure_subscription', 'azure_resource_group', 'azure_cluster_name'].includes(String(entry.args.key))
+  )).toBe(false);
+});
+
 test('settings: AI Insights non-secret preferences load and save without persisting api keys', async ({ page }) => {
   await installMockTauri(page, {
     preferences: {
@@ -43,7 +115,7 @@ test('settings: AI Insights non-secret preferences load and save without persist
   await page.getByLabel('Model name (optional)').fill('');
 
   await page.getByRole('button', { name: 'Save preferences' }).click();
-  await expect(page.getByText(/Saved/)).toBeVisible();
+  await expect(page.locator('.saved-badge')).toBeVisible();
 
   const aiPreferenceWrites = await page.evaluate(() => {
     const tauri = (window as Window & {

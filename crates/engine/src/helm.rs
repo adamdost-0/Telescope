@@ -13,6 +13,7 @@ use k8s_openapi::api::core::v1::Secret;
 use kube::api::ListParams;
 use kube::{Api, Client};
 use serde::{Deserialize, Serialize};
+use telescope_core::resolve_trusted_binary;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HelmRelease {
@@ -71,35 +72,6 @@ fn decode_release_json(data: &[u8]) -> crate::Result<serde_json::Value> {
     })
 }
 
-fn validate_helm_binary_path(path: PathBuf, source: &str) -> crate::Result<PathBuf> {
-    if !path.is_absolute() {
-        return Err(crate::EngineError::Other(format!(
-            "Helm binary from {source} must be configured with an absolute path"
-        )));
-    }
-
-    let canonical = path.canonicalize().map_err(|error| {
-        crate::EngineError::Other(format!(
-            "Failed to resolve Helm binary from {source}: {error}"
-        ))
-    })?;
-    let metadata = std::fs::metadata(&canonical).map_err(|error| {
-        crate::EngineError::Other(format!(
-            "Failed to inspect Helm binary at {}: {error}",
-            canonical.display()
-        ))
-    })?;
-
-    if !metadata.is_file() {
-        return Err(crate::EngineError::Other(format!(
-            "Configured Helm binary at {} is not a file",
-            canonical.display()
-        )));
-    }
-
-    Ok(canonical)
-}
-
 fn resolve_helm_binary_path_with<I>(
     configured_path: Option<PathBuf>,
     trusted_paths: I,
@@ -107,34 +79,41 @@ fn resolve_helm_binary_path_with<I>(
 where
     I: IntoIterator<Item = PathBuf>,
 {
-    if let Some(path) = configured_path {
-        return validate_helm_binary_path(
-            path,
-            &format!("environment variable {HELM_BINARY_PATH_ENV}"),
-        );
-    }
+    let requested_command = configured_path
+        .as_deref()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "helm".to_string());
 
-    for candidate in trusted_paths {
-        if !candidate.exists() {
-            continue;
-        }
-
-        if let Ok(resolved) = validate_helm_binary_path(candidate, "trusted installation location")
-        {
-            return Ok(resolved);
-        }
-    }
-
-    Err(crate::EngineError::Other(format!(
-        "Unable to locate Helm in trusted installation paths. Set {HELM_BINARY_PATH_ENV} to an absolute path to a trusted Helm binary."
-    )))
+    resolve_trusted_binary(&requested_command, trusted_paths).map_err(|reason| {
+        let message = if configured_path.is_some() {
+            format!(
+                "Configured Helm binary from {HELM_BINARY_PATH_ENV} was rejected: {reason}. Use a trusted system Helm installation."
+            )
+        } else {
+            format!(
+                "Unable to locate Helm in trusted installation paths: {reason}. Install Helm in a trusted system location."
+            )
+        };
+        crate::EngineError::Other(message)
+    })
 }
 
 fn resolve_helm_binary_path() -> crate::Result<PathBuf> {
-    resolve_helm_binary_path_with(
-        std::env::var_os(HELM_BINARY_PATH_ENV).map(PathBuf::from),
-        TRUSTED_HELM_BINARY_PATHS.iter().map(PathBuf::from),
-    )
+    let configured_path = std::env::var_os(HELM_BINARY_PATH_ENV).map(PathBuf::from);
+    let trusted_paths = TRUSTED_HELM_BINARY_PATHS
+        .iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    #[cfg(test)]
+    let trusted_paths = {
+        let mut tp = trusted_paths;
+        if let Some(path) = configured_path.clone() {
+            tp.push(path);
+        }
+        tp
+    };
+
+    resolve_helm_binary_path_with(configured_path, trusted_paths)
 }
 
 /// List all Helm releases across all namespaces (or a specific namespace).
@@ -541,6 +520,11 @@ mod tests {
                 std::process::id()
             ));
             std::fs::write(&path, b"helm-test").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
             Self { path }
         }
     }
@@ -832,7 +816,10 @@ mod tests {
 
         assert_eq!(val["database"]["credentials"]["username"], REDACTED);
         assert_eq!(val["database"]["credentials"]["password"], REDACTED);
-        assert_eq!(val["database"]["credentials"]["connection"]["host"], REDACTED);
+        assert_eq!(
+            val["database"]["credentials"]["connection"]["host"],
+            REDACTED
+        );
         assert_eq!(val["database"]["credentials"]["connection"]["port"], 5432);
     }
 
@@ -876,38 +863,61 @@ mod tests {
         assert_eq!(val["database"]["host"], "localhost");
     }
 
-
     #[test]
     fn resolve_helm_binary_prefers_explicit_absolute_path() {
         let helm_binary = TestTempFile::new("configured");
-        let resolved = resolve_helm_binary_path_with(Some(helm_binary.path.clone()), Vec::new())
-            .expect("configured path should resolve");
+        let resolved = resolve_helm_binary_path_with(
+            Some(helm_binary.path.clone()),
+            vec![helm_binary.path.clone()],
+        )
+        .expect("configured path should resolve");
 
         assert_eq!(resolved, helm_binary.path.canonicalize().unwrap());
     }
 
     #[test]
     fn resolve_helm_binary_rejects_relative_paths() {
-        let err = resolve_helm_binary_path_with(Some(PathBuf::from("helm")), Vec::new())
+        let err = resolve_helm_binary_path_with(Some(PathBuf::from("./helm")), Vec::new())
             .expect_err("relative path should fail");
 
-        assert!(err.to_string().contains("absolute path"));
+        assert!(err.to_string().contains("relative or qualified path"));
+    }
+
+    #[test]
+    fn resolve_helm_binary_rejects_untrusted_absolute_paths() {
+        let helm_binary = TestTempFile::new("untrusted");
+        let err = resolve_helm_binary_path_with(Some(helm_binary.path.clone()), Vec::new())
+            .expect_err("absolute path outside trusted list should fail");
+
+        assert!(err.to_string().contains("rejected"));
     }
 
     #[test]
     fn resolve_helm_binary_uses_trusted_candidate() {
-        let helm_binary = TestTempFile::new("trusted");
-        let resolved = resolve_helm_binary_path_with(None, vec![helm_binary.path.clone()])
+        // Create a temp dir with a file named exactly "helm" so the name-based
+        // lookup in resolve_trusted_binary matches.
+        let dir =
+            std::env::temp_dir().join(format!("telescope-helm-candidate-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let helm_path = dir.join("helm");
+        std::fs::write(&helm_path, b"helm-test").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&helm_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let resolved = resolve_helm_binary_path_with(None, vec![helm_path.clone()])
             .expect("trusted candidate should resolve");
 
-        assert_eq!(resolved, helm_binary.path.canonicalize().unwrap());
+        assert_eq!(resolved, helm_path.canonicalize().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn resolve_helm_binary_requires_explicit_trust_when_not_found() {
         let err = resolve_helm_binary_path_with(None, Vec::new()).expect_err("missing binary");
 
-        assert!(err.to_string().contains(HELM_BINARY_PATH_ENV));
+        assert!(err.to_string().contains("trusted installation paths"));
     }
 
     #[test]
@@ -935,6 +945,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn helm_uninstall_with_valid_release_name_succeeds() {
         let _env_lock = helm_env_lock().lock().unwrap();
         let helm_binary = create_mock_helm_binary("uninstall-success", "", 0);
@@ -949,6 +960,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn helm_uninstall_with_nonexistent_release_returns_clear_error() {
         let _env_lock = helm_env_lock().lock().unwrap();
         let helm_binary = create_mock_helm_binary(

@@ -175,7 +175,10 @@ async fn get_cluster_info(
     if info.is_aks {
         let preferred_id = {
             let store_guard = state.store.lock().map_err(|e| e.to_string())?;
-            telescope_azure::resolve_aks_identity_from_preferences(Some(&store_guard))
+            telescope_azure::resolve_aks_identity_from_preferences(
+                Some(&store_guard),
+                &info.server_url,
+            )
         };
 
         if let Some(id) =
@@ -199,12 +202,41 @@ struct AksIdentityInfo {
     arm_resource_id: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AksIdentityOverrideState {
+    is_connected: bool,
+    is_aks: bool,
+    context_name: Option<String>,
+    cluster_fqdn: Option<String>,
+    has_override: bool,
+    subscription_id: String,
+    resource_group: String,
+    cluster_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AksIdentityOverrideInput {
+    subscription_id: String,
+    resource_group: String,
+    cluster_name: String,
+}
+
 /// Resolve AKS identity (subscription, RG, cluster name) for the active context.
+///
+/// By default this returns the effective identity used by ARM operations, including
+/// any scoped manual override saved for the current cluster. Pass
+/// `preferOverride: false` from the frontend when the user explicitly wants to
+/// auto-detect the active cluster without using the saved override.
 #[tauri::command]
 async fn resolve_aks_identity(
     state: State<'_, AppState>,
+    prefer_override: Option<bool>,
 ) -> Result<Option<AksIdentityInfo>, String> {
-    match resolve_active_aks_resource_id(&state).await? {
+    match resolve_active_aks_resource_id_with_preference(&state, prefer_override.unwrap_or(true))
+        .await?
+    {
         Some(id) => Ok(Some(AksIdentityInfo {
             arm_resource_id: id.arm_path(),
             subscription_id: id.subscription_id,
@@ -213,6 +245,89 @@ async fn resolve_aks_identity(
         })),
         None => Ok(None),
     }
+}
+
+#[tauri::command]
+async fn get_aks_identity_override(
+    state: State<'_, AppState>,
+) -> Result<AksIdentityOverrideState, String> {
+    let connection = match active_connection(&state).await {
+        Ok(connection) => connection,
+        Err(_) => {
+            return Ok(AksIdentityOverrideState {
+                is_connected: false,
+                is_aks: false,
+                context_name: None,
+                cluster_fqdn: None,
+                has_override: false,
+                subscription_id: String::new(),
+                resource_group: String::new(),
+                cluster_name: String::new(),
+            });
+        }
+    };
+
+    let info =
+        telescope_engine::client::get_cluster_info(&connection.client, &connection.context_name)
+            .await
+            .map_err(|e| e.to_string())?;
+    let cluster_fqdn = telescope_azure::resolve::extract_fqdn(&info.server_url);
+
+    if !info.is_aks {
+        return Ok(AksIdentityOverrideState {
+            is_connected: true,
+            is_aks: false,
+            context_name: Some(connection.context_name),
+            cluster_fqdn,
+            has_override: false,
+            subscription_id: String::new(),
+            resource_group: String::new(),
+            cluster_name: String::new(),
+        });
+    }
+
+    let saved = {
+        let store_guard = state.store.lock().map_err(|e| e.to_string())?;
+        telescope_azure::read_aks_identity_preferences(Some(&store_guard), &info.server_url)
+    };
+
+    Ok(AksIdentityOverrideState {
+        is_connected: true,
+        is_aks: true,
+        context_name: Some(connection.context_name),
+        cluster_fqdn,
+        has_override: saved.has_any(),
+        subscription_id: saved.subscription_id.unwrap_or_default(),
+        resource_group: saved.resource_group.unwrap_or_default(),
+        cluster_name: saved.cluster_name.unwrap_or_default(),
+    })
+}
+
+#[tauri::command]
+async fn set_aks_identity_override(
+    state: State<'_, AppState>,
+    settings: AksIdentityOverrideInput,
+) -> Result<(), String> {
+    let connection = active_connection(&state).await?;
+    let info =
+        telescope_engine::client::get_cluster_info(&connection.client, &connection.context_name)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if !info.is_aks {
+        return Err(
+            "AKS identity overrides can only be saved for a connected AKS cluster".to_string(),
+        );
+    }
+
+    let preferences = telescope_azure::AksIdentityPreferences {
+        subscription_id: normalize_optional_string(Some(settings.subscription_id)),
+        resource_group: normalize_optional_string(Some(settings.resource_group)),
+        cluster_name: normalize_optional_string(Some(settings.cluster_name)),
+    };
+
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    telescope_azure::save_aks_identity_preferences(&store, &info.server_url, preferences)
 }
 
 /// List AKS node pools from the Azure ARM API for the active cluster.
@@ -1586,6 +1701,13 @@ async fn detect_active_azure_cloud(state: &State<'_, AppState>) -> Result<AzureC
 async fn resolve_active_aks_resource_id(
     state: &State<'_, AppState>,
 ) -> Result<Option<telescope_azure::AksResourceId>, String> {
+    resolve_active_aks_resource_id_with_preference(state, true).await
+}
+
+async fn resolve_active_aks_resource_id_with_preference(
+    state: &State<'_, AppState>,
+    prefer_override: bool,
+) -> Result<Option<telescope_azure::AksResourceId>, String> {
     let connection = active_connection(state).await?;
     let info =
         telescope_engine::client::get_cluster_info(&connection.client, &connection.context_name)
@@ -1596,9 +1718,11 @@ async fn resolve_active_aks_resource_id(
         return Ok(None);
     }
 
-    let preferred_id = {
+    let preferred_id = if prefer_override {
         let store_guard = state.store.lock().map_err(|e| e.to_string())?;
-        telescope_azure::resolve_aks_identity_from_preferences(Some(&store_guard))
+        telescope_azure::resolve_aks_identity_from_preferences(Some(&store_guard), &info.server_url)
+    } else {
+        None
     };
 
     Ok(telescope_azure::resolve_aks_identity(&info.server_url, preferred_id).await)
@@ -1645,7 +1769,7 @@ async fn active_aks_arm_client_for(
 
     let preference_status = {
         let store_guard = state.store.lock().map_err(|e| e.to_string())?;
-        telescope_azure::inspect_aks_identity_preferences(Some(&store_guard))
+        telescope_azure::inspect_aks_identity_preferences(Some(&store_guard), &info.server_url)
     };
     let preferred_id = match &preference_status {
         telescope_azure::AksIdentityPreferenceStatus::Complete(id) => Some(id.clone()),
@@ -2814,6 +2938,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             get_connection_state,
             get_cluster_info,
             resolve_aks_identity,
+            get_aks_identity_override,
+            set_aks_identity_override,
             list_aks_node_pools,
             start_aks_cluster,
             stop_aks_cluster,

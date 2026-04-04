@@ -1,5 +1,7 @@
 import type { Page } from '@playwright/test';
 import type {
+  AksIdentityInfo,
+  AksIdentityOverrideSettings,
   AiInsightsConnectionTestResult,
   AiInsightsResponse,
   AiInsightsScope,
@@ -22,6 +24,8 @@ export interface MockTauriScenario {
   connectionState?: ConnectionState;
   namespaces?: string[];
   preferences?: Record<string, string | null>;
+  aksIdentityOverride?: AksIdentityOverrideSettings;
+  resolvedAksIdentity?: AksIdentityInfo | null;
   pools?: AksNodePool[];
   upgradeProfiles?: Record<string, PoolUpgradeProfile>;
   resources?: Record<string, ResourceEntry[]>;
@@ -85,6 +89,17 @@ const defaultPools: AksNodePool[] = [
     vnetSubnetId: '/subscriptions/mock/resourceGroups/mock/providers/Microsoft.Network/virtualNetworks/mock/subnets/gpu',
   },
 ];
+
+const defaultAksIdentityOverride: AksIdentityOverrideSettings = {
+  isConnected: true,
+  isAks: true,
+  contextName: 'aks-dev',
+  clusterFqdn: 'demo.hcp.eastus.azmk8s.io',
+  hasOverride: false,
+  subscriptionId: '',
+  resourceGroup: '',
+  clusterName: '',
+};
 
 const defaultUpgradeProfiles: Record<string, PoolUpgradeProfile> = {
   systempool: {
@@ -255,6 +270,8 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
       connectionState: clone(input.connectionState ?? { state: 'Ready' }),
       namespaces: clone(input.namespaces ?? []),
       preferences: clone(input.preferences ?? {}),
+      aksIdentityOverride: clone(input.aksIdentityOverride ?? defaultAksIdentityOverride),
+      resolvedAksIdentity: clone(input.resolvedAksIdentity ?? null),
       pools: clone(input.pools ?? []),
       upgradeProfiles: clone(input.upgradeProfiles ?? {}),
       resources: clone(input.resources ?? {}),
@@ -313,6 +330,9 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
         },
         get aiInsightsHistory() {
           return clone(state.aiInsightsHistory);
+        },
+        get aksIdentityOverride() {
+          return clone(state.aksIdentityOverride);
         },
       },
     });
@@ -425,6 +445,23 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
             case 'set_preference':
               state.preferences[String(args.key)] = String(args.value);
               return null;
+            case 'get_aks_identity_override':
+              return clone(state.aksIdentityOverride);
+            case 'set_aks_identity_override': {
+              const settings = (args.settings ?? {}) as Record<string, unknown>;
+              const subscriptionId = String(settings.subscriptionId ?? '');
+              const resourceGroup = String(settings.resourceGroup ?? '');
+              const clusterName = String(settings.clusterName ?? '');
+              state.aksIdentityOverride = {
+                ...state.aksIdentityOverride,
+                subscriptionId,
+                resourceGroup,
+                clusterName,
+                hasOverride: [subscriptionId, resourceGroup, clusterName]
+                  .some((value) => value.trim() !== ''),
+              };
+              return null;
+            }
             case 'test_ai_insights_connection':
               return clone(state.aiInsightsConnectionResult);
             case 'generate_ai_insights': {
@@ -493,7 +530,7 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
             case 'start_port_forward':
               return 8080;
             case 'resolve_aks_identity':
-              return null;
+              return clone(state.resolvedAksIdentity);
             case 'get_azure_cloud':
               return 'Commercial';
             case 'set_azure_cloud':
@@ -592,6 +629,8 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
       default_namespace: 'default',
       production_patterns: null,
     },
+    aksIdentityOverride: scenario.aksIdentityOverride ?? defaultAksIdentityOverride,
+    resolvedAksIdentity: scenario.resolvedAksIdentity ?? null,
     pools: scenario.pools ?? defaultPools,
     upgradeProfiles: scenario.upgradeProfiles ?? defaultUpgradeProfiles,
     resources: scenario.resources ?? defaultResources,

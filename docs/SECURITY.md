@@ -18,13 +18,16 @@ description: "Threat model, secret handling, audit logging, and credential manag
 ## Current implementation snapshot
 - **Desktop connection state is explicit:** the shared `ConnectionState` machine tracks `Disconnected`, `Connecting`, `Syncing`, `Ready`, `Degraded`, `Error`, and `Backoff`, which lets the UI surface authentication/connection failures clearly.
 - **Secrets are redacted by default:** secret list/detail reads bypass the shared cache and redact `data`, `stringData`, `binaryData`, and the `kubectl.kubernetes.io/last-applied-configuration` annotation. The redaction placeholder is `●●●●●●●●`.
+- **Helper execution is pinned to trusted binaries:** kubeconfig `exec` auth helpers, Azure CLI fallback calls, and Helm rollback/uninstall only run when Telescope can resolve them to a trusted installation path. Relative or unknown helper commands are blocked before execution.
 - **Helm values are redacted:** sensitive keys (`password`, `passwd`, `secret`, `token`, `apikey`, `api_key`, `apiKey`, `connectionstring`, `connection_string`, `connectionString`, `private_key`, `client_secret`, `access_key`, `secret_key`, `credentials`, `auth`) are recursively redacted in Helm release values. Reveal requires an explicit user action with a UI warning.
+- **SQLite cache redaction is broader than v1.0.0:** cached resources now redact Pod/workload `env`, `command`, and `args`; annotation values; ConfigMap payloads; webhook client URLs / CA bundles; and secret-shaped fields before they are written to `resources.db`.
 - **Audit logging covers destructive operations:** the engine writes JSONL audit entries for connection lifecycle, AKS node pool operations, Helm rollbacks, namespace create/delete, resource apply/delete/scale, rollout restarts, node cordon/uncordon/drain/taint, and exec commands.
 - **Sensitive local files are permissioned on Unix:** Telescope creates `~/.telescope/audit.log` and `~/.telescope/resources.db` with restrictive `0600` permissions.
 
 ## Kubeconfig & credentials
 - Telescope reads kubeconfig contexts and builds Kubernetes clients from the existing kubeconfig rather than copying credentials into a separate credential store.
 - The app relies on the local operator's Kubernetes identity and environment.
+- Kubeconfig `exec` auth helpers are allowed only from Telescope's trusted installation list; arbitrary or relative helper commands are blocked during connect.
 - OS keychain-backed token storage is still planned, not implemented.
 
 ## Azure ARM security

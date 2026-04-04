@@ -21,7 +21,8 @@ pub use openai::{
     AzureOpenAiResponseFormatJsonSchema, AzureOpenAiTokenUsage,
 };
 pub use resolve::{
-    inspect_aks_identity_preferences, resolve_aks_identity, resolve_aks_identity_from_preferences,
-    unresolved_aks_identity_message, AksIdentityPreferenceStatus,
+    extract_fqdn, inspect_aks_identity_preferences, read_aks_identity_preferences,
+    resolve_aks_identity, resolve_aks_identity_from_preferences, save_aks_identity_preferences,
+    unresolved_aks_identity_message, AksIdentityPreferenceStatus, AksIdentityPreferences,
 };
 pub use types::{AksResourceId, AzureCloud, AKS_API_VERSION, AZURE_OPENAI_API_VERSION};

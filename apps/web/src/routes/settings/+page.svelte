@@ -2,15 +2,21 @@
   import { onMount } from 'svelte';
   import {
     getAiInsightsSettings,
+    getAksIdentityOverride,
     getAzureCloud,
     getPreference,
     resolveAksIdentity,
     setAiInsightsSettings,
+    setAksIdentityOverride,
     setAzureCloud,
     setPreference,
   } from '$lib/api';
   import { AI_INSIGHTS_AUTH_MODES, AI_INSIGHTS_CLOUD_PROFILES } from '$lib/tauri-commands';
-  import type { AiInsightsAuthMode, AiInsightsCloudProfile } from '$lib/tauri-commands';
+  import type {
+    AiInsightsAuthMode,
+    AiInsightsCloudProfile,
+    AksIdentityOverrideSettings,
+  } from '$lib/tauri-commands';
   import { updateProductionPatterns } from '$lib/prod-detection';
   import { version } from '$lib/version';
   import Icon from '$lib/icons/Icon.svelte';
@@ -24,6 +30,10 @@
   let azureSubscription = $state('');
   let azureResourceGroup = $state('');
   let azureClusterName = $state('');
+  let azureOverrideContextName = $state<string | null>(null);
+  let azureOverrideClusterFqdn = $state<string | null>(null);
+  let azureOverrideAvailable = $state(false);
+  let azureOverrideHasSavedValue = $state(false);
   let azureDetecting = $state(false);
   let azureSaving = $state(false);
   let azureError = $state<string | null>(null);
@@ -41,9 +51,6 @@
     defaultNamespace: 'default_namespace',
     autoRefreshInterval: 'auto_refresh_interval',
     azureCloud: 'azure_cloud',
-    azureSubscription: 'azure_subscription',
-    azureResourceGroup: 'azure_resource_group',
-    azureClusterName: 'azure_cluster_name',
   } as const;
 
   const AZURE_CLOUD_OPTIONS = [
@@ -70,6 +77,37 @@
     return AZURE_CLOUD_OPTIONS.find((option) => option.value === cloud)?.label ?? cloud;
   }
 
+  function applyAksIdentityOverride(settings: AksIdentityOverrideSettings) {
+    azureOverrideAvailable = settings.isConnected && settings.isAks;
+    azureOverrideContextName = settings.contextName;
+    azureOverrideClusterFqdn = settings.clusterFqdn;
+    azureOverrideHasSavedValue = settings.hasOverride;
+    azureSubscription = settings.subscriptionId;
+    azureResourceGroup = settings.resourceGroup;
+    azureClusterName = settings.clusterName;
+  }
+
+  const azureOverrideScopeLabel = $derived.by(() => {
+    if (!azureOverrideAvailable) {
+      return 'Connect to an AKS cluster to edit a scoped override.';
+    }
+
+    const parts = [azureOverrideContextName, azureOverrideClusterFqdn].filter(
+      (value): value is string => Boolean(value),
+    );
+    return parts.join(' · ');
+  });
+
+  const azureOverrideHint = $derived.by(() => {
+    if (!azureOverrideAvailable) {
+      return 'The inputs stay visible, but saving and auto-detect are disabled until an AKS cluster is connected.';
+    }
+    if (azureOverrideHasSavedValue) {
+      return 'Saved values apply only to this cluster and will not redirect ARM actions for other AKS contexts.';
+    }
+    return 'No manual override is saved for this cluster yet. Leave the fields blank and save to keep using Azure CLI detection.';
+  });
+
   onMount(async () => {
     const [
       t,
@@ -78,9 +116,7 @@
       ari,
       storedAzureCloud,
       effectiveAzureCloud,
-      storedAzureSubscription,
-      storedAzureResourceGroup,
-      storedAzureClusterName,
+      aksIdentityOverride,
       aiInsightsSettings,
     ] = await Promise.all([
       getPreference(PREF_KEYS.theme),
@@ -89,9 +125,7 @@
       getPreference(PREF_KEYS.autoRefreshInterval),
       getPreference(PREF_KEYS.azureCloud),
       getAzureCloud(),
-      getPreference(PREF_KEYS.azureSubscription),
-      getPreference(PREF_KEYS.azureResourceGroup),
-      getPreference(PREF_KEYS.azureClusterName),
+      getAksIdentityOverride(),
       getAiInsightsSettings(),
     ]);
     if (t) theme = t;
@@ -104,9 +138,7 @@
       azureCloud = localStorage.getItem('telescope-azure-cloud-selection') ?? 'auto';
     }
     detectedAzureCloud = effectiveAzureCloud;
-    if (storedAzureSubscription) azureSubscription = storedAzureSubscription;
-    if (storedAzureResourceGroup) azureResourceGroup = storedAzureResourceGroup;
-    if (storedAzureClusterName) azureClusterName = storedAzureClusterName;
+    applyAksIdentityOverride(aksIdentityOverride);
     aiInsightsEndpoint = aiInsightsSettings.endpoint;
     aiInsightsDeploymentName = aiInsightsSettings.deploymentName;
     aiInsightsAuthMode = aiInsightsSettings.authMode;
@@ -135,7 +167,7 @@
     azureError = null;
 
     try {
-      const identity = await resolveAksIdentity();
+      const identity = await resolveAksIdentity({ preferOverride: false });
       if (!identity) {
         azureError = 'Unable to detect AKS identity from the active cluster.';
         return;
@@ -153,16 +185,15 @@
 
   async function save() {
     saving = true;
+    azureSaving = true;
     saved = false;
+    azureError = null;
     try {
-      await Promise.all([
+      const writes = [
         setPreference(PREF_KEYS.theme, theme),
         setPreference(PREF_KEYS.productionPatterns, productionPatterns),
         setPreference(PREF_KEYS.defaultNamespace, defaultNamespace),
         setPreference(PREF_KEYS.autoRefreshInterval, autoRefreshInterval),
-        setPreference(PREF_KEYS.azureSubscription, azureSubscription),
-        setPreference(PREF_KEYS.azureResourceGroup, azureResourceGroup),
-        setPreference(PREF_KEYS.azureClusterName, azureClusterName),
         setAiInsightsSettings({
           endpoint: aiInsightsEndpoint,
           deploymentName: aiInsightsDeploymentName,
@@ -170,7 +201,17 @@
           cloudProfile: aiInsightsCloudProfile,
           modelName: aiInsightsModelName === '' ? null : aiInsightsModelName,
         }),
-      ]);
+      ];
+      if (azureOverrideAvailable) {
+        writes.push(
+          setAksIdentityOverride({
+            subscriptionId: azureSubscription,
+            resourceGroup: azureResourceGroup,
+            clusterName: azureClusterName,
+          }),
+        );
+      }
+      await Promise.all(writes);
       updateProductionPatterns(productionPatterns);
       if (typeof document !== 'undefined') {
         const resolvedTheme = theme === 'system'
@@ -183,10 +224,16 @@
           ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
           : theme);
       }
+      azureOverrideHasSavedValue = azureOverrideAvailable
+        && [azureSubscription, azureResourceGroup, azureClusterName]
+          .some((value) => value.trim() !== '');
       saved = true;
       setTimeout(() => (saved = false), 2000);
+    } catch (error) {
+      azureError = error instanceof Error ? error.message : 'Failed to save preferences.';
     } finally {
       saving = false;
+      azureSaving = false;
     }
   }
 </script>
@@ -247,23 +294,54 @@
         <span class="field-error">{azureError}</span>
       {/if}
     </label>
-    <span class="field-hint" style="display:block;margin-bottom:0.75rem">
-      Override auto-detected AKS identity. These values take priority over CLI detection.
+    <span class="field-hint section-hint">
+      Manual AKS identity overrides are saved only for the currently connected AKS cluster. Leave
+      all three fields blank and save to clear the override and fall back to Azure CLI detection.
     </span>
+    <div class="scope-card" aria-live="polite">
+      <span class="field-label">Override scope</span>
+      <strong class="scope-value">{azureOverrideScopeLabel}</strong>
+      <span class="field-hint">{azureOverrideHint}</span>
+    </div>
     <label class="field">
       <span class="field-label">Subscription ID</span>
-      <input type="text" bind:value={azureSubscription} placeholder="00000000-0000-0000-0000-000000000000" />
+      <input
+        type="text"
+        bind:value={azureSubscription}
+        placeholder="00000000-0000-0000-0000-000000000000"
+        disabled={!azureOverrideAvailable}
+      />
     </label>
     <label class="field">
       <span class="field-label">Resource Group</span>
-      <input type="text" bind:value={azureResourceGroup} placeholder="my-resource-group" />
+      <input
+        type="text"
+        bind:value={azureResourceGroup}
+        placeholder="my-resource-group"
+        disabled={!azureOverrideAvailable}
+      />
     </label>
     <label class="field">
       <span class="field-label">Cluster Name</span>
-      <input type="text" bind:value={azureClusterName} placeholder="my-aks-cluster" />
+      <input
+        type="text"
+        bind:value={azureClusterName}
+        placeholder="my-aks-cluster"
+        disabled={!azureOverrideAvailable}
+      />
     </label>
-    <button class="detect-btn" onclick={detectAzureIdentity} disabled={azureDetecting}>
-      {azureDetecting ? 'Detecting…' : 'Auto-detect from cluster'}
+    <button
+      class="detect-btn"
+      onclick={detectAzureIdentity}
+      disabled={azureDetecting || !azureOverrideAvailable}
+    >
+      {#if !azureOverrideAvailable}
+        Connect to AKS to detect
+      {:else if azureDetecting}
+        Detecting…
+      {:else}
+        Auto-detect from cluster
+      {/if}
     </button>
   </section>
 
@@ -371,6 +449,20 @@
   .field-hint {
     font-size: 0.75rem;
     color: #6e7681;
+  }
+  .scope-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    background: #0d1117;
+  }
+  .scope-value {
+    font-size: 0.9rem;
+    color: #e6edf3;
   }
   .section-hint {
     display: block;

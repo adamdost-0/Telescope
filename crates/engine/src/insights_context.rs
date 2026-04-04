@@ -390,16 +390,15 @@ fn parse_entry_json(entry: &ResourceEntry) -> Option<Value> {
         .ok()
 }
 
-fn workload_replica_counts(
-    kind: &str,
-    value: &Value,
-) -> (
+type ReplicaCounts = (
     Option<u32>,
     Option<u32>,
     Option<u32>,
     Option<u32>,
     Option<u32>,
-) {
+);
+
+fn workload_replica_counts(kind: &str, value: &Value) -> ReplicaCounts {
     match kind {
         "DaemonSet" => (
             read_u32(value, &["status", "desiredNumberScheduled"]),
