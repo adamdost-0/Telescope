@@ -49,6 +49,39 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - name: Configure Windows EV signing
+        if: ${{ matrix.platform == 'windows' }}
+        shell: bash
+        env:
+          WINDOWS_EV_AZURE_VAULT_URL: ${{ secrets.WINDOWS_EV_AZURE_VAULT_URL }}
+          WINDOWS_EV_AZURE_CERT_NAME: ${{ secrets.WINDOWS_EV_AZURE_CERT_NAME }}
+          WINDOWS_EV_AZURE_CERT_VERSION: ${{ secrets.WINDOWS_EV_AZURE_CERT_VERSION }}
+          WINDOWS_EV_AZURE_TENANT_ID: ${{ secrets.WINDOWS_EV_AZURE_TENANT_ID }}
+          WINDOWS_EV_AZURE_CLIENT_ID: ${{ secrets.WINDOWS_EV_AZURE_CLIENT_ID }}
+          WINDOWS_EV_AZURE_CLIENT_SECRET: ${{ secrets.WINDOWS_EV_AZURE_CLIENT_SECRET }}
+          WINDOWS_EV_TIMESTAMP_URL: ${{ secrets.WINDOWS_EV_TIMESTAMP_URL }}
+        run: |
+          if [ -n "${WINDOWS_EV_AZURE_VAULT_URL}" ] && \
+             [ -n "${WINDOWS_EV_AZURE_CERT_NAME}" ] && \
+             [ -n "${WINDOWS_EV_AZURE_TENANT_ID}" ] && \
+             [ -n "${WINDOWS_EV_AZURE_CLIENT_ID}" ] && \
+             [ -n "${WINDOWS_EV_AZURE_CLIENT_SECRET}" ]; then
+            echo "[ok] Windows EV signing secrets detected (Azure Key Vault Code Signing)."
+            {
+              echo "WINDOWS_EV_SIGNING_ENABLED=true"
+              echo "WINDOWS_EV_AZURE_VAULT_URL=${WINDOWS_EV_AZURE_VAULT_URL}"
+              echo "WINDOWS_EV_AZURE_CERT_NAME=${WINDOWS_EV_AZURE_CERT_NAME}"
+              [ -n "${WINDOWS_EV_AZURE_CERT_VERSION}" ] && echo "WINDOWS_EV_AZURE_CERT_VERSION=${WINDOWS_EV_AZURE_CERT_VERSION}"
+              echo "WINDOWS_EV_AZURE_TENANT_ID=${WINDOWS_EV_AZURE_TENANT_ID}"
+              echo "WINDOWS_EV_AZURE_CLIENT_ID=${WINDOWS_EV_AZURE_CLIENT_ID}"
+              echo "WINDOWS_EV_AZURE_CLIENT_SECRET=${WINDOWS_EV_AZURE_CLIENT_SECRET}"
+              echo "WINDOWS_EV_TIMESTAMP_URL=${WINDOWS_EV_TIMESTAMP_URL:-http://timestamp.digicert.com}"
+            } >> "$GITHUB_ENV"
+          else
+            echo "INFO Windows EV signing secrets missing; Windows artifacts will remain unsigned."
+            echo "WINDOWS_EV_SIGNING_ENABLED=false" >> "$GITHUB_ENV"
+          fi
+
       - name: Configure macOS signing and notarization
         if: ${{ matrix.platform == 'macos' }}
         shell: bash
@@ -308,6 +341,54 @@ jobs:
           fi
 
           hdiutil detach "$MOUNT_DIR"
+
+      - name: EV sign Windows artifacts
+        if: ${{ matrix.platform == 'windows' && env.WINDOWS_EV_SIGNING_ENABLED == 'true' }}
+        shell: pwsh
+        env:
+          WINDOWS_EV_AZURE_VAULT_URL: ${{ env.WINDOWS_EV_AZURE_VAULT_URL }}
+          WINDOWS_EV_AZURE_CERT_NAME: ${{ env.WINDOWS_EV_AZURE_CERT_NAME }}
+          WINDOWS_EV_AZURE_CERT_VERSION: ${{ env.WINDOWS_EV_AZURE_CERT_VERSION }}
+          WINDOWS_EV_AZURE_TENANT_ID: ${{ env.WINDOWS_EV_AZURE_TENANT_ID }}
+          WINDOWS_EV_AZURE_CLIENT_ID: ${{ env.WINDOWS_EV_AZURE_CLIENT_ID }}
+          WINDOWS_EV_AZURE_CLIENT_SECRET: ${{ env.WINDOWS_EV_AZURE_CLIENT_SECRET }}
+          WINDOWS_EV_TIMESTAMP_URL: ${{ env.WINDOWS_EV_TIMESTAMP_URL }}
+        run: |
+          dotnet tool update --global AzureSignTool
+          $env:PATH = "$env:PATH;$env:USERPROFILE\.dotnet\tools"
+
+          $timestamp = if ([string]::IsNullOrWhiteSpace($env:WINDOWS_EV_TIMESTAMP_URL)) { "http://timestamp.digicert.com" } else { $env:WINDOWS_EV_TIMESTAMP_URL }
+
+          $artifactPaths = @(
+            "target/release/$($env:VERSIONED_PORTABLE)",
+            $(if ($env:MSI_ARTIFACT) { "target/release/$($env:MSI_ARTIFACT)" }),
+            $(if ($env:NSIS_ARTIFACT) { "target/release/$($env:NSIS_ARTIFACT)" })
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          if ($artifactPaths.Count -eq 0) {
+            Write-Error "No Windows artifacts were found to sign."
+            exit 1
+          }
+
+          $baseArgs = @(
+            "sign",
+            "-kvu", $env:WINDOWS_EV_AZURE_VAULT_URL,
+            "-kvi", $env:WINDOWS_EV_AZURE_CLIENT_ID,
+            "-kvs", $env:WINDOWS_EV_AZURE_CLIENT_SECRET,
+            "-kvt", $env:WINDOWS_EV_AZURE_TENANT_ID,
+            "-kvc", $env:WINDOWS_EV_AZURE_CERT_NAME,
+            "-tr", $timestamp,
+            "-td", "sha256",
+            "-fd", "sha256"
+          )
+          if ($env:WINDOWS_EV_AZURE_CERT_VERSION) {
+            $baseArgs += @("-kvcv", $env:WINDOWS_EV_AZURE_CERT_VERSION)
+          }
+
+          foreach ($path in $artifactPaths) {
+            Write-Host "Signing $path"
+            AzureSignTool @baseArgs $path
+          }
 
       - name: Generate checksums
         shell: bash
