@@ -4,7 +4,7 @@ Desktop Kubernetes IDE with native Azure AKS integration.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/adamdost-0/Telescope)](https://github.com/adamdost-0/Telescope/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/adamdost-0/Telescope/ci.yml?branch=main&label=CI)](https://github.com/adamdost-0/Telescope/actions/workflows/ci.yml)
+
 
 <!-- Screenshot: overview dashboard -->
 
