@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="920" viewBox="0 0 1120 920" role="img" aria-labelledby="title desc">
+  <title id="title">Helm Values Audit and Error-Handling Flow</title>
+  <desc id="desc">Current Telescope behavior: redacted Helm values are returned for normal requests, while raw reveal requests are denied, audited, and returned as sanitized errors. A separate lower lane shows the proposed nonce-gated plaintext policy for any future reveal support.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155" />
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .box { fill: #ffffff; stroke: #334155; stroke-width: 2; rx: 8; }
+      .safe { fill: #dcfce7; stroke: #15803d; }
+      .deny { fill: #fee2e2; stroke: #b91c1c; }
+      .audit { fill: #ede9fe; stroke: #7c3aed; }
+      .future { fill: #e0f2fe; stroke: #0369a1; }
+      .decision { fill: #fef9c3; stroke: #a16207; }
+      .text { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 18px; fill: #0f172a; }
+      .small { font-size: 15px; fill: #334155; }
+      .title { font-size: 28px; font-weight: 700; }
+      .label { font-size: 16px; font-weight: 700; fill: #334155; }
+      .arrow { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 8 6; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1120" height="920" />
+  <text class="text title" x="40" y="54">Helm Values Audit and Error-Handling Flow</text>
+  <text class="text small" x="40" y="84">No current path returns plaintext Helm values.</text>
+
+  <rect class="box" x="55" y="130" width="240" height="100" />
+  <text class="text label" x="82" y="166">Frontend API</text>
+  <text class="text small" x="82" y="194">Requests values</text>
+  <text class="text small" x="82" y="216">without a reveal flag</text>
+
+  <rect class="box" x="385" y="125" width="300" height="110" />
+  <text class="text label" x="416" y="160">get_helm_release_values</text>
+  <text class="text small" x="416" y="188">validates namespace/name</text>
+  <text class="text small" x="416" y="212">checks reveal argument</text>
+
+  <path class="box decision" d="M 535 292 L 685 372 L 535 452 L 385 372 Z" />
+  <text class="text label" x="474" y="365">reveal == true?</text>
+  <text class="text small" x="486" y="392">IPC argument check</text>
+
+  <rect class="box safe" x="75" y="515" width="300" height="115" />
+  <text class="text label" x="106" y="550">Normal request</text>
+  <text class="text small" x="106" y="578">fetch Helm values</text>
+  <text class="text small" x="106" y="602">recursively redact keys</text>
+  <text class="text small" x="106" y="624">return redacted YAML</text>
+
+  <rect class="box deny" x="745" y="300" width="300" height="115" />
+  <text class="text label" x="776" y="335">Denied reveal request</text>
+  <text class="text small" x="776" y="363">no Kubernetes client</text>
+  <text class="text small" x="776" y="387">no Helm values fetch</text>
+  <text class="text small" x="776" y="409">no plaintext return</text>
+
+  <rect class="box audit" x="745" y="475" width="300" height="105" />
+  <text class="text label" x="776" y="510">Audit entry</text>
+  <text class="text small" x="776" y="538">action: helm_values_reveal</text>
+  <text class="text small" x="776" y="562">result: denied</text>
+
+  <rect class="box deny" x="745" y="610" width="300" height="70" />
+  <text class="text label" x="776" y="642">Sanitized error</text>
+  <text class="text small" x="776" y="666">safe denial message to UI</text>
+
+  <path class="arrow" d="M 295 180 L 385 180" />
+  <path class="arrow" d="M 535 235 L 535 292" />
+  <path class="arrow" d="M 385 372 C 270 394 225 455 225 515" />
+  <path class="arrow" d="M 685 372 L 745 358" />
+  <path class="arrow" d="M 895 415 L 895 475" />
+  <path class="arrow" d="M 895 580 L 895 610" />
+  <path class="arrow dash" d="M 745 645 C 520 680 250 675 175 630" />
+
+  <text class="text small" x="316" y="392">No</text>
+  <text class="text small" x="705" y="350">Yes</text>
+  <text class="text small" x="365" y="708">Current implementation stops here: reveal requests are denied, audited, and sanitized.</text>
+
+  <text class="text label" x="75" y="750">Future/proposed plaintext policy, not implemented in this branch</text>
+  <rect class="box future dash" x="75" y="775" width="210" height="80" />
+  <text class="text label" x="105" y="807">Reveal request</text>
+  <text class="text small" x="105" y="832">requires policy gate</text>
+
+  <rect class="box future dash" x="325" y="775" width="220" height="80" />
+  <text class="text label" x="355" y="807">Nonce challenge</text>
+  <text class="text small" x="355" y="832">short-lived proof</text>
+
+  <rect class="box audit dash" x="585" y="775" width="220" height="80" />
+  <text class="text label" x="615" y="807">Audit log</text>
+  <text class="text small" x="615" y="832">approved reveal event</text>
+
+  <rect class="box future dash" x="845" y="775" width="220" height="80" />
+  <text class="text label" x="875" y="807">Plaintext return</text>
+  <text class="text small" x="875" y="832">scoped and time-bound</text>
+
+  <path class="arrow dash" d="M 285 815 L 325 815" />
+  <path class="arrow dash" d="M 545 815 L 585 815" />
+  <path class="arrow dash" d="M 805 815 L 845 815" />
+  <text class="text small" x="75" y="890">Any future plaintext reveal must include nonce verification before audit logging and must return only scoped, explicit plaintext values.</text>
+</svg>

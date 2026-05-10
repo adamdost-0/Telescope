@@ -311,31 +311,43 @@ fn validate_k8s_name(name: &str) -> crate::Result<()> {
     Ok(())
 }
 
-fn map_helm_uninstall_error(stderr: &str, stdout: &str) -> String {
+fn resolve_helm_binary_for_command(action: &str) -> crate::Result<PathBuf> {
+    resolve_helm_binary_path().map_err(|_| helm_command_unavailable_error(action))
+}
+
+fn helm_command_unavailable_error(action: &str) -> crate::EngineError {
+    crate::EngineError::Other(format!(
+        "Helm {action} failed: command unavailable. Install Helm in a trusted system location."
+    ))
+}
+
+fn map_helm_command_error(action: &str, stderr: &str, stdout: &str) -> String {
     let detail = if !stderr.trim().is_empty() {
-        stderr.trim().to_string()
-    } else if !stdout.trim().is_empty() {
-        stdout.trim().to_string()
+        stderr.trim()
     } else {
-        "Helm uninstall command failed with no output".to_string()
+        stdout.trim()
     };
     let detail_lower = detail.to_lowercase();
 
     if detail_lower.contains("release: not found") || detail_lower.contains("not found") {
-        format!("Helm uninstall failed: release not found. {detail}")
+        format!("Helm {action} failed: release not found")
     } else if detail_lower.contains("forbidden")
         || detail_lower.contains("unauthorized")
         || detail_lower.contains("permission denied")
     {
-        format!("Helm uninstall failed: permission denied. {detail}")
+        format!("Helm {action} failed: permission denied")
     } else if detail_lower.contains("timed out waiting")
         || detail_lower.contains("deadline exceeded")
         || detail_lower.contains("timeout")
     {
-        format!("Helm uninstall failed: operation timed out. {detail}")
+        format!("Helm {action} failed: operation timed out")
     } else {
-        format!("Helm uninstall failed: {detail}")
+        format!("Helm {action} failed: command failed")
     }
+}
+
+fn map_helm_uninstall_error(stderr: &str, stdout: &str) -> String {
+    map_helm_command_error("uninstall", stderr, stdout)
 }
 
 /// Keys whose values should be redacted in Helm values display.
@@ -421,7 +433,7 @@ pub async fn rollback_release(namespace: &str, name: &str, revision: i32) -> cra
         ));
     }
 
-    let helm_binary = resolve_helm_binary_path()?;
+    let helm_binary = resolve_helm_binary_for_command("rollback")?;
     let revision_arg = revision.to_string();
     let output = tokio::process::Command::new(&helm_binary)
         .args([
@@ -434,29 +446,17 @@ pub async fn rollback_release(namespace: &str, name: &str, revision: i32) -> cra
         .kill_on_drop(true)
         .output()
         .await
-        .map_err(|e| {
-            crate::EngineError::Other(format!(
-                "Failed to execute Helm CLI at {}: {e}",
-                helm_binary.display()
-            ))
-        })?;
+        .map_err(|_| helm_command_unavailable_error("rollback"))?;
 
     if output.status.success() {
         Ok(format!("Rolled back {name} to revision {revision}"))
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let detail = if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            format!("helm exited with status {}", output.status)
-        };
-        Err(crate::EngineError::Other(format!(
-            "Rollback via {} failed: {detail}",
-            helm_binary.display()
-        )))
+        let detail = map_helm_command_error(
+            "rollback",
+            String::from_utf8_lossy(&output.stderr).as_ref(),
+            String::from_utf8_lossy(&output.stdout).as_ref(),
+        );
+        Err(crate::EngineError::Other(detail))
     }
 }
 
@@ -465,18 +465,13 @@ pub async fn helm_uninstall(namespace: &str, name: &str) -> crate::Result<String
     validate_k8s_name(namespace)?;
     validate_k8s_name(name)?;
 
-    let helm_binary = resolve_helm_binary_path()?;
+    let helm_binary = resolve_helm_binary_for_command("uninstall")?;
     let output = tokio::process::Command::new(&helm_binary)
         .args(["uninstall", name, "-n", namespace])
         .kill_on_drop(true)
         .output()
         .await
-        .map_err(|error| {
-            crate::EngineError::Other(format!(
-                "Failed to execute Helm CLI at {}: {error}",
-                helm_binary.display()
-            ))
-        })?;
+        .map_err(|_| helm_command_unavailable_error("uninstall"))?;
 
     if output.status.success() {
         Ok(format!(
@@ -487,10 +482,7 @@ pub async fn helm_uninstall(namespace: &str, name: &str) -> crate::Result<String
             String::from_utf8_lossy(&output.stderr).as_ref(),
             String::from_utf8_lossy(&output.stdout).as_ref(),
         );
-        Err(crate::EngineError::Other(format!(
-            "{detail} (via {})",
-            helm_binary.display()
-        )))
+        Err(crate::EngineError::Other(detail))
     }
 }
 
@@ -944,6 +936,19 @@ mod tests {
         assert!(msg.contains("operation timed out"));
     }
 
+    #[test]
+    fn map_helm_uninstall_error_omits_raw_command_detail() {
+        let msg = map_helm_uninstall_error(
+            "Error: open /home/alice/.kube/config: permission denied token=super-secret",
+            "",
+        );
+
+        assert_eq!(msg, "Helm uninstall failed: permission denied");
+        assert!(!msg.contains("/home/alice"));
+        assert!(!msg.contains("token="));
+        assert!(!msg.contains("super-secret"));
+    }
+
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn helm_uninstall_with_valid_release_name_succeeds() {
@@ -976,7 +981,53 @@ mod tests {
         let msg = err.to_string();
 
         assert!(msg.contains("release not found"));
-        assert!(msg.contains("via"));
+        assert!(!msg.contains(&helm_binary.path.display().to_string()));
+        assert!(!msg.contains("Release not loaded"));
+        assert!(!msg.contains("via"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn helm_uninstall_sanitizes_raw_stderr_and_binary_path() {
+        let _env_lock = helm_env_lock().lock().unwrap();
+        let helm_binary = create_mock_helm_binary(
+            "uninstall-sensitive-error",
+            "Error: open /home/alice/.kube/config: permission denied token=super-secret",
+            1,
+        );
+        let _env = ScopedEnvVar::set(HELM_BINARY_PATH_ENV, &helm_binary.path);
+
+        let err = helm_uninstall("default", "demo-release").await.unwrap_err();
+        let msg = err.to_string();
+
+        assert_eq!(msg, "Helm uninstall failed: permission denied");
+        assert!(!msg.contains(&helm_binary.path.display().to_string()));
+        assert!(!msg.contains("/home/alice"));
+        assert!(!msg.contains("token="));
+        assert!(!msg.contains("super-secret"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn rollback_release_sanitizes_raw_stderr_and_binary_path() {
+        let _env_lock = helm_env_lock().lock().unwrap();
+        let helm_binary = create_mock_helm_binary(
+            "rollback-sensitive-error",
+            "Error: open /home/alice/.kube/config: permission denied token=super-secret",
+            1,
+        );
+        let _env = ScopedEnvVar::set(HELM_BINARY_PATH_ENV, &helm_binary.path);
+
+        let err = rollback_release("default", "demo-release", 1)
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+
+        assert_eq!(msg, "Helm rollback failed: permission denied");
+        assert!(!msg.contains(&helm_binary.path.display().to_string()));
+        assert!(!msg.contains("/home/alice"));
+        assert!(!msg.contains("token="));
+        assert!(!msg.contains("super-secret"));
     }
 
     #[tokio::test]

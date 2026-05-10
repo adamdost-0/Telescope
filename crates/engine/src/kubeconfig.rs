@@ -213,11 +213,56 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{pin_exec_helper_paths_with, resolve_exec_helper_command_with};
     use kube::config::Kubeconfig;
     use serde_json::json;
+
+    static FIXTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct TrustedExecFixture {
+        path: PathBuf,
+    }
+
+    impl TrustedExecFixture {
+        fn new() -> Self {
+            let unique_id = FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock before unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "telescope-exec-helper-test-{}-{timestamp}-{unique_id}",
+                std::process::id()
+            ));
+
+            fs::write(&path, b"trusted exec test helper").expect("write trusted exec fixture");
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+                    .expect("set trusted exec fixture permissions");
+            }
+
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TrustedExecFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
 
     fn kubeconfig_with_exec(command: &str) -> Kubeconfig {
         serde_json::from_value(json!({
@@ -258,16 +303,21 @@ mod tests {
 
     #[test]
     fn resolve_exec_helper_command_accepts_trusted_binary_name() {
-        let executable = std::env::current_exe().expect("current test executable");
+        let executable = TrustedExecFixture::new();
         let name = executable
+            .path()
             .file_name()
             .and_then(|value| value.to_str())
             .expect("binary name");
 
-        let resolved = resolve_exec_helper_command_with(name, vec![executable.clone()])
-            .expect("trusted helper should resolve");
+        let resolved =
+            resolve_exec_helper_command_with(name, vec![executable.path().to_path_buf()])
+                .expect("trusted helper should resolve");
 
-        assert_eq!(resolved, executable.canonicalize().expect("canonical path"));
+        assert_eq!(
+            resolved,
+            executable.path().canonicalize().expect("canonical path")
+        );
     }
 
     #[test]
@@ -280,16 +330,21 @@ mod tests {
 
     #[test]
     fn pin_exec_helper_paths_rewrites_trusted_exec_commands() {
-        let executable = std::env::current_exe().expect("current test executable");
+        let executable = TrustedExecFixture::new();
         let name = executable
+            .path()
             .file_name()
             .and_then(|value| value.to_str())
             .expect("binary name")
             .to_string();
         let mut kubeconfig = kubeconfig_with_exec(&name);
 
-        pin_exec_helper_paths_with(&mut kubeconfig, Some("demo"), vec![executable.clone()])
-            .expect("trusted exec helper should be accepted");
+        pin_exec_helper_paths_with(
+            &mut kubeconfig,
+            Some("demo"),
+            vec![executable.path().to_path_buf()],
+        )
+        .expect("trusted exec helper should be accepted");
 
         let rewritten = kubeconfig.auth_infos[0]
             .auth_info
@@ -300,6 +355,7 @@ mod tests {
         assert_eq!(
             rewritten,
             executable
+                .path()
                 .canonicalize()
                 .expect("canonical path")
                 .to_string_lossy()

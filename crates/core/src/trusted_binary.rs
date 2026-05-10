@@ -101,34 +101,86 @@ fn validate_binary_permissions(_path: &Path, _metadata: &Metadata) -> Result<(),
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::resolve_trusted_binary;
 
+    static FIXTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct TrustedBinaryFixture {
+        path: PathBuf,
+    }
+
+    impl TrustedBinaryFixture {
+        fn new() -> Self {
+            let unique_id = FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock before unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "telescope-trusted-binary-test-{}-{timestamp}-{unique_id}",
+                std::process::id()
+            ));
+
+            fs::write(&path, b"trusted test helper").expect("write trusted binary fixture");
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+                    .expect("set trusted binary fixture permissions");
+            }
+
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TrustedBinaryFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+
     #[test]
     fn resolve_trusted_binary_accepts_trusted_absolute_path() {
-        let executable = std::env::current_exe().expect("current test executable");
+        let executable = TrustedBinaryFixture::new();
         let resolved = resolve_trusted_binary(
-            executable.to_str().expect("utf-8 path"),
-            vec![executable.clone()],
+            executable.path().to_str().expect("utf-8 path"),
+            vec![executable.path().to_path_buf()],
         )
         .expect("trusted absolute path should resolve");
 
-        assert_eq!(resolved, executable.canonicalize().expect("canonical path"));
+        assert_eq!(
+            resolved,
+            executable.path().canonicalize().expect("canonical path")
+        );
     }
 
     #[test]
     fn resolve_trusted_binary_accepts_trusted_binary_name() {
-        let executable = std::env::current_exe().expect("current test executable");
+        let executable = TrustedBinaryFixture::new();
         let name = executable
+            .path()
             .file_name()
             .and_then(|name| name.to_str())
             .expect("binary name");
 
-        let resolved = resolve_trusted_binary(name, vec![executable.clone()])
+        let resolved = resolve_trusted_binary(name, vec![executable.path().to_path_buf()])
             .expect("trusted binary name should resolve");
 
-        assert_eq!(resolved, executable.canonicalize().expect("canonical path"));
+        assert_eq!(
+            resolved,
+            executable.path().canonicalize().expect("canonical path")
+        );
     }
 
     #[test]
@@ -141,9 +193,9 @@ mod tests {
 
     #[test]
     fn resolve_trusted_binary_rejects_untrusted_absolute_paths() {
-        let executable = std::env::current_exe().expect("current test executable");
+        let executable = TrustedBinaryFixture::new();
         let err = resolve_trusted_binary(
-            executable.to_str().expect("utf-8 path"),
+            executable.path().to_str().expect("utf-8 path"),
             Vec::<PathBuf>::new(),
         )
         .expect_err("untrusted absolute path should be blocked");

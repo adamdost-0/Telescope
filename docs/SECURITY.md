@@ -19,9 +19,11 @@ description: "Threat model, secret handling, audit logging, and credential manag
 - **Desktop connection state is explicit:** the shared `ConnectionState` machine tracks `Disconnected`, `Connecting`, `Syncing`, `Ready`, `Degraded`, `Error`, and `Backoff`, which lets the UI surface authentication/connection failures clearly.
 - **Secrets are redacted by default:** secret list/detail reads bypass the shared cache and redact `data`, `stringData`, `binaryData`, and the `kubectl.kubernetes.io/last-applied-configuration` annotation. The redaction placeholder is `●●●●●●●●`.
 - **Helper execution is pinned to trusted binaries:** kubeconfig `exec` auth helpers, Azure CLI fallback calls, and Helm rollback/uninstall only run when Telescope can resolve them to a trusted installation path. Relative or unknown helper commands are blocked before execution.
-- **Helm values are redacted:** sensitive keys (`password`, `passwd`, `secret`, `token`, `apikey`, `api_key`, `apiKey`, `connectionstring`, `connection_string`, `connectionString`, `private_key`, `client_secret`, `access_key`, `secret_key`, `credentials`, `auth`) are recursively redacted in Helm release values. Reveal requires an explicit user action with a UI warning.
+- **Helm values are redacted and raw reveal is denied:** sensitive keys (`password`, `passwd`, `secret`, `token`, `apikey`, `api_key`, `apiKey`, `connectionstring`, `connection_string`, `connectionString`, `private_key`, `client_secret`, `access_key`, `secret_key`, `credentials`, `auth`) are recursively redacted in Helm release values. Requests to reveal raw values are denied before values are fetched, audited as denied attempts, and returned as sanitized errors.
 - **SQLite cache redaction is broader than v1.0.0:** cached resources now redact Pod/workload `env`, `command`, and `args`; annotation values; ConfigMap payloads; webhook client URLs / CA bundles; and secret-shaped fields before they are written to `resources.db`.
-- **Audit logging covers destructive operations:** the engine writes JSONL audit entries for connection lifecycle, AKS node pool operations, Helm rollbacks, namespace create/delete, resource apply/delete/scale, rollout restarts, node cordon/uncordon/drain/taint, and exec commands.
+- **Cached resource reads are allowlisted:** cached `gvk` arguments are validated against the watched GVK registry before the desktop command queries SQLite. Unsupported cached resource types return a generic sanitized error instead of echoing caller input.
+- **User-facing command/API errors are sanitized:** Helm command failures and frontend IPC errors remove local paths, raw command output, and secret-shaped values before they reach notifications or console logs.
+- **Audit logging covers destructive and sensitive operations:** the engine writes JSONL audit entries for connection lifecycle, AKS node pool operations, Helm rollbacks, Helm uninstall, denied Helm values reveal attempts, namespace create/delete, resource apply/delete/scale, rollout restarts, node cordon/uncordon/drain/taint, and exec commands.
 - **Sensitive local files are permissioned on Unix:** Telescope creates `~/.telescope/audit.log` and `~/.telescope/resources.db` with restrictive `0600` permissions.
 
 ## Kubeconfig & credentials
@@ -56,8 +58,15 @@ description: "Threat model, secret handling, audit logging, and credential manag
 ## Secrets
 - Secret list/detail APIs intentionally fetch secrets on demand instead of storing them in the shared watched-resource cache.
 - The engine redacts secret payload fields before serializing them for the UI.
-- The UI prevents naïve re-apply of masked YAML and warns when revealing unredacted values.
-- Per-key reveal flows, reveal timeouts, and secure local persistence are still future work.
+- The UI treats redacted secret YAML as masked data and prevents naive re-apply of masked content.
+- Per-key secret reveal flows, reveal timeouts, and secure local persistence are still future work.
+
+## Helm release values
+- Normal Helm values requests (`reveal: false` or omitted) fetch release values and recursively redact sensitive keys before returning YAML to the UI.
+- Raw Helm values reveal requests (`reveal: true`) are denied before Telescope creates a Kubernetes client or fetches Helm values.
+- Denied reveal attempts write an audit entry with action `helm_values_reveal` and result `denied`.
+- The frontend wrapper no longer accepts or sends a reveal flag, and the Helm detail page no longer renders plaintext reveal controls.
+- A nonce challenge or scoped plaintext reveal policy is future/proposed only. Any future plaintext reveal must require short-lived nonce verification before an approved audit entry is written and scoped plaintext values are returned. The current implementation has no plaintext Helm values return path.
 
 ## Actions safety
 - The connection-state machine gives the UI explicit feedback for connect/auth/backoff/error flows instead of silently failing.
@@ -72,9 +81,15 @@ description: "Threat model, secret handling, audit logging, and credential manag
   - Diff preview everywhere.
   - Universal server-side dry-run enforcement.
 
+## User-facing error sanitization
+- Command handlers should return user-safe categories such as not found, permission denied, timeout, command unavailable, or command failed.
+- Public errors must not include helper binary paths, kubeconfig paths, raw `stdout`/`stderr`, tokens, passwords, or secret-shaped key/value material.
+- Frontend IPC wrappers sanitize thrown errors and listener messages before showing notifications or logging command-level failures.
+- Detailed diagnostics belong in explicit debug or audit channels, not default UI text or console output.
+
 ## Audit logging
 - `crates/engine/src/audit.rs` appends structured JSONL entries with: `timestamp`, `actor`, `context`, `namespace`, `action`, `resource_type`, `resource_name`, `result`, `detail`.
-- **Audited operations:** cluster connect/disconnect, AKS node pool scale/create/delete/autoscaler, Helm rollback, namespace create/delete, resource apply/delete/scale, rollout restart, node cordon/uncordon/drain/taint add/remove, exec commands.
+- **Audited operations:** cluster connect/disconnect, AKS node pool scale/create/delete/autoscaler, Helm rollback, Helm uninstall, denied Helm values reveal attempts, namespace create/delete, resource apply/delete/scale, rollout restart, node cordon/uncordon/drain/taint add/remove, exec commands.
 - Audit log location: `~/.telescope/audit.log` (permissions `0600` on Unix).
 
 ## Plugins
@@ -90,3 +105,4 @@ description: "Threat model, secret handling, audit logging, and credential manag
 - RBAC capability pre-checks before every mutation.
 - Diff preview for all apply operations.
 - Secret reveal workflows with timeouts and secure local persistence.
+- Scoped Helm plaintext reveal policy, if product requirements ever justify one; current behavior denies plaintext reveal.

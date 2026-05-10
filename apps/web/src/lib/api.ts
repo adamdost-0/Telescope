@@ -39,7 +39,7 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
     return result;
   } catch (e) {
     const error = toError(e);
-    console.error(`[telescope] invoke ${command} FAILED:`, error);
+    console.error(`[telescope] invoke ${command} failed`);
     throw error;
   }
 }
@@ -48,14 +48,34 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 
 type ApiErrorListener = (error: { command: string; message: string }) => void;
 const errorListeners: ApiErrorListener[] = [];
+const REDACTED_SECRET = '[redacted]';
+const REDACTED_PATH = '[redacted path]';
+const SECRET_ASSIGNMENT_PATTERN =
+  /\b(api[_-]?key|token|secret|password|passwd|client[_-]?secret|access[_-]?key)\b\s*[:=]\s*["']?[^\s,;'"`)}]+/gi;
+const BEARER_TOKEN_PATTERN = /\bbearer\s+[a-z0-9._~+/=-]+/gi;
+const WINDOWS_PATH_PATTERN = /\b[A-Z]:\\[^\s,;'"`)}\]]+/gi;
+const UNIX_PATH_PATTERN =
+  /(^|[\s'"`(=:{,])\/(?:home|Users|var|tmp|private|etc|opt|usr|snap|mnt|Volumes)\/[^\s,;'"`)}\]]+/g;
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String(error.message);
+  }
+  return String(error);
+}
+
+function sanitizeApiErrorMessage(message: string): string {
+  return message
+    .replace(SECRET_ASSIGNMENT_PATTERN, `$1=${REDACTED_SECRET}`)
+    .replace(BEARER_TOKEN_PATTERN, `Bearer ${REDACTED_SECRET}`)
+    .replace(WINDOWS_PATH_PATTERN, REDACTED_PATH)
+    .replace(UNIX_PATH_PATTERN, `$1${REDACTED_PATH}`);
+}
 
 function toError(error: unknown): Error {
-  if (error instanceof Error) return error;
-  if (typeof error === 'string') return new Error(error);
-  if (error && typeof error === 'object' && 'message' in error) {
-    return new Error(String(error.message));
-  }
-  return new Error(String(error));
+  return new Error(sanitizeApiErrorMessage(extractErrorMessage(error)));
 }
 
 /** Subscribe to API errors that are caught and suppressed by helpers. Returns an unsubscribe function. */
@@ -69,7 +89,7 @@ export function onApiError(listener: ApiErrorListener): () => void {
 
 function notifyApiError(command: string, error: unknown) {
   const message = toError(error).message;
-  console.error(`[telescope] ${command} failed:`, message);
+  console.error(`[telescope] ${command} failed`);
   for (const listener of errorListeners) {
     listener({ command, message });
   }
@@ -482,10 +502,9 @@ export async function getHelmReleaseHistory(namespace: string, name: string): Pr
   }
 }
 
-/** Get user-supplied values for the latest revision of a Helm release.
- *  Sensitive keys are redacted by default; pass `reveal: true` to see raw values. */
-export async function getHelmReleaseValues(namespace: string, name: string, reveal = false): Promise<string> {
-  return invoke<string>('get_helm_release_values', { namespace, name, reveal });
+/** Get redacted user-supplied values for the latest revision of a Helm release. */
+export async function getHelmReleaseValues(namespace: string, name: string): Promise<string> {
+  return invoke<string>('get_helm_release_values', { namespace, name });
 }
 
 /** Roll back a Helm release to a specific revision using the helm CLI. */

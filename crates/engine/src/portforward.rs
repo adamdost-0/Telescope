@@ -12,6 +12,31 @@ use tokio::net::TcpListener;
 static ACTIVE_FORWARDS: AtomicUsize = AtomicUsize::new(0);
 const MAX_FORWARDS: usize = 10;
 
+#[derive(Debug)]
+struct ActiveForwardGuard;
+
+impl ActiveForwardGuard {
+    fn acquire() -> crate::Result<Self> {
+        ACTIVE_FORWARDS
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                (current < MAX_FORWARDS).then_some(current + 1)
+            })
+            .map(|_| Self)
+            .map_err(|_| {
+                crate::EngineError::Other(format!(
+                    "Port forward limit reached: maximum {MAX_FORWARDS} concurrent forwards allowed"
+                ))
+            })
+    }
+}
+
+impl Drop for ActiveForwardGuard {
+    fn drop(&mut self) {
+        let previous = ACTIVE_FORWARDS.fetch_sub(1, Ordering::SeqCst);
+        debug_assert!(previous > 0, "active forward counter underflow");
+    }
+}
+
 /// Idle timeout for the accept loop (1 hour).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(3600);
 
@@ -52,19 +77,12 @@ pub async fn start_port_forward(client: &Client, req: &PortForwardRequest) -> cr
         ));
     }
 
-    // Enforce concurrent-forward limit
-    let prev = ACTIVE_FORWARDS.fetch_add(1, Ordering::SeqCst);
-    if prev >= MAX_FORWARDS {
-        ACTIVE_FORWARDS.fetch_sub(1, Ordering::SeqCst);
-        return Err(crate::EngineError::Other(format!(
-            "Port forward limit reached: maximum {MAX_FORWARDS} concurrent forwards allowed"
-        )));
-    }
+    // Enforce concurrent-forward limit. The guard releases the slot on every return path.
+    let active_forward_guard = ActiveForwardGuard::acquire()?;
 
     // Verify the pod exists before binding the local port
     let pods: Api<Pod> = Api::namespaced(client.clone(), &req.namespace);
     if let Err(e) = pods.get(&req.pod).await {
-        ACTIVE_FORWARDS.fetch_sub(1, Ordering::SeqCst);
         return Err(e.into());
     }
 
@@ -72,16 +90,12 @@ pub async fn start_port_forward(client: &Client, req: &PortForwardRequest) -> cr
     let listener = TcpListener::bind(format!("127.0.0.1:{}", req.local_port))
         .await
         .map_err(|e| {
-            ACTIVE_FORWARDS.fetch_sub(1, Ordering::SeqCst);
             crate::EngineError::Other(format!("Failed to bind port {}: {}", req.local_port, e))
         })?;
 
     let actual_port = listener
         .local_addr()
-        .map_err(|e| {
-            ACTIVE_FORWARDS.fetch_sub(1, Ordering::SeqCst);
-            crate::EngineError::Other(e.to_string())
-        })?
+        .map_err(|e| crate::EngineError::Other(e.to_string()))?
         .port();
 
     let pod_name = req.pod.clone();
@@ -90,6 +104,8 @@ pub async fn start_port_forward(client: &Client, req: &PortForwardRequest) -> cr
     // Spawn the forwarding loop — accepts connections and pipes them to the pod.
     // The loop is wrapped in an idle timeout so abandoned forwards are cleaned up.
     tokio::spawn(async move {
+        let _active_forward_guard = active_forward_guard;
+
         let result = tokio::time::timeout(IDLE_TIMEOUT, async {
             loop {
                 match listener.accept().await {
@@ -120,9 +136,6 @@ pub async fn start_port_forward(client: &Client, req: &PortForwardRequest) -> cr
                 IDLE_TIMEOUT.as_secs()
             );
         }
-
-        // Decrement active-forward counter when the task ends
-        ACTIVE_FORWARDS.fetch_sub(1, Ordering::SeqCst);
     });
 
     Ok(actual_port)
@@ -152,6 +165,8 @@ async fn handle_connection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static COUNTER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn port_forward_request_serializes() {
@@ -196,5 +211,29 @@ mod tests {
     fn active_forward_counter_starts_at_zero() {
         // Note: other tests may run concurrently, so we just verify the function works.
         let _ = active_forward_count();
+    }
+
+    #[test]
+    fn active_forward_guard_acquire_increments_and_drop_decrements() {
+        let _lock = COUNTER_TEST_LOCK.lock().unwrap();
+        ACTIVE_FORWARDS.store(0, Ordering::SeqCst);
+
+        let guard = ActiveForwardGuard::acquire().unwrap();
+        assert_eq!(active_forward_count(), 1);
+
+        drop(guard);
+        assert_eq!(active_forward_count(), 0);
+    }
+
+    #[test]
+    fn active_forward_guard_rejects_at_limit_without_incrementing() {
+        let _lock = COUNTER_TEST_LOCK.lock().unwrap();
+        ACTIVE_FORWARDS.store(MAX_FORWARDS, Ordering::SeqCst);
+
+        let err = ActiveForwardGuard::acquire().unwrap_err();
+        assert!(err.to_string().contains("Port forward limit reached"));
+        assert_eq!(active_forward_count(), MAX_FORWARDS);
+
+        ACTIVE_FORWARDS.store(0, Ordering::SeqCst);
     }
 }

@@ -27,6 +27,27 @@ jobs:
       - name: Cargo test
         run: cargo test --workspace --exclude telescope-desktop --all-features
 
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack
+        run: corepack enable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Rust dependency audit
+        run: cargo audit
+      - name: Install pnpm dependencies
+        run: pnpm install --frozen-lockfile
+      - name: pnpm dependency audit
+        run: pnpm audit --audit-level high
+
   web:
     runs-on: ubuntu-latest
     steps:

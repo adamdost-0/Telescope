@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="720" viewBox="0 0 1120 720" role="img" aria-labelledby="title desc">
+  <title id="title">Watcher Supervisor Lifecycle</title>
+  <desc id="desc">Telescope desktop watcher supervisor owns a shared cancellation token and all watcher tasks, then cancels and aborts them on reconnect, disconnect, namespace switch, or drop.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155" />
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .box { fill: #ffffff; stroke: #334155; stroke-width: 2; rx: 8; }
+      .owner { fill: #e0f2fe; stroke: #0369a1; }
+      .token { fill: #dcfce7; stroke: #15803d; }
+      .task { fill: #fef9c3; stroke: #a16207; }
+      .cleanup { fill: #fee2e2; stroke: #b91c1c; }
+      .text { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 18px; fill: #0f172a; }
+      .small { font-size: 15px; fill: #334155; }
+      .title { font-size: 28px; font-weight: 700; }
+      .label { font-size: 16px; font-weight: 700; fill: #334155; }
+      .arrow { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 8 6; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1120" height="720" />
+  <text class="text title" x="40" y="54">Watcher Supervisor Lifecycle</text>
+  <text class="text small" x="40" y="84">AppState owns one supervisor per active connection or namespace scope.</text>
+
+  <rect class="box" x="40" y="130" width="230" height="110" />
+  <text class="text label" x="65" y="166">AppState</text>
+  <text class="text small" x="65" y="194">watch_handle:</text>
+  <text class="text small" x="65" y="218">Option&lt;WatchTaskHandle&gt;</text>
+
+  <rect class="box owner" x="360" y="110" width="330" height="150" />
+  <text class="text label" x="392" y="148">WatchTaskHandle owner</text>
+  <text class="text small" x="392" y="178">- shared CancellationToken</text>
+  <text class="text small" x="392" y="202">- all watcher JoinHandles</text>
+  <text class="text small" x="392" y="226">- cancel() and Drop cleanup</text>
+
+  <rect class="box token" x="430" y="320" width="260" height="86" />
+  <text class="text label" x="462" y="354">CancellationToken</text>
+  <text class="text small" x="462" y="382">Shared by every task</text>
+
+  <rect class="box task" x="60" y="500" width="220" height="90" />
+  <text class="text label" x="84" y="536">State forwarder</text>
+  <text class="text small" x="84" y="562">Tauri state events</text>
+
+  <rect class="box task" x="330" y="500" width="220" height="90" />
+  <text class="text label" x="354" y="536">Pod watcher</text>
+  <text class="text small" x="354" y="562">Primary LIST/WATCH</text>
+
+  <rect class="box task" x="600" y="500" width="220" height="90" />
+  <text class="text label" x="624" y="536">Namespaced watchers</text>
+  <text class="text small" x="624" y="562">Workloads, RBAC, policy</text>
+
+  <rect class="box task" x="870" y="500" width="210" height="90" />
+  <text class="text label" x="894" y="536">Cluster watchers</text>
+  <text class="text small" x="894" y="562">Nodes, classes, webhooks</text>
+
+  <rect class="box cleanup" x="790" y="125" width="285" height="135" />
+  <text class="text label" x="818" y="162">Lifecycle triggers</text>
+  <text class="text small" x="818" y="190">reconnect / disconnect</text>
+  <text class="text small" x="818" y="214">namespace switch</text>
+  <text class="text small" x="818" y="238">replacement drop / abort</text>
+
+  <rect class="box cleanup" x="790" y="320" width="285" height="86" />
+  <text class="text label" x="818" y="354">Cleanup action</text>
+  <text class="text small" x="818" y="382">cancel token, abort tasks</text>
+
+  <path class="arrow" d="M 270 185 L 360 185" />
+  <path class="arrow" d="M 525 260 L 545 320" />
+  <path class="arrow" d="M 790 190 L 690 190" />
+  <path class="arrow" d="M 932 260 L 932 320" />
+  <path class="arrow" d="M 790 363 L 690 363" />
+  <path class="arrow dash" d="M 480 406 C 330 430 230 455 170 500" />
+  <path class="arrow dash" d="M 540 406 C 500 440 465 466 440 500" />
+  <path class="arrow dash" d="M 610 406 C 660 438 695 466 710 500" />
+  <path class="arrow dash" d="M 675 390 C 815 420 925 455 975 500" />
+
+  <text class="text small" x="300" y="174">stores owner</text>
+  <text class="text small" x="712" y="180">cancel()</text>
+  <text class="text small" x="708" y="350">Drop fallback</text>
+  <text class="text small" x="365" y="655">Every watcher uses tokio::select! on token cancellation.</text>
+</svg>
