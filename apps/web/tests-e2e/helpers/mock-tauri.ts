@@ -505,7 +505,10 @@ export async function installMockTauri(page: Page, scenario: MockTauriScenario =
               return clone(state.helmReleases.filter(r => r.name === releaseName && r.namespace === ns));
             }
             case 'get_helm_release_values':
-              return '';
+              if (args.reveal === true) {
+                throw new Error('Revealing raw Helm values is disabled for security.');
+              }
+              return 'controller:\n  replicaCount: 1\n  admissionWebhooks:\n    secretName: "********"\n';
             case 'helm_uninstall': {
               const releaseName = String(args.name);
               const ns = String(args.namespace);

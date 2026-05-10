@@ -15,6 +15,7 @@ use telescope_azure::{
 };
 use tokio::sync::{Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use telescope_core::{ConnectionState, ResourceEntry, ResourceStore};
@@ -61,6 +62,16 @@ const ALL_WATCHED_GVKS: &[&str] = &[
     "v1/PersistentVolume",
 ];
 
+const UNSUPPORTED_CACHED_RESOURCE_TYPE: &str = "Unsupported cached resource type";
+
+fn validate_cached_resource_gvk(gvk: &str) -> Result<&str, String> {
+    if ALL_WATCHED_GVKS.contains(&gvk) {
+        Ok(gvk)
+    } else {
+        Err(UNSUPPORTED_CACHED_RESOURCE_TYPE.to_string())
+    }
+}
+
 const AI_INSIGHTS_HISTORY_KEY_PREFIX: &str = "ai_insights_history";
 const AI_INSIGHTS_HISTORY_LIMIT: usize = 3;
 const AI_INSIGHTS_SYSTEM_PROMPT: &str = concat!(
@@ -90,7 +101,7 @@ struct AppState {
     active_connection: RwLock<Option<ActiveConnection>>,
     store: Arc<Mutex<ResourceStore>>,
     connection_state: Arc<RwLock<ConnectionState>>,
-    watch_handle: TokioMutex<Option<JoinHandle<()>>>,
+    watch_handle: TokioMutex<Option<WatchTaskHandle>>,
     active_context: RwLock<Option<String>>,
     active_namespace: RwLock<String>,
 }
@@ -99,6 +110,41 @@ struct AppState {
 struct ActiveConnection {
     context_name: String,
     client: kube::Client,
+}
+
+struct WatchTaskHandle {
+    cancellation_token: CancellationToken,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+impl WatchTaskHandle {
+    fn new() -> Self {
+        Self {
+            cancellation_token: CancellationToken::new(),
+            tasks: Vec::new(),
+        }
+    }
+
+    fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token.clone()
+    }
+
+    fn push(&mut self, task: JoinHandle<()>) {
+        self.tasks.push(task);
+    }
+
+    fn cancel(&mut self) {
+        self.cancellation_token.cancel();
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+
+impl Drop for WatchTaskHandle {
+    fn drop(&mut self) {
+        self.cancel();
+    }
 }
 
 async fn write_audit_entry(
@@ -613,12 +659,13 @@ fn get_resources(
     gvk: String,
     namespace: Option<String>,
 ) -> Result<Vec<ResourceEntry>, String> {
+    let gvk = validate_cached_resource_gvk(&gvk)?;
     let store = state
         .store
         .lock()
         .map_err(|e| format!("Store lock failed: {}", e))?;
     store
-        .list(&gvk, namespace.as_deref())
+        .list(gvk, namespace.as_deref())
         .map_err(|e| e.to_string())
 }
 
@@ -709,12 +756,13 @@ fn count_resources(
     gvk: String,
     namespace: Option<String>,
 ) -> Result<u64, String> {
+    let gvk = validate_cached_resource_gvk(&gvk)?;
     let store = state
         .store
         .lock()
         .map_err(|e| format!("Store lock failed: {}", e))?;
     store
-        .count(&gvk, namespace.as_deref())
+        .count(gvk, namespace.as_deref())
         .map_err(|e| e.to_string())
 }
 
@@ -776,13 +824,12 @@ fn get_resource(
     namespace: String,
     name: String,
 ) -> Result<Option<ResourceEntry>, String> {
+    let gvk = validate_cached_resource_gvk(&gvk)?;
     let store = state
         .store
         .lock()
         .map_err(|e| format!("Store lock failed: {}", e))?;
-    store
-        .get(&gvk, &namespace, &name)
-        .map_err(|e| e.to_string())
+    store.get(gvk, &namespace, &name).map_err(|e| e.to_string())
 }
 
 /// List secrets in a namespace via a direct uncached Kubernetes API read.
@@ -837,8 +884,8 @@ async fn get_helm_release_history(
 
 /// Get the user-supplied values for the latest revision of a Helm release.
 ///
-/// By default, sensitive keys (passwords, tokens, secrets, etc.) are redacted.
-/// Pass `reveal: true` to return unredacted values.
+/// Sensitive keys (passwords, tokens, secrets, etc.) are redacted.
+/// Requests to reveal raw values are denied and audited before values are fetched.
 #[tauri::command]
 async fn get_helm_release_values(
     state: State<'_, AppState>,
@@ -846,11 +893,36 @@ async fn get_helm_release_values(
     name: String,
     reveal: Option<bool>,
 ) -> Result<String, String> {
+    let namespace = validate_namespace_param(&namespace)?;
+    let name = validate_k8s_name_param(&name, "name")?;
+
+    if reveal.unwrap_or(false) {
+        let audit_result = write_audit_entry(
+            &state,
+            None,
+            namespace.clone(),
+            "helm_values_reveal",
+            "HelmRelease",
+            name.clone(),
+            "denied",
+            Some("requested_reveal=true".to_string()),
+        )
+        .await;
+
+        return match audit_result {
+            Ok(()) => Err("Revealing raw Helm values is disabled for security.".to_string()),
+            Err(_) => Err(
+                "Revealing raw Helm values is disabled for security, and the denied attempt could not be audited."
+                    .to_string(),
+            ),
+        };
+    }
+
     let client = active_client(&state).await?;
     let mut values = telescope_engine::helm::get_release_values(&client, &namespace, &name)
         .await
         .map_err(|e| e.to_string())?;
-    if !reveal.unwrap_or(false) && !values.trim_start().starts_with('#') {
+    if !values.trim_start().starts_with('#') {
         let mut json = serde_yaml::from_str::<serde_json::Value>(&values)
             .map_err(|e| format!("Failed to parse Helm values YAML: {e}"))?;
         telescope_engine::helm::redact_sensitive_values(&mut json);
@@ -1652,9 +1724,9 @@ fn validate_create_node_pool_config(
 /// Abort the current watch task if one is running.
 async fn abort_watch(state: &State<'_, AppState>) {
     let mut handle = state.watch_handle.lock().await;
-    if let Some(h) = handle.take() {
-        h.abort();
-        info!("Previous watch task aborted");
+    if let Some(mut watch_tasks) = handle.take() {
+        watch_tasks.cancel();
+        info!("Previous watch tasks cancelled");
     }
 }
 
@@ -1846,88 +1918,87 @@ async fn spawn_watch_task(
     let watcher = telescope_engine::ResourceWatcher::new(client, Arc::clone(&store));
     watcher.register_watches(29); // 28 aux watchers + 1 pod watcher
     let mut state_rx = watcher.state_receiver();
+    let mut watch_tasks = WatchTaskHandle::new();
 
     // Spawn a task to forward state changes from the watcher to the UI.
     let conn_state_fwd = Arc::clone(&conn_state);
     let app_fwd = app_handle.clone();
+    let cancellation_token = watch_tasks.cancellation_token();
     let state_forwarder = tokio::spawn(async move {
-        while state_rx.changed().await.is_ok() {
-            let new_state = state_rx.borrow().clone();
-            {
-                let mut s = conn_state_fwd.write().await;
-                *s = new_state.clone();
+        loop {
+            tokio::select! {
+                changed = state_rx.changed() => {
+                    if changed.is_err() {
+                        break;
+                    }
+                    let new_state = state_rx.borrow().clone();
+                    {
+                        let mut s = conn_state_fwd.write().await;
+                        *s = new_state.clone();
+                    }
+                    app_fwd.emit("connection-state-changed", &new_state).ok();
+                }
+                _ = cancellation_token.cancelled() => {
+                    break;
+                }
             }
-            app_fwd.emit("connection-state-changed", &new_state).ok();
         }
     });
+    watch_tasks.push(state_forwarder);
 
-    // Collect auxiliary task handles so the main task can abort them on exit.
-    let mut aux_tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+    macro_rules! spawn_watch {
+        ($watcher:expr, $tasks:ident, $method:ident, $label:expr) => {{
+            let w = $watcher.clone();
+            let cancellation_token = $tasks.cancellation_token();
+            $tasks.push(tokio::spawn(async move {
+                tokio::select! {
+                    result = w.$method() => {
+                        if let Err(e) = result {
+                            error!("{} watch error: {}", $label, e);
+                        }
+                    }
+                    _ = cancellation_token.cancelled() => {}
+                }
+            }));
+        }};
+    }
 
     // -- Cluster-wide / cluster-scoped watchers --
 
-    let w = watcher.clone();
-    aux_tasks.push(tokio::spawn(async move {
-        if let Err(e) = w.watch_all_events().await {
-            error!("Events watch error: {}", e);
-        }
-    }));
-
-    let w = watcher.clone();
-    aux_tasks.push(tokio::spawn(async move {
-        if let Err(e) = w.watch_nodes().await {
-            error!("Node watch error: {}", e);
-        }
-    }));
-
-    let w = watcher.clone();
-    aux_tasks.push(tokio::spawn(async move {
-        if let Err(e) = w.watch_cluster_roles().await {
-            error!("ClusterRole watch error: {}", e);
-        }
-    }));
-
-    let w = watcher.clone();
-    aux_tasks.push(tokio::spawn(async move {
-        if let Err(e) = w.watch_cluster_role_bindings().await {
-            error!("ClusterRoleBinding watch error: {}", e);
-        }
-    }));
-
-    let w = watcher.clone();
-    aux_tasks.push(tokio::spawn(async move {
-        if let Err(e) = w.watch_priority_classes().await {
-            error!("PriorityClass watch error: {}", e);
-        }
-    }));
-
-    let w = watcher.clone();
-    aux_tasks.push(tokio::spawn(async move {
-        if let Err(e) = w.watch_validating_webhooks().await {
-            error!("ValidatingWebhookConfiguration watch error: {}", e);
-        }
-    }));
-
-    let w = watcher.clone();
-    aux_tasks.push(tokio::spawn(async move {
-        if let Err(e) = w.watch_mutating_webhooks().await {
-            error!("MutatingWebhookConfiguration watch error: {}", e);
-        }
-    }));
-
-    let w = watcher.clone();
-    aux_tasks.push(tokio::spawn(async move {
-        if let Err(e) = w.watch_storage_classes().await {
-            error!("StorageClass watch error: {}", e);
-        }
-    }));
-
-    let w = watcher.clone();
-    aux_tasks.push(tokio::spawn(async move {
-        if let Err(e) = w.watch_persistent_volumes().await {
-            error!("PersistentVolume watch error: {}", e);
-        }
-    }));
+    spawn_watch!(watcher, watch_tasks, watch_all_events, "Events");
+    spawn_watch!(watcher, watch_tasks, watch_nodes, "Node");
+    spawn_watch!(watcher, watch_tasks, watch_cluster_roles, "ClusterRole");
+    spawn_watch!(
+        watcher,
+        watch_tasks,
+        watch_cluster_role_bindings,
+        "ClusterRoleBinding"
+    );
+    spawn_watch!(
+        watcher,
+        watch_tasks,
+        watch_priority_classes,
+        "PriorityClass"
+    );
+    spawn_watch!(
+        watcher,
+        watch_tasks,
+        watch_validating_webhooks,
+        "ValidatingWebhookConfiguration"
+    );
+    spawn_watch!(
+        watcher,
+        watch_tasks,
+        watch_mutating_webhooks,
+        "MutatingWebhookConfiguration"
+    );
+    spawn_watch!(watcher, watch_tasks, watch_storage_classes, "StorageClass");
+    spawn_watch!(
+        watcher,
+        watch_tasks,
+        watch_persistent_volumes,
+        "PersistentVolume"
+    );
 
     // -- Namespaced resource watchers --
     // Uses a macro to reduce boilerplate for each resource type.
@@ -1935,72 +2006,84 @@ async fn spawn_watch_task(
         ($watcher:expr, $ns:expr, $tasks:ident, $method:ident, $label:expr) => {{
             let w = $watcher.clone();
             let ns_clone = $ns.clone();
+            let cancellation_token = $tasks.cancellation_token();
             $tasks.push(tokio::spawn(async move {
-                if let Err(e) = w.$method(&ns_clone).await {
-                    error!("{} watch error: {}", $label, e);
+                tokio::select! {
+                    result = w.$method(&ns_clone) => {
+                        if let Err(e) = result {
+                            error!("{} watch error: {}", $label, e);
+                        }
+                    }
+                    _ = cancellation_token.cancelled() => {}
                 }
             }));
         }};
     }
 
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_deployments, "Deployment");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_statefulsets, "StatefulSet");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_daemonsets, "DaemonSet");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_replicasets, "ReplicaSet");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_services, "Service");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_config_maps, "ConfigMap");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_jobs, "Job");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_cronjobs, "CronJob");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_ingresses, "Ingress");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_deployments, "Deployment");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_statefulsets, "StatefulSet");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_daemonsets, "DaemonSet");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_replicasets, "ReplicaSet");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_services, "Service");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_config_maps, "ConfigMap");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_jobs, "Job");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_cronjobs, "CronJob");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_ingresses, "Ingress");
     spawn_ns_watch!(
         watcher,
         ns,
-        aux_tasks,
+        watch_tasks,
         watch_network_policies,
         "NetworkPolicy"
     );
     spawn_ns_watch!(
         watcher,
         ns,
-        aux_tasks,
+        watch_tasks,
         watch_endpoint_slices,
         "EndpointSlice"
     );
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_pvcs, "PVC");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_pvcs, "PVC");
     spawn_ns_watch!(
         watcher,
         ns,
-        aux_tasks,
+        watch_tasks,
         watch_resource_quotas,
         "ResourceQuota"
     );
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_limit_ranges, "LimitRange");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_roles, "Role");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_role_bindings, "RoleBinding");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_limit_ranges, "LimitRange");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_roles, "Role");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_role_bindings, "RoleBinding");
     spawn_ns_watch!(
         watcher,
         ns,
-        aux_tasks,
+        watch_tasks,
         watch_service_accounts,
         "ServiceAccount"
     );
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_hpas, "HPA");
-    spawn_ns_watch!(watcher, ns, aux_tasks, watch_pod_disruption_budgets, "PDB");
+    spawn_ns_watch!(watcher, ns, watch_tasks, watch_hpas, "HPA");
+    spawn_ns_watch!(
+        watcher,
+        ns,
+        watch_tasks,
+        watch_pod_disruption_budgets,
+        "PDB"
+    );
 
-    // Spawn the main watch task (pods + lifecycle coordinator).
-    let task = tokio::spawn(async move {
-        if let Err(e) = watcher.watch_pods(&ns).await {
-            error!("Pod watch error: {}", e);
+    let cancellation_token = watch_tasks.cancellation_token();
+    watch_tasks.push(tokio::spawn(async move {
+        tokio::select! {
+            result = watcher.watch_pods(&ns) => {
+                if let Err(e) = result {
+                    error!("Pod watch error: {}", e);
+                }
+            }
+            _ = cancellation_token.cancelled() => {}
         }
-        // When the pod watch ends, abort the state forwarder and all auxiliary watchers.
-        state_forwarder.abort();
-        for t in aux_tasks {
-            t.abort();
-        }
-    });
+    }));
 
     let mut handle = state.watch_handle.lock().await;
-    *handle = Some(task);
+    *handle = Some(watch_tasks);
 }
 
 /// Restart a Deployment, StatefulSet, or DaemonSet rollout.

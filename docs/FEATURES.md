@@ -14,7 +14,7 @@ description: "Full feature matrix for Telescope — Kubernetes, Azure ARM, Helm,
 |---|---|
 | Full cluster connection and context management | Discover kubeconfig contexts, connect/disconnect, track connection state, and switch namespaces |
 | Search and settings | Search cached resources quickly and manage user-facing preferences from the UI |
-| Audit logging | Record key local actions for traceability in the desktop app |
+| Audit logging | Record key local actions and denied sensitive reveal attempts for traceability in the desktop app |
 
 ## Kubernetes Operations
 
@@ -24,7 +24,7 @@ description: "Full feature matrix for Telescope — Kubernetes, Azure ARM, Helm,
 | CRD browsing | Explore installed CustomResourceDefinitions and dynamic resources with schema/details support |
 | Pod operations | View logs, exec into containers, and start port-forwards |
 | Resource actions | Scale workloads, delete resources, create namespaces, apply YAML, and trigger rollout operations with safety checks |
-| Helm release management | List releases, inspect history/values, and support Helm rollback and uninstall workflows |
+| Helm release management | List releases, inspect history and redacted values, and support Helm rollback and uninstall workflows |
 | Node management and metrics | Inspect nodes plus pod and node metrics for cluster health |
 
 ## Azure ARM Management Plane

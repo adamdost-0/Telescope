@@ -27,6 +27,7 @@ import {
   clearAiInsightsHistory,
   generateAiInsights,
   getAiInsightsSettings,
+  getHelmReleaseValues,
   listAksNodePools,
   listAiInsightsHistory,
   onApiError,
@@ -73,6 +74,68 @@ describe('listAksNodePools', () => {
 
     await expect(listAksNodePools()).rejects.toThrow('ARM lookup failed');
     expect(invokeMock).toHaveBeenCalledWith('list_aks_node_pools', undefined);
+  });
+
+  it('redacts raw paths and secrets from thrown errors, listeners, and console logs', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onApiError(listener);
+    const rawMessage =
+      'Failed at /home/alice/.kube/config and C:\\Users\\Alice\\helm.exe token=super-secret Bearer abc.def';
+
+    invokeMock.mockRejectedValue(new Error(rawMessage));
+
+    let message = '';
+    try {
+      await listAksNodePools();
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain('[redacted path]');
+    expect(message).toContain('token=[redacted]');
+    expect(message).toContain('Bearer [redacted]');
+    expect(message).not.toContain('/home/alice');
+    expect(message).not.toContain('C:\\Users\\Alice');
+    expect(message).not.toContain('super-secret');
+    expect(message).not.toContain('abc.def');
+    expect(listener).toHaveBeenCalledWith({
+      command: 'list_aks_node_pools',
+      message,
+    });
+
+    const consoleText = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(consoleText).not.toContain('/home/alice');
+    expect(consoleText).not.toContain('C:\\Users\\Alice');
+    expect(consoleText).not.toContain('super-secret');
+    expect(consoleText).not.toContain('abc.def');
+
+    unsubscribe();
+  });
+});
+
+describe('getHelmReleaseValues', () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+    vi.stubGlobal('window', {
+      __TAURI_INTERNALS__: {
+        invoke: invokeMock,
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('requests redacted Helm values without a reveal flag', async () => {
+    invokeMock.mockResolvedValue('controller:\n  admissionWebhooks:\n    secretName: "********"\n');
+
+    await expect(getHelmReleaseValues('default', 'ingress-nginx')).resolves.toContain('controller:');
+
+    expect(invokeMock).toHaveBeenCalledWith('get_helm_release_values', {
+      namespace: 'default',
+      name: 'ingress-nginx',
+    });
   });
 });
 

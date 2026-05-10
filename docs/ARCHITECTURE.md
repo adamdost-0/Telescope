@@ -84,7 +84,7 @@ graph TB
 | `kubeconfig.rs` | Parse `~/.kube/config`, list contexts with auth metadata |
 | `node_ops.rs` | Cordon, uncordon, drain, add/remove taints |
 | `dynamic.rs` | Generic dynamic resource apply/delete for arbitrary GVKs |
-| `helm.rs` | Helm release listing, history, values (with sensitive key redaction), rollback |
+| `helm.rs` | Helm release listing, history, values (sensitive key redaction; raw reveal denied and audited), rollback |
 | `metrics.rs` | Pod and node metrics via the Metrics API |
 | `crd.rs` | CRD discovery and instance listing |
 | `secrets.rs` | On-demand secret fetch with payload redaction |
@@ -107,7 +107,7 @@ graph TB
 | `resolve.rs` | AKS identity resolution: saved preferences -> Azure CLI (`az aks list`) -> FQDN hints. Resolves subscription, resource group, and cluster name. |
 | `error.rs` | `AzureError` variants: `NotFound`, `Conflict`, `Api { status, code, message }`, `Identity`, `Http`, `Json`, `CliNotFound`, `CliFailed` |
 
-**Desktop (`apps/desktop`)** — Tauri 2 shell exposing 66 IPC commands across nine groups: context/connection (7), Azure ARM/AKS (18), resource queries (8), secrets (2), Helm (4), namespaces (3), logs (3), resource actions/node ops (15), exec/portforward/metrics (6). State is held in `AppState` (SQLite store + connection state + watch handle).
+**Desktop (`apps/desktop`)** — Tauri 2 shell exposing 60+ IPC commands across context/connection, Azure ARM/AKS, resource queries, secrets, Helm, namespaces, logs, resource actions/node ops, exec, port-forward, and metrics. State is held in `AppState` (SQLite store + connection state + watcher supervisor handle).
 
 **Frontend (`apps/web`)** — SvelteKit frontend (Svelte 5 runes). 25 components, 39 routes, Svelte writable/derived stores for context, namespace, and connection state. `api.ts` wraps Tauri command invocations for the desktop shell.
 
@@ -189,7 +189,8 @@ sequenceDiagram
 ### Key Design Decisions
 
 - **SQLite as cache** — All K8s objects are stored as JSON blobs in a single `resources` table. The UI reads from SQLite, never directly from the API server. This decouples watch latency from UI responsiveness.
-- **Scoped watchers** — Watchers are started per-namespace when a user connects. Switching namespaces (`set_namespace`) aborts existing watches and spawns new ones.
+- **Scoped watchers** — Watchers are started per-namespace when a user connects. Switching namespaces (`set_namespace`), reconnecting, or disconnecting cancels the current watcher supervisor and spawns a fresh one when needed.
+- **Watcher supervisor ownership** — Desktop state stores a `WatchTaskHandle`, not a bare `JoinHandle`. The handle owns a shared `CancellationToken` plus the state-forwarder, cluster-scoped, namespaced, and pod watcher tasks. `cancel()` and `Drop` both cancel the token and abort owned tasks so replacement or external abort cannot orphan auxiliary watchers.
 - **Semaphore-limited LIST** — At most 3 concurrent LIST operations to avoid overwhelming the API server during initial sync.
 - **Event-driven UI** — Connection state changes are pushed to the frontend via Tauri events, not polled.
 - **Azure ARM is separate** — AKS management operations use the Azure ARM REST API through `crates/azure`, not the Kubernetes API. This keeps the K8s engine decoupled from Azure-specific logic.
@@ -339,8 +340,10 @@ CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
 - [x] **Server-side dry-run** — `apply_resource` supports `dry_run: bool` for safe preview before mutation.
 - [x] **Database isolation** — SQLite store at `~/.telescope/resources.db` (per-user home directory).
 - [x] **Secrets redacted by default** — secret payload fields (`data`, `stringData`, `binaryData`, `last-applied-configuration`) are replaced with `●●●●●●●●` before serialization.
-- [x] **Helm values redacted** — sensitive keys (`password`, `token`, `secret`, `apiKey`, `connectionString`, `private_key`, `client_secret`, `access_key`, `credentials`, `auth`, and variants) are recursively redacted in Helm release values.
-- [x] **Audit logging** — JSONL audit entries for destructive operations (see Audit section below).
+- [x] **Helm values redacted and reveal denied** — sensitive keys (`password`, `token`, `secret`, `apiKey`, `connectionString`, `private_key`, `client_secret`, `access_key`, `credentials`, `auth`, and variants) are recursively redacted in Helm release values. Raw reveal requests are denied before Helm values are fetched, audited as denied attempts, and returned to the UI as sanitized errors.
+- [x] **Cached GVK allowlist** — cached resource IPC commands validate `gvk` arguments against `ALL_WATCHED_GVKS` before `ResourceStore::list`, `ResourceStore::get`, or cached count queries. Unsupported cached resource types return a generic sanitized error.
+- [x] **User-facing error sanitization** — Helm command failures and frontend IPC errors redact local paths, raw command output, and secret-shaped values before reaching UI notifications or console logs.
+- [x] **Audit logging** — JSONL audit entries for destructive and sensitive operations (see Audit section below).
 - [x] **File permissions** — audit log and SQLite DB created with `0600` permissions on Unix.
 - [x] **Azure ARM auth** — `DefaultAzureCredential` for ARM API access; no hardcoded secrets (see Azure ARM Security section below).
 
@@ -419,14 +422,14 @@ CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
 | Command | Description |
 |---------|-------------|
 | `get_pods` | List pods |
-| `get_resources` | List resources by GVK |
+| `get_resources` | List resources by allowlisted cached GVK |
 | `get_events` | List/filter events |
-| `get_resource_counts` | Resource counts by GVK |
+| `get_resource_counts` | Resource counts for allowlisted cached GVKs |
 | `count_resources` | Count resources |
 | `search_resources` | Search resources by name |
 | `list_dynamic_resources` | List resources for a dynamic GVK |
 | `get_dynamic_resource` | Get a single dynamic resource |
-| `get_resource` | Get single resource |
+| `get_resource` | Get single resource by allowlisted cached GVK |
 | `get_secrets` | List secrets (on-demand, not cached) |
 | `get_secret` | Get single secret (redacted) |
 
@@ -436,8 +439,9 @@ CREATE INDEX IF NOT EXISTS idx_resources_gvk_ns
 |---------|-------------|
 | `list_helm_releases` | List releases across namespaces |
 | `get_helm_release_history` | Release revision history |
-| `get_helm_release_values` | Release values (redacted unless revealed) |
+| `get_helm_release_values` | Release values with sensitive keys redacted; raw reveal requests are denied and audited |
 | `helm_rollback` | Rollback to a previous revision |
+| `helm_uninstall` | Uninstall a release with audit logging and sanitized command errors |
 
 ### Namespaces
 
@@ -504,7 +508,7 @@ Each `AuditEntry` contains: `timestamp`, `actor`, `context`, `namespace`, `actio
 |----------|-----------|
 | Connection | `connect_to_context`, `disconnect` |
 | AKS node pools | `scale_aks_node_pool`, `update_aks_autoscaler`, `create_aks_node_pool`, `delete_aks_node_pool` |
-| Helm | `helm_rollback` |
+| Helm | `helm_rollback`, `helm_uninstall`, denied `helm_values_reveal` attempts |
 | Namespaces | `create_namespace`, `delete_namespace` |
 | Resources | `apply_dynamic_resource`, `delete_dynamic_resource`, `scale_resource`, `delete_resource`, `apply_resource`, `rollout_restart` |
 | Node ops | `cordon_node`, `uncordon_node`, `drain_node`, `add_node_taint`, `remove_node_taint` |

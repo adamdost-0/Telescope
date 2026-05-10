@@ -8,6 +8,20 @@ GitHub releases use the matching version section from this changelog when presen
 
 ## [Unreleased]
 
+### Added
+- **Supply chain scanning:** Added CI security checks for Rust and pnpm dependencies, including `cargo audit`, `pnpm audit --audit-level high`, and grouped weekly Dependabot update coverage.
+- **GVK allowlist validation:** Cached resource IPC commands now validate caller-provided GVKs against the watched resource registry before querying the SQLite cache.
+
+### Fixed
+- **Watcher task leaks:** Replaced the raw watch task handle with a supervisor owner that shares a `CancellationToken` across the state forwarder and all watcher tasks, with cancel/drop cleanup for reconnect, disconnect, namespace switch, and replacement paths.
+- **Trusted binary test fixtures and Azure resolver tests:** Reworked trusted helper fixtures so tests exercise the production hardening path without relying on group-writable Cargo test executables.
+- **Port-forward counter race conditions:** Added RAII accounting for active port-forwards so panic, abort, and early-return paths release concurrency slots reliably.
+
+### Security
+- **Sanitized command and API errors:** Helm command failures and frontend IPC errors now return user-safe categories without leaking helper paths, raw command output, local paths, or secret-shaped values.
+- **Denied and audited Helm values reveal:** Plaintext Helm values reveal requests are denied before values are fetched, logged as denied audit events, and returned as sanitized errors; normal values requests remain recursively redacted.
+- **Trusted helper hardening:** Preserved strict trusted-binary resolution and permission checks for kubeconfig exec helpers, Azure CLI fallback, and Helm operations while improving fixture coverage.
+
 ## [v1.2.0] - 2026-03-21
 
 ### Added

@@ -9,6 +9,12 @@ on:
       - 'crates/core/**'
       - 'tools/k3d-fixtures/**'
       - '.github/workflows/integration.yml'
+  pull_request:
+    paths:
+      - 'crates/engine/**'
+      - 'crates/core/**'
+      - 'tools/k3d-fixtures/**'
+      - '.github/workflows/integration.yml'
 
 permissions:
   contents: read

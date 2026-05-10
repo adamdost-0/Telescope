@@ -6,6 +6,8 @@
 
 **Primary workflow:** `ci.yml` — runs on all PRs and pushes to `main`.
 
+**Integration workflow:** `integration.yml` — runs K3D engine integration tests on manual dispatch, pushes to `main`, and PRs touching engine, core, K3D fixture, or integration workflow paths.
+
 **Release workflow:** `release.yml` — runs on pushed Git tags matching `v*`.
 
 ## Current CI Jobs (`ci.yml`)
@@ -22,7 +24,20 @@ cargo test --workspace --exclude telescope-desktop --all-features
 
 `telescope-desktop` is excluded on Linux (GTK/WebKit system deps). Desktop builds run separately on Windows/macOS.
 
-### 2. Web Job (`web`)
+### 2. Security Job (`security`)
+
+Runs on: `ubuntu-latest`
+
+```bash
+cargo install cargo-audit --locked
+cargo audit
+pnpm install --frozen-lockfile
+pnpm audit --audit-level high
+```
+
+This job runs on pull requests and pushes alongside the build/test jobs. Dependabot is configured in `.github/dependabot.yml` for weekly Cargo and npm/pnpm workspace dependency updates.
+
+### 3. Web Job (`web`)
 
 Runs on: `ubuntu-latest`
 
@@ -32,7 +47,7 @@ pnpm -C apps/web test      # Vitest unit tests
 pnpm -C apps/web build     # Production build
 ```
 
-### 3. Web E2E Job (`web-e2e`)
+### 4. Web E2E Job (`web-e2e`)
 
 Runs on: `ubuntu-latest` (depends on `web` job)
 
@@ -44,7 +59,7 @@ pnpm -C apps/web e2e       # Playwright tests against stub server
 
 E2E tests run against `tools/devtest/stub-server.mjs` with deterministic fake data (no live K8s cluster).
 
-### 4. Desktop Build Job (`desktop-build`)
+### 5. Desktop Build Job (`desktop-build`)
 
 Runs on: **Matrix** — `[windows-latest, macos-latest]`
 
@@ -94,9 +109,10 @@ Steps:
 | Web unit tests | [ok] | Vitest via `pnpm -C apps/web test` |
 | Web build | [ok] | `pnpm -C apps/web build` |
 | Web E2E tests | [ok] | Playwright against stub server |
+| K3D integration tests | [ok] | `integration.yml` is PR-gated for engine/core/K3D fixture/workflow paths |
 | Desktop builds | [ok] | Windows + macOS matrix |
 | Tagged releases | [ok] | `release.yml` on `v*` tags |
-| Security scanning | [fail] | No Dependabot, CodeQL, or audit checks |
+| Security scanning | [ok] | Dependabot plus CI `cargo audit` and `pnpm audit --audit-level high` |
 
 ## Concurrency
 

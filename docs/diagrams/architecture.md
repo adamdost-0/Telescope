@@ -2,6 +2,11 @@
 
 These standalone diagrams summarize the current Telescope v1.0.0 desktop architecture. They are grounded in the current code layout in `apps/web`, `apps/desktop`, `crates/engine`, `crates/azure`, and `crates/core`.
 
+## Hardening Sprint Diagrams
+
+- [Watcher supervisor lifecycle](watcher-supervisor.svg)
+- [Helm values audit and error-handling flow](helm-values-audit-flow.svg)
+
 ## 1. System Context Diagram
 
 The Tauri desktop application packages the frontend and connects to shared Rust crates for both Kubernetes API access and Azure ARM management.
